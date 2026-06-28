@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens — channels are space-separated RGB so Tailwind's <alpha-value> works. */
+:root,
+.theme-light {
+  --color-bg: 247 248 250;
+  --color-surface: 255 255 255;
+  --color-surface-2: 241 243 246;
+  --color-border: 222 226 232;
+  --color-fg: 23 28 38;
+  --color-muted: 104 113 128;
+  --color-accent: 67 97 238;
+  --color-accent-fg: 255 255 255;
+  --color-success: 22 142 91;
+  --color-warning: 184 132 12;
+  --color-danger: 197 48 48;
+}
+
+.theme-dark {
+  --color-bg: 11 13 18;
+  --color-surface: 21 25 33;
+  --color-surface-2: 28 33 44;
+  --color-border: 42 49 63;
+  --color-fg: 224 229 238;
+  --color-muted: 138 148 165;
+  --color-accent: 99 130 255;
+  --color-accent-fg: 12 16 24;
+  --color-success: 64 192 132;
+  --color-warning: 224 176 64;
+  --color-danger: 240 113 113;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: rgb(var(--color-bg));
+  color: rgb(var(--color-fg));
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--color-border));
+  border-radius: 9999px;
+}

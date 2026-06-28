@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+apps/desktop/node_modules/
+
+# Build output
+dist/
+out/
+build/
+*.tsbuildinfo
+
+# Test / coverage
+coverage/
+.vitest/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Env / local
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Electron packaging
+release/

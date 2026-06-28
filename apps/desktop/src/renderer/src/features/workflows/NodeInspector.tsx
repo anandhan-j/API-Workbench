@@ -1,0 +1,345 @@
+import { Plus, Trash2 } from 'lucide-react';
+import type { HttpMethod } from '@shared/collection';
+import type { ExecutionResponse } from '@shared/execution';
+import type { ExtractRule, NodePolicy, Workflow, WorkflowNode } from '@shared/workflow';
+import { extractFromResponse } from '@shared/extract';
+import type { FlowNode } from './graph-mapping';
+import { NODE_META } from './node-meta';
+
+const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+const fieldClass =
+  'w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-sm outline-none focus:border-accent';
+const smallField = 'rounded-md border border-border bg-bg px-2 py-1 text-xs outline-none focus:border-accent';
+const labelClass = 'block text-[11px] font-medium uppercase tracking-wide text-muted';
+
+interface NodeInspectorProps {
+  node: FlowNode | null;
+  workflows: Workflow[];
+  /** The selected node's response from the last run, used for live preview. */
+  lastResponse?: ExecutionResponse;
+  onRename: (name: string) => void;
+  onConfig: (config: WorkflowNode['config']) => void;
+  onPolicy: (policy: NodePolicy | undefined) => void;
+  onDelete: () => void;
+}
+
+export function NodeInspector({
+  node,
+  workflows,
+  lastResponse,
+  onRename,
+  onConfig,
+  onPolicy,
+  onDelete,
+}: NodeInspectorProps): JSX.Element {
+  if (!node) {
+    return (
+      <div className="p-4 text-sm text-muted">
+        Select a node to edit it, or drag one in from the palette.
+      </div>
+    );
+  }
+  const kind = node.data.kind;
+  const meta = NODE_META[kind];
+  const Icon = meta.icon;
+  const config = node.data.config as Record<string, unknown>;
+  const set = (patch: Record<string, unknown>): void =>
+    onConfig({ ...config, ...patch } as WorkflowNode['config']);
+
+  return (
+    <div className="flex h-full flex-col gap-3 p-4">
+      <div className="flex items-center gap-2">
+        <span className={`flex h-7 w-7 items-center justify-center rounded ${meta.accent}`}>
+          <Icon size={15} />
+        </span>
+        <span className="text-sm font-semibold">{meta.label}</span>
+      </div>
+
+      {kind !== 'start' && kind !== 'end' && (
+        <Field label="Name" id="node-name">
+          <input id="node-name" value={node.data.name} onChange={(e) => onRename(e.target.value)} className={fieldClass} />
+        </Field>
+      )}
+
+      {kind === 'request' && (
+        <>
+          <Field label="Method" id="node-method">
+            <select id="node-method" value={(config.method as string) ?? 'GET'} onChange={(e) => set({ method: e.target.value })} className={fieldClass}>
+              {METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="URL" id="node-url">
+            <input id="node-url" value={(config.url as string) ?? ''} onChange={(e) => set({ url: e.target.value })} placeholder="https://api.example.com/{{path}}" className={fieldClass} />
+          </Field>
+          <ExtractEditor
+            rules={(config.extract as ExtractRule[]) ?? []}
+            response={lastResponse}
+            onChange={(extract) => set({ extract })}
+          />
+        </>
+      )}
+
+      {kind === 'set-variable' && (
+        <>
+          <Field label="Variable name" id="node-key">
+            <input id="node-key" value={(config.key as string) ?? ''} onChange={(e) => set({ key: e.target.value })} className={fieldClass} />
+          </Field>
+          <Field label="Value (template)" id="node-value">
+            <input id="node-value" value={(config.value as string) ?? ''} onChange={(e) => set({ value: e.target.value })} placeholder="{{token}}" className={fieldClass} />
+          </Field>
+        </>
+      )}
+
+      {kind === 'transform' && (
+        <>
+          <Field label="Variable" id="t-var">
+            <input id="t-var" value={(config.variable as string) ?? ''} onChange={(e) => set({ variable: e.target.value })} className={fieldClass} />
+          </Field>
+          <Field label="Engine" id="t-engine">
+            <select id="t-engine" value={(config.engine as string) ?? 'template'} onChange={(e) => set({ engine: e.target.value })} className={fieldClass}>
+              <option value="template">Template ({'{{ }}'})</option>
+              <option value="jsonpath">JSONPath</option>
+              <option value="jmespath">JMESPath</option>
+              <option value="regex">Regex</option>
+            </select>
+          </Field>
+          {config.engine !== 'template' && (
+            <Field label="Input (template → source text)" id="t-input">
+              <input id="t-input" value={(config.input as string) ?? ''} onChange={(e) => set({ input: e.target.value })} placeholder="{{responseBody}}" className={fieldClass} />
+            </Field>
+          )}
+          <Field label={config.engine === 'template' ? 'Template' : 'Expression'} id="t-expr">
+            <input id="t-expr" value={(config.expression as string) ?? ''} onChange={(e) => set({ expression: e.target.value })} placeholder={exprPlaceholder(config.engine as string)} className={fieldClass} />
+          </Field>
+        </>
+      )}
+
+      {kind === 'delay' && (
+        <Field label="Delay (milliseconds)" id="node-ms">
+          <input id="node-ms" type="number" min={0} max={600000} value={Number(config.ms ?? 0)} onChange={(e) => set({ ms: clamp(e.target.value, 0, 600000) })} className={fieldClass} />
+        </Field>
+      )}
+
+      {kind === 'condition' && (
+        <Field label="Expression (truthy → true)" id="node-expr">
+          <input id="node-expr" value={(config.expression as string) ?? ''} onChange={(e) => set({ expression: e.target.value })} placeholder="{{status}}" className={fieldClass} />
+        </Field>
+      )}
+
+      {kind === 'switch' && (
+        <>
+          <Field label="Value (template)" id="node-switch-value">
+            <input id="node-switch-value" value={(config.value as string) ?? ''} onChange={(e) => set({ value: e.target.value })} placeholder="{{plan}}" className={fieldClass} />
+          </Field>
+          <Field label="Cases (comma-separated)" id="node-cases">
+            <input
+              id="node-cases"
+              value={((config.cases as string[]) ?? []).join(', ')}
+              onChange={(e) => set({ cases: e.target.value.split(',').map((c) => c.trim()).filter(Boolean) })}
+              placeholder="free, pro, enterprise"
+              className={fieldClass}
+            />
+          </Field>
+          <p className="text-[11px] text-muted">An unmatched value follows the <code>default</code> handle.</p>
+        </>
+      )}
+
+      {kind === 'loop' && (
+        <>
+          <Field label="Mode" id="node-loop-mode">
+            <select
+              id="node-loop-mode"
+              value={(config.mode as string) ?? 'times'}
+              onChange={(e) =>
+                onConfig(
+                  e.target.value === 'times'
+                    ? { mode: 'times', times: 3 }
+                    : { mode: 'while', condition: '', maxIterations: 5 },
+                )
+              }
+              className={fieldClass}
+            >
+              <option value="times">Repeat N times</option>
+              <option value="while">While condition</option>
+            </select>
+          </Field>
+          {config.mode === 'while' ? (
+            <>
+              <Field label="Condition (truthy = continue)" id="node-loop-cond">
+                <input id="node-loop-cond" value={(config.condition as string) ?? ''} onChange={(e) => set({ condition: e.target.value })} placeholder="{{hasMore}}" className={fieldClass} />
+              </Field>
+              <Field label="Max iterations" id="node-loop-max">
+                <input id="node-loop-max" type="number" min={1} max={10000} value={Number(config.maxIterations ?? 5)} onChange={(e) => set({ maxIterations: clamp(e.target.value, 1, 10000) })} className={fieldClass} />
+              </Field>
+            </>
+          ) : (
+            <Field label="Times" id="node-loop-times">
+              <input id="node-loop-times" type="number" min={1} max={10000} value={Number(config.times ?? 1)} onChange={(e) => set({ times: clamp(e.target.value, 1, 10000) })} className={fieldClass} />
+            </Field>
+          )}
+        </>
+      )}
+
+      {kind === 'sub-workflow' && (
+        <Field label="Workflow" id="node-sub">
+          <select id="node-sub" value={(config.workflowId as string) ?? ''} onChange={(e) => set({ workflowId: e.target.value })} className={fieldClass}>
+            <option value="">Select a workflow…</option>
+            {workflows.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      {kind !== 'start' && kind !== 'end' && (
+        <ReliabilitySection policy={node.data.policy} onPolicy={onPolicy} />
+      )}
+
+      <div className="mt-auto">
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={kind === 'start'}
+          className="flex w-full items-center justify-center gap-1.5 rounded-md border border-rose-500/40 px-3 py-1.5 text-sm text-rose-400 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Trash2 size={14} /> Delete node
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ExtractEditor({
+  rules,
+  response,
+  onChange,
+}: {
+  rules: ExtractRule[];
+  response?: ExecutionResponse;
+  onChange: (rules: ExtractRule[]) => void;
+}): JSX.Element {
+  const update = (i: number, patch: Partial<ExtractRule>): void =>
+    onChange(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const add = (): void =>
+    onChange([...rules, { variable: '', source: 'body', engine: 'jsonpath', expression: '' }]);
+  const remove = (i: number): void => onChange(rules.filter((_, j) => j !== i));
+
+  return (
+    <details open className="rounded-md border border-border">
+      <summary className="cursor-pointer px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+        Extract (response → variables)
+      </summary>
+      <div className="flex flex-col gap-2 border-t border-border p-2.5">
+        {rules.length === 0 && <p className="text-[11px] text-muted">No mappings yet.</p>}
+        {rules.map((rule, i) => {
+          const preview = response ? extractFromResponse(response, rule) : null;
+          return (
+            <div key={i} className="flex flex-col gap-1 rounded-md border border-border p-1.5">
+              <div className="flex items-center gap-1">
+                <input value={rule.variable} onChange={(e) => update(i, { variable: e.target.value })} placeholder="variable" className={`${smallField} w-24`} />
+                <select value={rule.source} onChange={(e) => update(i, { source: e.target.value as ExtractRule['source'] })} className={smallField}>
+                  <option value="body">body</option>
+                  <option value="header">header</option>
+                  <option value="status">status</option>
+                </select>
+                {rule.source === 'body' && (
+                  <select value={rule.engine} onChange={(e) => update(i, { engine: e.target.value as ExtractRule['engine'] })} className={smallField}>
+                    <option value="jsonpath">JSONPath</option>
+                    <option value="jmespath">JMESPath</option>
+                    <option value="regex">regex</option>
+                  </select>
+                )}
+                <button type="button" aria-label="Remove mapping" onClick={() => remove(i)} className="ml-auto text-muted hover:text-rose-400">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+              {rule.source !== 'status' && (
+                <input
+                  value={rule.expression}
+                  onChange={(e) => update(i, { expression: e.target.value })}
+                  placeholder={rule.source === 'header' ? 'Header-Name' : exprPlaceholder(rule.engine)}
+                  className={`${smallField} w-full font-mono`}
+                />
+              )}
+              {preview !== null && (
+                <p className="truncate text-[10px] text-muted">
+                  preview: <span className="font-mono text-fg">{preview || '∅'}</span>
+                </p>
+              )}
+            </div>
+          );
+        })}
+        <button type="button" onClick={add} className="flex items-center justify-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-2">
+          <Plus size={12} /> Add mapping
+        </button>
+      </div>
+    </details>
+  );
+}
+
+function ReliabilitySection({
+  policy,
+  onPolicy,
+}: {
+  policy: NodePolicy | undefined;
+  onPolicy: (policy: NodePolicy | undefined) => void;
+}): JSX.Element {
+  const p = policy ?? {};
+  const patch = (next: Partial<NodePolicy>): void => {
+    const merged: NodePolicy = { ...p, ...next };
+    const cleaned = Object.fromEntries(
+      Object.entries(merged).filter(([, v]) => v !== undefined && !(typeof v === 'number' && Number.isNaN(v))),
+    ) as NodePolicy;
+    onPolicy(Object.keys(cleaned).length ? cleaned : undefined);
+  };
+  return (
+    <details className="rounded-md border border-border">
+      <summary className="cursor-pointer px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+        Reliability
+      </summary>
+      <div className="flex flex-col gap-2 border-t border-border p-2.5">
+        <Field label="Retries" id="pol-retries">
+          <input id="pol-retries" type="number" min={0} max={10} value={Number(p.retries ?? 0)} onChange={(e) => patch({ retries: clamp(e.target.value, 0, 10) })} className={fieldClass} />
+        </Field>
+        <Field label="Timeout (ms, 0 = none)" id="pol-timeout">
+          <input id="pol-timeout" type="number" min={0} max={600000} value={Number(p.timeoutMs ?? 0)} onChange={(e) => patch({ timeoutMs: clamp(e.target.value, 0, 600000) })} className={fieldClass} />
+        </Field>
+        <Field label="On error" id="pol-onerror">
+          <select id="pol-onerror" value={p.onError ?? 'fail'} onChange={(e) => patch({ onError: e.target.value as NodePolicy['onError'] })} className={fieldClass}>
+            <option value="fail">Fail the run</option>
+            <option value="continue">Continue</option>
+            <option value="route">Route to error edge</option>
+          </select>
+        </Field>
+      </div>
+    </details>
+  );
+}
+
+function Field({ label, id, children }: { label: string; id: string; children: React.ReactNode }): JSX.Element {
+  return (
+    <div>
+      <label className={labelClass} htmlFor={id}>
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function exprPlaceholder(engine: string): string {
+  if (engine === 'jmespath') return 'data.items[0].id';
+  if (engine === 'regex') return 'id=(\\d+)';
+  if (engine === 'template') return '{{value}}';
+  return '$.data.items[0].id';
+}
+
+function clamp(raw: string, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Number(raw) || 0));
+}
