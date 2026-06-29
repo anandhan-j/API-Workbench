@@ -14,6 +14,8 @@ export interface VariableHoverPopoverProps {
   secret: boolean;
   /** Extra scope ids (e.g. collectionId) merged with the active workspace. */
   extraContext?: VariableContext;
+  /** When set, the token is a flow variable; show its producing step instead of a value. */
+  source?: { nodeName: string; field: string };
   onMouseEnter: () => void;
   onMouseLeave: () => void;
 }
@@ -44,6 +46,7 @@ export function VariableHoverPopover({
   currentScope,
   secret,
   extraContext,
+  source,
   onMouseEnter,
   onMouseLeave,
 }: VariableHoverPopoverProps): JSX.Element {
@@ -56,7 +59,7 @@ export function VariableHoverPopover({
   const valueQuery = useQuery({
     queryKey: ['evalVar', name, context],
     queryFn: () => invoke('variable.evaluate', { template: `{{${name}}}`, context }),
-    enabled: isBridgeAvailable() && !secret,
+    enabled: isBridgeAvailable() && !secret && !source,
     staleTime: 2_000,
   });
 
@@ -95,6 +98,12 @@ export function VariableHoverPopover({
     setEditing(true);
   };
 
+  // Keep the card inside the viewport: anchoring at the token's left would clip
+  // the fixed-width card off the right edge when the token sits near it.
+  const POPOVER_WIDTH = 256; // matches w-64
+  const MARGIN = 8;
+  const left = Math.max(MARGIN, Math.min(anchor.left, window.innerWidth - POPOVER_WIDTH - MARGIN));
+
   return createPortal(
     <div
       onMouseEnter={onMouseEnter}
@@ -105,20 +114,32 @@ export function VariableHoverPopover({
       // no token under the cursor and schedules a close — so moving onto the
       // Edit/Save buttons would hide the popover. Stop it at the root.
       onMouseMove={(e) => e.stopPropagation()}
-      style={{ position: 'fixed', top: anchor.bottom + 4, left: anchor.left, zIndex: 60 }}
+      style={{ position: 'fixed', top: anchor.bottom + 4, left, zIndex: 60 }}
       className="w-64 rounded-md border border-border bg-surface p-3 text-xs shadow-xl"
     >
       <div className="mb-1 flex items-center justify-between gap-2">
         <span className="truncate font-mono font-medium text-fg">{name}</span>
         <span className="shrink-0 rounded bg-bg px-1.5 py-0.5 text-[10px] uppercase text-muted">
-          {currentScope ?? 'unresolved'}
+          {source ? 'step' : (currentScope ?? 'unresolved')}
         </span>
       </div>
 
-      {!editing ? (
+      {source ? (
+        <div className="space-y-1">
+          <div className="rounded bg-bg px-2 py-1 text-muted">
+            Produced by <span className="font-medium text-fg">{source.nodeName}</span>
+            <span className="text-muted"> · {source.field}</span>
+          </div>
+          <p className="text-[11px] text-muted">Value is available when the workflow runs.</p>
+        </div>
+      ) : !editing ? (
         <>
           <div className="rounded bg-bg px-2 py-1 font-mono text-muted">
-            {isUnresolved ? <span className="text-warning">unresolved</span> : resolved || <span className="text-muted">(empty)</span>}
+            {isUnresolved ? (
+              <span className="text-warning">unresolved</span>
+            ) : (
+              resolved || <span className="text-muted">(empty)</span>
+            )}
           </div>
           <button
             type="button"

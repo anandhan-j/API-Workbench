@@ -58,6 +58,10 @@ import { NodePalette } from './NodePalette';
 import { NodeInspector } from './NodeInspector';
 import { RunPanel, type RunningNode } from './RunPanel';
 import { WorkflowInputPrompt } from './WorkflowInputPrompt';
+import { upstreamVariables } from './flow-variables';
+import { useVariableKeys } from '../variables/use-variable-keys';
+import type { VariableSuggestion } from '../variables/suggestion';
+import type { VariableContext } from '@shared/variable';
 
 interface Mutators {
   rename: (id: string, name: string) => void;
@@ -169,6 +173,29 @@ export function WorkflowsPage(): JSX.Element {
     },
     [listHeight, setListHeight],
   );
+
+  // Variables for {{ }} autocomplete in the inspector: stored vars for the
+  // active workspace, plus variables produced by the selected node's upstream
+  // steps (computed from the live graph, so they update as the user edits).
+  const storedKeys = useVariableKeys();
+  const flowSuggestions = useMemo<VariableSuggestion[]>(() => {
+    const graph = graphRef.current ?? detail.data?.graph ?? null;
+    if (!graph || !selectedNode) return [];
+    return upstreamVariables(graph, selectedNode.id).map((v) => ({
+      key: v.key,
+      scope: 'runtime' as const,
+      secret: false,
+      source: { nodeName: v.nodeName, field: v.field },
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirtyAt, selectedNode, detail.data]);
+  const inspectorSuggestions = useMemo<VariableSuggestion[]>(() => {
+    const seen = new Set(flowSuggestions.map((sug) => sug.key));
+    return [...flowSuggestions, ...storedKeys.filter((k) => !seen.has(k.key))];
+  }, [flowSuggestions, storedKeys]);
+  const variableContext: VariableContext | undefined = active.data?.workspaceId
+    ? { workspaceId: active.data.workspaceId }
+    : undefined;
 
   // Auto-select the first workflow as the list resolves.
   useEffect(() => {
@@ -684,12 +711,15 @@ export function WorkflowsPage(): JSX.Element {
 
         {/* Right: inspector + run results */}
         <aside className="flex w-80 shrink-0 flex-col divide-y divide-border overflow-hidden rounded-md border border-border">
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
             <NodeInspector
               node={selectedNode}
               workflows={(workflows.data ?? []).filter((w) => w.id !== selectedId)}
               projectRequests={projectRequests.data ?? []}
               onImportRequest={(id) => void handleImportRequest(id)}
+              suggestions={inspectorSuggestions}
+              variableContext={variableContext}
+              flowSuggestions={flowSuggestions}
               lastResponse={
                 run.data?.nodeResults.find((n) => n.nodeId === selectedNode?.id)?.response
               }

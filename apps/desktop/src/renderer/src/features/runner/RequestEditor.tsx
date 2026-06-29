@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Loader2, Save, Send, X } from 'lucide-react';
 import type { HttpMethod } from '@shared/collection';
 import type { ExecutionResponse } from '@shared/execution';
@@ -17,6 +17,7 @@ import { ScriptEditor } from './ScriptEditor';
 import { VariableField } from '../variables/VariableField';
 import { RequestVariablesTab } from '../variables/RequestVariablesTab';
 import { useVariableKeys } from '../variables/use-variable-keys';
+import type { VariableSuggestion } from '../variables/suggestion';
 import { useActiveSelection } from '../workspaces/use-workspaces';
 import {
   applyParamsToUrl,
@@ -59,11 +60,22 @@ export interface RequestEditorProps {
   saved?: boolean;
   /** Collection/request the editor belongs to, for variable scoping in scripts. */
   scriptContext?: { collectionId?: string; requestId?: string };
+  /** Extra suggestions (e.g. upstream-step variables) merged ahead of stored vars. */
+  extraSuggestions?: VariableSuggestion[];
 }
 
 /** A full REST request editor: method/URL/Send plus tabbed params, auth, headers, body, scripts, and settings, with a response panel. */
-export function RequestEditor({ initial, onSave, saving, saved, scriptContext }: RequestEditorProps): JSX.Element {
-  const [draft, setDraft] = useState<RequestDraft>(initial ?? defaultDraft('GET', 'https://httpbin.org/get'));
+export function RequestEditor({
+  initial,
+  onSave,
+  saving,
+  saved,
+  scriptContext,
+  extraSuggestions,
+}: RequestEditorProps): JSX.Element {
+  const [draft, setDraft] = useState<RequestDraft>(
+    initial ?? defaultDraft('GET', 'https://httpbin.org/get'),
+  );
   const [tab, setTab] = useState<Tab>('params');
   const [scriptPhase, setScriptPhase] = useState<'pre' | 'post'>('pre');
   const [history, setHistory] = useState<{ at: number; response: ExecutionResponse }[]>([]);
@@ -75,7 +87,12 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
   const cancel = useCancel();
   const runScript = useRunScript();
   const runPreScript = useRunPreScript();
-  const suggestions = useVariableKeys(scriptContext ?? {});
+  const storedKeys = useVariableKeys(scriptContext ?? {});
+  const suggestions = useMemo<VariableSuggestion[]>(() => {
+    const extra = extraSuggestions ?? [];
+    const seen = new Set(extra.map((s) => s.key));
+    return [...extra, ...storedKeys.filter((k) => !seen.has(k.key))];
+  }, [extraSuggestions, storedKeys]);
   const active = useActiveSelection();
   const qc = useQueryClient();
 
@@ -142,7 +159,8 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
     e.preventDefault();
     const startY = e.clientY;
     const startH = respHeight;
-    const move = (ev: MouseEvent): void => setRespHeight(Math.min(900, Math.max(140, startH + (ev.clientY - startY))));
+    const move = (ev: MouseEvent): void =>
+      setRespHeight(Math.min(900, Math.max(140, startH + (ev.clientY - startY))));
     const up = (): void => {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
@@ -155,7 +173,10 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
     window.addEventListener('mouseup', up);
   };
 
-  const shownResponse = history.length > 0 ? history[Math.min(viewIndex, history.length - 1)].response : execute.data ?? null;
+  const shownResponse =
+    history.length > 0
+      ? history[Math.min(viewIndex, history.length - 1)].response
+      : (execute.data ?? null);
 
   const tabs: { id: Tab; label: string; badge?: number }[] = [
     { id: 'params', label: 'Params', badge: activeCount(draft.params) },
@@ -179,10 +200,15 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
           value={draft.method}
           onChange={(e) => patch({ method: e.target.value as HttpMethod })}
           aria-label="HTTP method"
-          className={cn('rounded-md border border-border bg-surface px-3 py-2 text-sm font-bold', METHOD_COLOR[draft.method])}
+          className={cn(
+            'rounded-md border border-border bg-surface px-3 py-2 text-sm font-bold',
+            METHOD_COLOR[draft.method],
+          )}
         >
           {METHODS.map((m) => (
-            <option key={m} value={m} className="text-fg">{m}</option>
+            <option key={m} value={m} className="text-fg">
+              {m}
+            </option>
           ))}
         </select>
         <div className="min-w-0 flex-1">
@@ -197,11 +223,19 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
           />
         </div>
         {execute.isPending ? (
-          <button type="button" onClick={stop} className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-sm">
+          <button
+            type="button"
+            onClick={stop}
+            className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-sm"
+          >
             <X size={15} /> Cancel
           </button>
         ) : (
-          <button type="button" onClick={() => void send()} className="flex items-center gap-1.5 rounded-md bg-accent px-5 py-2 text-sm font-semibold text-accent-fg">
+          <button
+            type="button"
+            onClick={() => void send()}
+            className="flex items-center gap-1.5 rounded-md bg-accent px-5 py-2 text-sm font-semibold text-accent-fg"
+          >
             <Send size={15} /> Send
           </button>
         )}
@@ -228,7 +262,9 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
             onClick={() => setTab(t.id)}
             className={cn(
               'border-b-2 px-3 py-2',
-              tab === t.id ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg',
+              tab === t.id
+                ? 'border-accent text-fg'
+                : 'border-transparent text-muted hover:text-fg',
             )}
           >
             {t.label}
@@ -241,18 +277,33 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
       <div className="mt-3">
         {tab === 'params' && (
           <div className="rounded-md border border-border">
-            <KeyValueEditor rows={draft.params} onChange={onParamsChange} suggestions={suggestions} />
+            <KeyValueEditor
+              rows={draft.params}
+              onChange={onParamsChange}
+              suggestions={suggestions}
+            />
           </div>
         )}
         {tab === 'headers' && (
           <div className="rounded-md border border-border">
-            <KeyValueEditor rows={draft.headers} onChange={(rows) => patch({ headers: rows })} keyPlaceholder="Header" suggestions={suggestions} />
+            <KeyValueEditor
+              rows={draft.headers}
+              onChange={(rows) => patch({ headers: rows })}
+              keyPlaceholder="Header"
+              suggestions={suggestions}
+            />
           </div>
         )}
         {tab === 'variables' && scriptContext?.requestId && (
           <RequestVariablesTab requestId={scriptContext.requestId} />
         )}
-        {tab === 'auth' && <AuthEditor auth={draft.auth} onChange={(auth) => patch({ auth })} suggestions={suggestions} />}
+        {tab === 'auth' && (
+          <AuthEditor
+            auth={draft.auth}
+            onChange={(auth) => patch({ auth })}
+            suggestions={suggestions}
+          />
+        )}
         {tab === 'body' && (
           <BodyEditor
             mode={draft.bodyMode}
@@ -269,7 +320,9 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
           <div className="flex gap-4">
             <div className="w-36 shrink-0 space-y-1">
               {(['pre', 'post'] as const).map((p) => {
-                const has = (p === 'pre' ? draft.preRequestScript : draft.postResponseScript).trim();
+                const has = (
+                  p === 'pre' ? draft.preRequestScript : draft.postResponseScript
+                ).trim();
                 return (
                   <button
                     key={p}
@@ -292,8 +345,11 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
                 <>
                   <p className="text-xs text-muted">
                     Runs <strong>before</strong> the request is sent. Set variables with{' '}
-                    <code className="text-accent">workbench.environment/globals/collectionVariables.set()</code>{' '}
-                    and read the outgoing request via <code className="text-accent">workbench.request</code>.
+                    <code className="text-accent">
+                      workbench.environment/globals/collectionVariables.set()
+                    </code>{' '}
+                    and read the outgoing request via{' '}
+                    <code className="text-accent">workbench.request</code>.
                   </p>
                   <ScriptEditor
                     value={draft.preRequestScript}
@@ -316,7 +372,10 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
                   <p className="text-xs text-muted">
                     Runs <strong>after</strong> a successful send. Read{' '}
                     <code className="text-accent">workbench.response</code> and write variables with{' '}
-                    <code className="text-accent">workbench.environment/globals/collectionVariables.set()</code>.
+                    <code className="text-accent">
+                      workbench.environment/globals/collectionVariables.set()
+                    </code>
+                    .
                   </p>
                   <ScriptEditor
                     value={draft.postResponseScript}
@@ -345,7 +404,9 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
               id="timeout"
               type="number"
               value={draft.options.timeoutMs}
-              onChange={(e) => patch({ options: { ...draft.options, timeoutMs: Number(e.target.value) } })}
+              onChange={(e) =>
+                patch({ options: { ...draft.options, timeoutMs: Number(e.target.value) } })
+              }
               className="rounded-md border border-border bg-bg px-3 py-1.5"
             />
             <label htmlFor="retries">Max retries</label>
@@ -353,7 +414,9 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
               id="retries"
               type="number"
               value={draft.options.maxRetries}
-              onChange={(e) => patch({ options: { ...draft.options, maxRetries: Number(e.target.value) } })}
+              onChange={(e) =>
+                patch({ options: { ...draft.options, maxRetries: Number(e.target.value) } })
+              }
               className="rounded-md border border-border bg-bg px-3 py-1.5"
             />
             <label htmlFor="redirects">Follow redirects</label>
@@ -361,7 +424,9 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
               id="redirects"
               type="checkbox"
               checked={draft.options.followRedirects}
-              onChange={(e) => patch({ options: { ...draft.options, followRedirects: e.target.checked } })}
+              onChange={(e) =>
+                patch({ options: { ...draft.options, followRedirects: e.target.checked } })
+              }
             />
           </div>
         )}
@@ -406,7 +471,10 @@ export function RequestEditor({ initial, onSave, saving, saved, scriptContext }:
           <div className="h-0.5 w-10 rounded bg-border group-hover:bg-accent" />
         </div>
 
-        <div style={{ height: respHeight }} className="overflow-auto rounded-md border border-border">
+        <div
+          style={{ height: respHeight }}
+          className="overflow-auto rounded-md border border-border"
+        >
           <ResponseViewer response={shownResponse} loading={execute.isPending} />
         </div>
       </div>
@@ -452,9 +520,10 @@ function ScriptResults({ result }: { result: ScriptRunResult | null }): JSX.Elem
         </div>
       )}
 
-      {!result.error && result.tests.length === 0 && result.variables.length === 0 && result.logs.length === 0 && (
-        <p className="text-muted">Script ran with no output.</p>
-      )}
+      {!result.error &&
+        result.tests.length === 0 &&
+        result.variables.length === 0 &&
+        result.logs.length === 0 && <p className="text-muted">Script ran with no output.</p>}
     </div>
   );
 }

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ResolvedKey, VariableContext } from '@shared/variable';
+import type { VariableContext } from '@shared/variable';
 import { cn } from '../../lib/cn';
 import { splitHighlight } from './highlight';
 import { VariableHoverPopover } from './VariableHoverPopover';
+import type { VariableSuggestion } from './suggestion';
 
 export interface VariableFieldProps {
   value: string;
   onChange: (value: string) => void;
-  suggestions: ResolvedKey[];
+  suggestions: VariableSuggestion[];
   multiline?: boolean;
   rows?: number;
   placeholder?: string;
@@ -73,7 +74,9 @@ export function VariableField({
   const [activeIndex, setActiveIndex] = useState(0);
   const pendingCaret = useRef<number | null>(null);
 
-  const [hovered, setHovered] = useState<{ name: string; left: number; bottom: number } | null>(null);
+  const [hovered, setHovered] = useState<{ name: string; left: number; bottom: number } | null>(
+    null,
+  );
   const closeTimer = useRef<number | null>(null);
 
   const scopeByKey = new Map(suggestions.map((s) => [s.key, s]));
@@ -93,7 +96,12 @@ export function VariableField({
     if (!spans) return;
     for (const span of spans) {
       const r = span.getBoundingClientRect();
-      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+      if (
+        e.clientX >= r.left &&
+        e.clientX <= r.right &&
+        e.clientY >= r.top &&
+        e.clientY <= r.bottom
+      ) {
         cancelClose();
         const name = span.getAttribute('data-var') ?? '';
         if (hovered?.name !== name || hovered.left !== r.left) {
@@ -169,7 +177,11 @@ export function VariableField({
 
   const wrap = multiline ? 'whitespace-pre-wrap break-words' : 'whitespace-pre';
   // Backdrop shows the real text (with colored tokens); the field text is transparent.
-  const backdropClass = cn(className, 'pointer-events-none absolute inset-0 overflow-hidden text-fg', wrap);
+  const backdropClass = cn(
+    className,
+    'pointer-events-none absolute inset-0 overflow-hidden text-fg',
+    wrap,
+  );
   const fieldStyle: React.CSSProperties = {
     color: 'transparent',
     background: 'transparent',
@@ -211,11 +223,7 @@ export function VariableField({
         {/* keep trailing newline visible in multiline */}
         {multiline && value.endsWith('\n') ? ' ' : null}
       </div>
-      {multiline ? (
-        <textarea {...shared} rows={rows} />
-      ) : (
-        <input {...shared} type="text" />
-      )}
+      {multiline ? <textarea {...shared} rows={rows} /> : <input {...shared} type="text" />}
 
       {open && matches.length > 0 && (
         <ul
@@ -235,12 +243,19 @@ export function VariableField({
                   i === activeIndex ? 'bg-surface-2' : 'hover:bg-surface-2',
                 )}
               >
-                <span className="truncate font-mono">
-                  {s.key}
-                  {s.secret && <span className="ml-1 text-muted">(secret)</span>}
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate font-mono">
+                    {s.key}
+                    {s.secret && <span className="ml-1 text-muted">(secret)</span>}
+                  </span>
+                  {s.source && (
+                    <span className="truncate text-[10px] text-muted">
+                      {s.source.nodeName} · {s.source.field}
+                    </span>
+                  )}
                 </span>
                 <span className="shrink-0 rounded bg-bg px-1 text-[10px] uppercase text-muted">
-                  {SCOPE_ABBR[s.scope] ?? s.scope}
+                  {s.source ? 'step' : (SCOPE_ABBR[s.scope] ?? s.scope)}
                 </span>
               </button>
             </li>
@@ -255,6 +270,9 @@ export function VariableField({
           currentScope={scopeByKey.get(hovered.name)?.scope ?? null}
           secret={scopeByKey.get(hovered.name)?.secret ?? false}
           extraContext={variableContext}
+          {...(scopeByKey.get(hovered.name)?.source
+            ? { source: scopeByKey.get(hovered.name)!.source }
+            : {})}
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
         />

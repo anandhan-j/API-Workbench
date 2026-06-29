@@ -17,10 +17,14 @@ import type { FlowNode } from './graph-mapping';
 import { NODE_META } from './node-meta';
 import type { ProjectRequestRef } from './use-project-requests';
 import { draftToNodeConfig, nodeConfigToDraft } from './request-node-draft';
+import type { VariableContext } from '@shared/variable';
+import { VariableField } from '../variables/VariableField';
+import type { VariableSuggestion } from '../variables/suggestion';
 
 const fieldClass =
   'w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-sm outline-none focus:border-accent';
-const smallField = 'rounded-md border border-border bg-bg px-2 py-1 text-xs outline-none focus:border-accent';
+const smallField =
+  'rounded-md border border-border bg-bg px-2 py-1 text-xs outline-none focus:border-accent';
 const labelClass = 'block text-[11px] font-medium uppercase tracking-wide text-muted';
 
 const METHOD_COLOR: Record<string, string> = {
@@ -41,6 +45,12 @@ interface NodeInspectorProps {
   projectRequests?: ProjectRequestRef[];
   /** Imports a collection request's definition into the selected request node. */
   onImportRequest?: (requestId: string) => void;
+  /** Variables offered for {{ }} autocomplete (stored vars + upstream-step vars). */
+  suggestions?: VariableSuggestion[];
+  /** Scope context (workspace/collection) for resolving variable values on hover. */
+  variableContext?: VariableContext;
+  /** Upstream-step variables, forwarded into the request node editor. */
+  flowSuggestions?: VariableSuggestion[];
   onRename: (name: string) => void;
   onConfig: (config: WorkflowNode['config']) => void;
   onPolicy: (policy: NodePolicy | undefined) => void;
@@ -53,6 +63,9 @@ export function NodeInspector({
   lastResponse,
   projectRequests = [],
   onImportRequest,
+  suggestions = [],
+  variableContext,
+  flowSuggestions = [],
   onRename,
   onConfig,
   onPolicy,
@@ -84,7 +97,12 @@ export function NodeInspector({
 
       {kind !== 'start' && kind !== 'end' && (
         <Field label="Name" id="node-name">
-          <input id="node-name" value={node.data.name} onChange={(e) => onRename(e.target.value)} className={fieldClass} />
+          <input
+            id="node-name"
+            value={node.data.name}
+            onChange={(e) => onRename(e.target.value)}
+            className={fieldClass}
+          />
         </Field>
       )}
 
@@ -107,8 +125,12 @@ export function NodeInspector({
               className="mt-1 flex w-full items-center justify-between gap-2 rounded-md border border-border bg-bg px-2.5 py-1.5 text-sm hover:bg-surface-2"
             >
               <span className="flex min-w-0 items-center gap-2">
-                <span className="font-mono text-xs font-semibold text-accent">{(config.method as string) ?? 'GET'}</span>
-                <span className="truncate text-muted">{(config.url as string) || 'Configure…'}</span>
+                <span className="font-mono text-xs font-semibold text-accent">
+                  {(config.method as string) ?? 'GET'}
+                </span>
+                <span className="truncate text-muted">
+                  {(config.url as string) || 'Configure…'}
+                </span>
               </span>
               <SlidersHorizontal size={14} className="shrink-0 text-muted" />
             </button>
@@ -124,10 +146,23 @@ export function NodeInspector({
       {kind === 'set-variable' && (
         <>
           <Field label="Variable name" id="node-key">
-            <input id="node-key" value={(config.key as string) ?? ''} onChange={(e) => set({ key: e.target.value })} className={fieldClass} />
+            <input
+              id="node-key"
+              value={(config.key as string) ?? ''}
+              onChange={(e) => set({ key: e.target.value })}
+              className={fieldClass}
+            />
           </Field>
           <Field label="Value (template)" id="node-value">
-            <input id="node-value" value={(config.value as string) ?? ''} onChange={(e) => set({ value: e.target.value })} placeholder="{{token}}" className={fieldClass} />
+            <VariableField
+              value={(config.value as string) ?? ''}
+              onChange={(value) => set({ value })}
+              suggestions={suggestions}
+              variableContext={variableContext}
+              aria-label="Value (template)"
+              placeholder="{{token}}"
+              className={fieldClass}
+            />
           </Field>
         </>
       )}
@@ -135,10 +170,20 @@ export function NodeInspector({
       {kind === 'transform' && (
         <>
           <Field label="Variable" id="t-var">
-            <input id="t-var" value={(config.variable as string) ?? ''} onChange={(e) => set({ variable: e.target.value })} className={fieldClass} />
+            <input
+              id="t-var"
+              value={(config.variable as string) ?? ''}
+              onChange={(e) => set({ variable: e.target.value })}
+              className={fieldClass}
+            />
           </Field>
           <Field label="Engine" id="t-engine">
-            <select id="t-engine" value={(config.engine as string) ?? 'template'} onChange={(e) => set({ engine: e.target.value })} className={fieldClass}>
+            <select
+              id="t-engine"
+              value={(config.engine as string) ?? 'template'}
+              onChange={(e) => set({ engine: e.target.value })}
+              className={fieldClass}
+            >
               <option value="template">Template ({'{{ }}'})</option>
               <option value="jsonpath">JSONPath</option>
               <option value="jmespath">JMESPath</option>
@@ -147,42 +192,101 @@ export function NodeInspector({
           </Field>
           {config.engine !== 'template' && (
             <Field label="Input (template → source text)" id="t-input">
-              <input id="t-input" value={(config.input as string) ?? ''} onChange={(e) => set({ input: e.target.value })} placeholder="{{responseBody}}" className={fieldClass} />
+              <VariableField
+                value={(config.input as string) ?? ''}
+                onChange={(input) => set({ input })}
+                suggestions={suggestions}
+                variableContext={variableContext}
+                aria-label="Input (template)"
+                placeholder="{{responseBody}}"
+                className={fieldClass}
+              />
             </Field>
           )}
           <Field label={config.engine === 'template' ? 'Template' : 'Expression'} id="t-expr">
-            <input id="t-expr" value={(config.expression as string) ?? ''} onChange={(e) => set({ expression: e.target.value })} placeholder={exprPlaceholder(config.engine as string)} className={fieldClass} />
+            {config.engine === 'template' ? (
+              <VariableField
+                value={(config.expression as string) ?? ''}
+                onChange={(expression) => set({ expression })}
+                suggestions={suggestions}
+                variableContext={variableContext}
+                aria-label="Template"
+                placeholder={exprPlaceholder(config.engine as string)}
+                className={fieldClass}
+              />
+            ) : (
+              <input
+                id="t-expr"
+                value={(config.expression as string) ?? ''}
+                onChange={(e) => set({ expression: e.target.value })}
+                placeholder={exprPlaceholder(config.engine as string)}
+                className={fieldClass}
+              />
+            )}
           </Field>
         </>
       )}
 
       {kind === 'delay' && (
         <Field label="Delay (milliseconds)" id="node-ms">
-          <input id="node-ms" type="number" min={0} max={600000} value={Number(config.ms ?? 0)} onChange={(e) => set({ ms: clamp(e.target.value, 0, 600000) })} className={fieldClass} />
+          <input
+            id="node-ms"
+            type="number"
+            min={0}
+            max={600000}
+            value={Number(config.ms ?? 0)}
+            onChange={(e) => set({ ms: clamp(e.target.value, 0, 600000) })}
+            className={fieldClass}
+          />
         </Field>
       )}
 
       {kind === 'condition' && (
         <Field label="Expression (truthy → true)" id="node-expr">
-          <input id="node-expr" value={(config.expression as string) ?? ''} onChange={(e) => set({ expression: e.target.value })} placeholder="{{status}}" className={fieldClass} />
+          <VariableField
+            value={(config.expression as string) ?? ''}
+            onChange={(expression) => set({ expression })}
+            suggestions={suggestions}
+            variableContext={variableContext}
+            aria-label="Expression (truthy → true)"
+            placeholder="{{status}}"
+            className={fieldClass}
+          />
         </Field>
       )}
 
       {kind === 'switch' && (
         <>
           <Field label="Value (template)" id="node-switch-value">
-            <input id="node-switch-value" value={(config.value as string) ?? ''} onChange={(e) => set({ value: e.target.value })} placeholder="{{plan}}" className={fieldClass} />
+            <VariableField
+              value={(config.value as string) ?? ''}
+              onChange={(value) => set({ value })}
+              suggestions={suggestions}
+              variableContext={variableContext}
+              aria-label="Switch value (template)"
+              placeholder="{{plan}}"
+              className={fieldClass}
+            />
           </Field>
           <Field label="Cases (comma-separated)" id="node-cases">
             <input
               id="node-cases"
               value={((config.cases as string[]) ?? []).join(', ')}
-              onChange={(e) => set({ cases: e.target.value.split(',').map((c) => c.trim()).filter(Boolean) })}
+              onChange={(e) =>
+                set({
+                  cases: e.target.value
+                    .split(',')
+                    .map((c) => c.trim())
+                    .filter(Boolean),
+                })
+              }
               placeholder="free, pro, enterprise"
               className={fieldClass}
             />
           </Field>
-          <p className="text-[11px] text-muted">An unmatched value follows the <code>default</code> handle.</p>
+          <p className="text-[11px] text-muted">
+            An unmatched value follows the <code>default</code> handle.
+          </p>
         </>
       )}
 
@@ -208,15 +312,39 @@ export function NodeInspector({
           {config.mode === 'while' ? (
             <>
               <Field label="Condition (truthy = continue)" id="node-loop-cond">
-                <input id="node-loop-cond" value={(config.condition as string) ?? ''} onChange={(e) => set({ condition: e.target.value })} placeholder="{{hasMore}}" className={fieldClass} />
+                <VariableField
+                  value={(config.condition as string) ?? ''}
+                  onChange={(condition) => set({ condition })}
+                  suggestions={suggestions}
+                  variableContext={variableContext}
+                  aria-label="Loop condition"
+                  placeholder="{{hasMore}}"
+                  className={fieldClass}
+                />
               </Field>
               <Field label="Max iterations" id="node-loop-max">
-                <input id="node-loop-max" type="number" min={1} max={10000} value={Number(config.maxIterations ?? 5)} onChange={(e) => set({ maxIterations: clamp(e.target.value, 1, 10000) })} className={fieldClass} />
+                <input
+                  id="node-loop-max"
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={Number(config.maxIterations ?? 5)}
+                  onChange={(e) => set({ maxIterations: clamp(e.target.value, 1, 10000) })}
+                  className={fieldClass}
+                />
               </Field>
             </>
           ) : (
             <Field label="Times" id="node-loop-times">
-              <input id="node-loop-times" type="number" min={1} max={10000} value={Number(config.times ?? 1)} onChange={(e) => set({ times: clamp(e.target.value, 1, 10000) })} className={fieldClass} />
+              <input
+                id="node-loop-times"
+                type="number"
+                min={1}
+                max={10000}
+                value={Number(config.times ?? 1)}
+                onChange={(e) => set({ times: clamp(e.target.value, 1, 10000) })}
+                className={fieldClass}
+              />
             </Field>
           )}
         </>
@@ -224,7 +352,12 @@ export function NodeInspector({
 
       {kind === 'sub-workflow' && (
         <Field label="Workflow" id="node-sub">
-          <select id="node-sub" value={(config.workflowId as string) ?? ''} onChange={(e) => set({ workflowId: e.target.value })} className={fieldClass}>
+          <select
+            id="node-sub"
+            value={(config.workflowId as string) ?? ''}
+            onChange={(e) => set({ workflowId: e.target.value })}
+            className={fieldClass}
+          >
             <option value="">Select a workflow…</option>
             {workflows.map((w) => (
               <option key={w.id} value={w.id}>
@@ -250,6 +383,8 @@ export function NodeInspector({
           <UserInputFieldsEditor
             fields={(config.fields as UserInputField[]) ?? []}
             onChange={(fields) => set({ fields })}
+            suggestions={suggestions}
+            variableContext={variableContext}
           />
         </>
       )}
@@ -278,7 +413,10 @@ export function NodeInspector({
           <div className="h-[70vh]">
             <RequestEditor
               initial={nodeConfigToDraft(node.data.config as RequestNodeConfig)}
-              {...(config.requestId ? { scriptContext: { requestId: config.requestId as string } } : {})}
+              extraSuggestions={flowSuggestions}
+              {...(config.requestId
+                ? { scriptContext: { requestId: config.requestId as string } }
+                : {})}
               onSave={(draft) => {
                 onConfig(
                   draftToNodeConfig(
@@ -323,21 +461,39 @@ function ExtractEditor({
           const preview = response ? extractFromResponse(response, rule) : null;
           return (
             <div key={i} className="flex flex-col gap-1 rounded-md border border-border p-1.5">
-              <div className="flex items-center gap-1">
-                <input value={rule.variable} onChange={(e) => update(i, { variable: e.target.value })} placeholder="variable" className={`${smallField} w-24`} />
-                <select value={rule.source} onChange={(e) => update(i, { source: e.target.value as ExtractRule['source'] })} className={smallField}>
+              <div className="flex flex-wrap items-center gap-1">
+                <input
+                  value={rule.variable}
+                  onChange={(e) => update(i, { variable: e.target.value })}
+                  placeholder="variable"
+                  className={`${smallField} min-w-[5rem] flex-1`}
+                />
+                <select
+                  value={rule.source}
+                  onChange={(e) => update(i, { source: e.target.value as ExtractRule['source'] })}
+                  className={`${smallField} shrink-0`}
+                >
                   <option value="body">body</option>
                   <option value="header">header</option>
                   <option value="status">status</option>
                 </select>
                 {rule.source === 'body' && (
-                  <select value={rule.engine} onChange={(e) => update(i, { engine: e.target.value as ExtractRule['engine'] })} className={smallField}>
+                  <select
+                    value={rule.engine}
+                    onChange={(e) => update(i, { engine: e.target.value as ExtractRule['engine'] })}
+                    className={`${smallField} shrink-0`}
+                  >
                     <option value="jsonpath">JSONPath</option>
                     <option value="jmespath">JMESPath</option>
                     <option value="regex">regex</option>
                   </select>
                 )}
-                <button type="button" aria-label="Remove mapping" onClick={() => remove(i)} className="ml-auto text-muted hover:text-rose-400">
+                <button
+                  type="button"
+                  aria-label="Remove mapping"
+                  onClick={() => remove(i)}
+                  className="ml-auto shrink-0 text-muted hover:text-rose-400"
+                >
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -345,7 +501,9 @@ function ExtractEditor({
                 <input
                   value={rule.expression}
                   onChange={(e) => update(i, { expression: e.target.value })}
-                  placeholder={rule.source === 'header' ? 'Header-Name' : exprPlaceholder(rule.engine)}
+                  placeholder={
+                    rule.source === 'header' ? 'Header-Name' : exprPlaceholder(rule.engine)
+                  }
                   className={`${smallField} w-full font-mono`}
                 />
               )}
@@ -357,7 +515,11 @@ function ExtractEditor({
             </div>
           );
         })}
-        <button type="button" onClick={add} className="flex items-center justify-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-2">
+        <button
+          type="button"
+          onClick={add}
+          className="flex items-center justify-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-2"
+        >
           <Plus size={12} /> Add mapping
         </button>
       </div>
@@ -368,9 +530,13 @@ function ExtractEditor({
 function UserInputFieldsEditor({
   fields,
   onChange,
+  suggestions,
+  variableContext,
 }: {
   fields: UserInputField[];
   onChange: (fields: UserInputField[]) => void;
+  suggestions: VariableSuggestion[];
+  variableContext?: VariableContext;
 }): JSX.Element {
   const update = (i: number, patch: Partial<UserInputField>): void =>
     onChange(fields.map((f, j) => (j === i ? { ...f, ...patch } : f)));
@@ -385,7 +551,9 @@ function UserInputFieldsEditor({
       </summary>
       <div className="flex flex-col gap-2 border-t border-border p-2.5">
         {fields.length === 0 && (
-          <p className="text-[11px] text-muted">No fields — the node is a Continue/Cancel checkpoint.</p>
+          <p className="text-[11px] text-muted">
+            No fields — the node is a Continue/Cancel checkpoint.
+          </p>
         )}
         {fields.map((field, i) => (
           <div key={i} className="flex flex-col gap-1 rounded-md border border-border p-1.5">
@@ -402,13 +570,21 @@ function UserInputFieldsEditor({
                 placeholder="Label"
                 className={`${smallField} min-w-0 flex-1`}
               />
-              <button type="button" aria-label="Remove field" onClick={() => remove(i)} className="ml-auto text-muted hover:text-rose-400">
+              <button
+                type="button"
+                aria-label="Remove field"
+                onClick={() => remove(i)}
+                className="ml-auto text-muted hover:text-rose-400"
+              >
                 <Trash2 size={13} />
               </button>
             </div>
-            <input
+            <VariableField
               value={field.default}
-              onChange={(e) => update(i, { default: e.target.value })}
+              onChange={(value) => update(i, { default: value })}
+              suggestions={suggestions}
+              variableContext={variableContext}
+              aria-label="Default (template)"
               placeholder="Default (template, e.g. {{token}})"
               className={`${smallField} w-full font-mono`}
             />
@@ -422,7 +598,11 @@ function UserInputFieldsEditor({
             </label>
           </div>
         ))}
-        <button type="button" onClick={add} className="flex items-center justify-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-2">
+        <button
+          type="button"
+          onClick={add}
+          className="flex items-center justify-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-2"
+        >
           <Plus size={12} /> Add field
         </button>
       </div>
@@ -441,7 +621,9 @@ function ReliabilitySection({
   const patch = (next: Partial<NodePolicy>): void => {
     const merged: NodePolicy = { ...p, ...next };
     const cleaned = Object.fromEntries(
-      Object.entries(merged).filter(([, v]) => v !== undefined && !(typeof v === 'number' && Number.isNaN(v))),
+      Object.entries(merged).filter(
+        ([, v]) => v !== undefined && !(typeof v === 'number' && Number.isNaN(v)),
+      ),
     ) as NodePolicy;
     onPolicy(Object.keys(cleaned).length ? cleaned : undefined);
   };
@@ -452,13 +634,34 @@ function ReliabilitySection({
       </summary>
       <div className="flex flex-col gap-2 border-t border-border p-2.5">
         <Field label="Retries" id="pol-retries">
-          <input id="pol-retries" type="number" min={0} max={10} value={Number(p.retries ?? 0)} onChange={(e) => patch({ retries: clamp(e.target.value, 0, 10) })} className={fieldClass} />
+          <input
+            id="pol-retries"
+            type="number"
+            min={0}
+            max={10}
+            value={Number(p.retries ?? 0)}
+            onChange={(e) => patch({ retries: clamp(e.target.value, 0, 10) })}
+            className={fieldClass}
+          />
         </Field>
         <Field label="Timeout (ms, 0 = none)" id="pol-timeout">
-          <input id="pol-timeout" type="number" min={0} max={600000} value={Number(p.timeoutMs ?? 0)} onChange={(e) => patch({ timeoutMs: clamp(e.target.value, 0, 600000) })} className={fieldClass} />
+          <input
+            id="pol-timeout"
+            type="number"
+            min={0}
+            max={600000}
+            value={Number(p.timeoutMs ?? 0)}
+            onChange={(e) => patch({ timeoutMs: clamp(e.target.value, 0, 600000) })}
+            className={fieldClass}
+          />
         </Field>
         <Field label="On error" id="pol-onerror">
-          <select id="pol-onerror" value={p.onError ?? 'fail'} onChange={(e) => patch({ onError: e.target.value as NodePolicy['onError'] })} className={fieldClass}>
+          <select
+            id="pol-onerror"
+            value={p.onError ?? 'fail'}
+            onChange={(e) => patch({ onError: e.target.value as NodePolicy['onError'] })}
+            className={fieldClass}
+          >
             <option value="fail">Fail the run</option>
             <option value="continue">Continue</option>
             <option value="route">Route to error edge</option>
@@ -524,7 +727,12 @@ function CollectionLink({
                       }}
                       className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-surface-2"
                     >
-                      <span className={cn('w-12 shrink-0 font-mono text-[10px] font-bold', methodColor(r.method))}>
+                      <span
+                        className={cn(
+                          'w-12 shrink-0 font-mono text-[10px] font-bold',
+                          methodColor(r.method),
+                        )}
+                      >
                         {r.method}
                       </span>
                       <span className="truncate">{r.name}</span>
@@ -545,7 +753,12 @@ function CollectionLink({
             </span>
           </span>
           <span className="flex shrink-0 gap-2">
-            <button type="button" onClick={() => onImport(requestId)} disabled={!linked} className="text-accent hover:underline disabled:opacity-40">
+            <button
+              type="button"
+              onClick={() => onImport(requestId)}
+              disabled={!linked}
+              className="text-accent hover:underline disabled:opacity-40"
+            >
               Re-sync
             </button>
             <button type="button" onClick={onUnlink} className="text-muted hover:text-rose-400">
@@ -558,7 +771,15 @@ function CollectionLink({
   );
 }
 
-function Field({ label, id, children }: { label: string; id: string; children: React.ReactNode }): JSX.Element {
+function Field({
+  label,
+  id,
+  children,
+}: {
+  label: string;
+  id: string;
+  children: React.ReactNode;
+}): JSX.Element {
   return (
     <div>
       <label className={labelClass} htmlFor={id}>
