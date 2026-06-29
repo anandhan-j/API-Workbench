@@ -251,4 +251,23 @@ describe('WorkflowEngine', () => {
     expect(result.status).toBe('failed');
     expect(result.nodeResults.find((n) => n.nodeId === 'ask')?.message).toMatch(/cancelled/i);
   });
+
+  it('emits a running then a done progress event for each node', async () => {
+    const events: { phase: string; nodeId: string; status?: string }[] = [];
+    const onNodeProgress = vi.fn((e: { phase: string; nodeId: string; result?: { status: string } }) =>
+      events.push({ phase: e.phase, nodeId: e.nodeId, status: e.result?.status }),
+    );
+    const wf = linearWorkflow('w', [start(), setVar('v', 'a', '1'), end()]);
+    await new WorkflowEngine(makePorts({ onNodeProgress })).run(wf);
+
+    // Each node reports running before done, in execution order.
+    expect(events).toEqual([
+      { phase: 'running', nodeId: 'start', status: undefined },
+      { phase: 'done', nodeId: 'start', status: 'success' },
+      { phase: 'running', nodeId: 'v', status: undefined },
+      { phase: 'done', nodeId: 'v', status: 'success' },
+      { phase: 'running', nodeId: 'end', status: undefined },
+      { phase: 'done', nodeId: 'end', status: 'success' },
+    ]);
+  });
 });

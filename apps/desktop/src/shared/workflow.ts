@@ -368,6 +368,26 @@ export const WorkflowRunRequest = z.object({
 });
 export type WorkflowRunRequest = z.infer<typeof WorkflowRunRequest>;
 
+// --- Live run progress ---
+
+/**
+ * Pushed as the engine walks the graph: a `running` event when a node starts and
+ * a `done` event (carrying its {@link NodeRunResult}) when it finishes. The
+ * renderer uses these to highlight the current stage on the canvas and stream
+ * per-node results into the run panel before the whole run resolves. Events for
+ * sub-workflow nodes carry that sub-workflow's id in `workflowId`.
+ */
+export const WorkflowProgressEvent = z.object({
+  workflowId: z.string(),
+  phase: z.enum(['running', 'done']),
+  nodeId: z.string(),
+  kind: WorkflowNodeKind,
+  name: z.string(),
+  /** Present only when `phase === 'done'`. */
+  result: NodeRunResult.optional(),
+});
+export type WorkflowProgressEvent = z.infer<typeof WorkflowProgressEvent>;
+
 // --- User-input pause/resume DTOs ---
 
 /**

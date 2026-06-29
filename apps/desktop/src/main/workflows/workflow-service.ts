@@ -13,6 +13,7 @@ import {
   type WorkflowGraph,
   type WorkflowInputRequest,
   type WorkflowInputResult,
+  type WorkflowProgressEvent,
   type WorkflowRunRequest,
   type WorkflowRunResult,
 } from '@shared/workflow';
@@ -26,6 +27,9 @@ export type RequestInput = (
   request: WorkflowInputRequest,
   ctx: RunContext,
 ) => Promise<WorkflowInputResult>;
+
+/** Receives live per-node progress for a run (injected by the IPC layer). */
+export type ProgressReporter = (event: WorkflowProgressEvent) => void;
 
 /**
  * Side-effecting capabilities the service supplies to the engine, injected from
@@ -201,6 +205,7 @@ export class WorkflowService {
     request: WorkflowRunRequest,
     control?: RunControl,
     requestInput?: RequestInput,
+    onProgress?: ProgressReporter,
   ): Promise<WorkflowRunResult> {
     const workflow = this.get(request.workflowId); // validates existence
     const engine = new WorkflowEngine({
@@ -208,6 +213,7 @@ export class WorkflowService {
       evaluate: this.deps.evaluate,
       loadWorkflow: (id) => this.get(id),
       ...(requestInput ? { requestInput } : {}),
+      ...(onProgress ? { onNodeProgress: onProgress } : {}),
     });
     return engine.run(workflow, {
       ...(request.runtime !== undefined ? { runtime: request.runtime } : {}),

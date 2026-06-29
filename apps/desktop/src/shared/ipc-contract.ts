@@ -46,6 +46,7 @@ import {
   WorkflowInputResponse,
   WorkflowExport,
   ImportWorkflowInput,
+  WorkflowProgressEvent,
 } from './workflow';
 
 /**
@@ -217,6 +218,7 @@ export type IpcResponse<C extends IpcChannelName> = z.infer<(typeof IpcChannels)
 export const IpcEvents = {
   'dispatch.event': DispatchEvent,
   'workflow.awaitingInput': WorkflowInputRequest,
+  'workflow.nodeProgress': WorkflowProgressEvent,
 } as const;
 
 export type IpcEventName = keyof typeof IpcEvents;
@@ -229,4 +231,5 @@ export interface WorkbenchApi {
   invoke<C extends IpcChannelName>(channel: C, request: IpcRequest<C>): Promise<IpcResponse<C>>;
   onDispatchEvent(listener: (event: DispatchEvent) => void): () => void;
   onWorkflowAwaitingInput(listener: (event: WorkflowInputRequest) => void): () => void;
+  onWorkflowNodeProgress(listener: (event: WorkflowProgressEvent) => void): () => void;
 }

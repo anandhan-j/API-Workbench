@@ -7,6 +7,7 @@ import type {
   WorkflowInputRequest,
   WorkflowInputResult,
   WorkflowNode,
+  WorkflowProgressEvent,
   WorkflowRunResult,
   WorkflowRunStatus,
 } from '@shared/workflow';
@@ -44,6 +45,8 @@ export interface WorkflowEnginePorts {
    * falls back to each field's evaluated default.
    */
   requestInput?(request: WorkflowInputRequest, ctx: RunContext): Promise<WorkflowInputResult>;
+  /** Called as each node starts (`running`) and finishes (`done`), for live UI. */
+  onNodeProgress?(event: WorkflowProgressEvent): void;
   now?: () => number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
@@ -126,12 +129,17 @@ export class WorkflowEngine {
       if (steps++ > MAX_STEPS) throw new WorkflowError('Workflow exceeded the maximum step count');
 
       if (current.kind === 'end') {
-        results.push(this.instant(current, 'success'));
+        this.progress(workflow.id, current);
+        const endResult = this.instant(current, 'success');
+        results.push(endResult);
+        this.progress(workflow.id, current, endResult);
         return 'success';
       }
 
+      this.progress(workflow.id, current);
       const { result, handle } = await this.executeWithPolicy(current, ctx, control, nestedStack, results, loopCounters);
       results.push(result);
+      this.progress(workflow.id, current, result);
       if (result.variablesSet) Object.assign(runtime, result.variablesSet);
 
       // A node may suspend (e.g. user-input) and be cancelled while suspended;
@@ -365,6 +373,19 @@ export class WorkflowEngine {
       const message = error instanceof Error ? error.message : String(error);
       return { result: { ...base, status: 'failed', durationMs: done(), message }, handle: null };
     }
+  }
+
+  /** Emits a `running` event (no result) or a `done` event (with result). */
+  private progress(workflowId: string, node: WorkflowNode, result?: NodeRunResult): void {
+    if (!this.ports.onNodeProgress) return;
+    this.ports.onNodeProgress({
+      workflowId,
+      phase: result ? 'done' : 'running',
+      nodeId: node.id,
+      kind: node.kind,
+      name: node.name,
+      ...(result ? { result } : {}),
+    });
   }
 
   private truthy(expression: string, ctx: RunContext): boolean {

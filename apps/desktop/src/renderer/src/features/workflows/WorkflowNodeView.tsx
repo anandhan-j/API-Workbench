@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { cn } from '../../lib/cn';
 import { NODE_META } from './node-meta';
@@ -54,20 +55,27 @@ export const WorkflowNodeView = memo(function WorkflowNodeView({
   const Icon = meta.icon;
   const handles = sourceHandles(data);
   const statusRing =
-    data.status === 'success'
-      ? 'ring-2 ring-emerald-500'
-      : data.status === 'failed'
-        ? 'ring-2 ring-rose-500'
-        : data.status === 'skipped'
-          ? 'ring-2 ring-amber-500'
-          : selected
-            ? 'ring-2 ring-accent'
-            : 'ring-1 ring-border';
+    data.status === 'running'
+      ? 'ring-2 ring-accent animate-pulse'
+      : data.status === 'success'
+        ? 'ring-2 ring-emerald-500'
+        : data.status === 'failed'
+          ? 'ring-2 ring-rose-500'
+          : data.status === 'skipped'
+            ? 'ring-2 ring-amber-500'
+            : selected
+              ? 'ring-2 ring-accent'
+              : 'ring-1 ring-border';
 
   return (
     <div className={cn('relative w-44 rounded-lg bg-surface shadow-sm', statusRing)}>
       {data.kind !== 'start' && (
         <Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5 !bg-muted" />
+      )}
+      {data.status === 'running' && (
+        <span className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-accent-fg shadow">
+          <Loader2 size={12} className="animate-spin" />
+        </span>
       )}
       <div className={cn('flex items-center gap-2 rounded-t-lg px-2.5 py-1.5', meta.accent)}>
         <Icon size={14} className="shrink-0" />

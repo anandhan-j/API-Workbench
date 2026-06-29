@@ -20,14 +20,17 @@ import type {
  * mappers convert between the two representations losslessly.
  */
 
+/** A node's run status as shown on the canvas — adds the live `running` state. */
+export type NodeDisplayStatus = NodeRunStatus | 'running';
+
 export interface FlowNodeData {
   kind: WorkflowNodeKind;
   name: string;
   config: WorkflowNode['config'];
   /** Reliability policy (Phase 14), edited via the inspector. */
   policy?: NodePolicy;
-  /** Overlaid after a run to colour the node by outcome. */
-  status?: NodeRunStatus;
+  /** Overlaid during/after a run to colour the node by outcome (or `running`). */
+  status?: NodeDisplayStatus;
 }
 
 export interface GroupNodeData {
@@ -80,7 +83,7 @@ function groupBox(group: WorkflowGroup, byId: Map<string, WorkflowNode>): Bounds
 
 export function toFlow(
   graph: WorkflowGraph,
-  statuses: Record<string, NodeRunStatus> = {},
+  statuses: Record<string, NodeDisplayStatus> = {},
 ): { nodes: Node[]; edges: Edge[] } {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const groups = graph.groups ?? [];

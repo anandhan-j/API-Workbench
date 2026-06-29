@@ -54,6 +54,12 @@ const inflightWorkflows = new Map<string, RunController>();
  */
 const pendingInputs = new Map<string, (result: WorkflowInputResult) => void>();
 
+/** Sends an event payload to the first live renderer window, if any. */
+function sendToRenderer(channel: string, payload: unknown): void {
+  const window = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+  window?.webContents.send(channel, payload);
+}
+
 /**
  * Pushes a user-input request to the renderer and resolves once the user replies
  * via `workflow.provideInput` or the run is cancelled. Resolves cancelled when no
@@ -331,7 +337,12 @@ export function registerIpcHandlers(context: IpcContext): void {
       const controller = new RunController();
       inflightWorkflows.set(request.workflowId, controller);
       try {
-        return await workflows.run(request, controller, (input) => awaitUserInput(input, controller));
+        return await workflows.run(
+          request,
+          controller,
+          (input) => awaitUserInput(input, controller),
+          (event) => sendToRenderer('workflow.nodeProgress', event),
+        );
       } finally {
         inflightWorkflows.delete(request.workflowId);
         // Drop any input that was still pending for this workflow.

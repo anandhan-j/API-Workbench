@@ -36,6 +36,8 @@ Control flow arrived in **Phase 14**: **condition** (true/false), **switch** (ca
 
 Interactive pauses: a **user-input** node suspends the run mid-flight via the optional `requestInput` engine port. The IPC layer implements that port by pushing a `workflow.awaitingInput` event to the renderer and blocking until the renderer replies on `workflow.provideInput` (or the run is cancelled). The engine stays deterministic and headless — with no `requestInput` port (tests / headless runs) the node falls back to each field's evaluated default.
 
+Live progress: as it walks the graph the engine calls the optional `onNodeProgress` port with a `running` event when a node starts and a `done` event (carrying its `NodeRunResult`) when it finishes. The IPC layer forwards these as `workflow.nodeProgress` events so the renderer can highlight the running stage on the canvas (a pulsing ring + spinner) and stream per-node results into the run panel before the whole run resolves — failed stages are shown in red with their full error message.
+
 ## Usage
 
 ```ts

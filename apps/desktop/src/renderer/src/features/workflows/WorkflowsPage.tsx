@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Loader2, Pause, Play, Plus, Save, Square, ToggleLeft, ToggleRight, Trash2, Upload, Workflow as WorkflowIcon } from 'lucide-react';
+import { Download, Loader2, Pause, Play, Plus, Save, Search, Square, ToggleLeft, ToggleRight, Trash2, Upload, Workflow as WorkflowIcon } from 'lucide-react';
 import type {
   ExtractRule,
   NodePolicy,
-  NodeRunStatus,
+  NodeRunResult,
   WorkflowExport,
   WorkflowGraph,
   WorkflowInputRequest,
   WorkflowNode,
 } from '@shared/workflow';
-import { invoke, isBridgeAvailable, onWorkflowAwaitingInput } from '../../lib/ipc';
+import { invoke, isBridgeAvailable, onWorkflowAwaitingInput, onWorkflowNodeProgress } from '../../lib/ipc';
 import { usePersistentState } from '../../lib/use-persistent-state';
 import { useConfirm } from '../../components/confirm/ConfirmProvider';
 import { useActiveSelection, useWorkspaceDetail } from '../workspaces/use-workspaces';
@@ -17,9 +17,10 @@ import { useWorkflow, useWorkflowMutations, useWorkflows, useRunWorkflow, useRun
 import { useProjectRequests } from './use-project-requests';
 import { requestDetailToNodeConfig } from './request-import';
 import { WorkflowCanvas, type FlowNode } from './WorkflowCanvas';
+import type { NodeDisplayStatus } from './graph-mapping';
 import { NodePalette } from './NodePalette';
 import { NodeInspector } from './NodeInspector';
-import { RunPanel } from './RunPanel';
+import { RunPanel, type RunningNode } from './RunPanel';
 import { WorkflowInputPrompt } from './WorkflowInputPrompt';
 
 interface Mutators {
@@ -32,6 +33,15 @@ interface Mutators {
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/** Live state accumulated from `workflow.nodeProgress` events during a run. */
+interface RunProgress {
+  statuses: Record<string, NodeDisplayStatus>;
+  results: NodeRunResult[];
+  current: RunningNode | null;
+}
+
+const EMPTY_PROGRESS: RunProgress = { statuses: {}, results: [], current: null };
 
 export function WorkflowsPage(): JSX.Element {
   const bridge = isBridgeAvailable();
@@ -50,8 +60,10 @@ export function WorkflowsPage(): JSX.Element {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
+  const [search, setSearch] = useState('');
   const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null);
   const [inputRequest, setInputRequest] = useState<WorkflowInputRequest | null>(null);
+  const [progress, setProgress] = useState<RunProgress>(EMPTY_PROGRESS);
 
   const detail = useWorkflow(selectedId);
   const graphRef = useRef<WorkflowGraph | null>(null);
@@ -74,13 +86,47 @@ export function WorkflowsPage(): JSX.Element {
     }
   }, [workflows.data, selectedId]);
 
-  // Run statuses overlaid on the canvas, only for the active workflow.
-  const statuses = useMemo<Record<string, NodeRunStatus>>(() => {
-    if (!run.data || run.data.workflowId !== selectedId) return {};
-    const map: Record<string, NodeRunStatus> = {};
-    for (const n of run.data.nodeResults) map[n.nodeId] = n.status;
-    return map;
-  }, [run.data, selectedId]);
+  // The workflow whose run is in flight / most recently finished.
+  const runWorkflowId = run.variables?.workflowId ?? null;
+
+  // Subscribe to live per-node progress: highlight the running stage and stream
+  // per-node results into the panel before the whole run resolves.
+  useEffect(() => {
+    if (!bridge) return;
+    return onWorkflowNodeProgress((e) => {
+      setProgress((p) => {
+        if (e.phase === 'running') {
+          return {
+            ...p,
+            statuses: { ...p.statuses, [e.nodeId]: 'running' },
+            current: { nodeId: e.nodeId, kind: e.kind, name: e.name },
+          };
+        }
+        const result = e.result;
+        if (!result) return p;
+        return {
+          statuses: { ...p.statuses, [result.nodeId]: result.status },
+          results: [...p.results, result],
+          current: p.current?.nodeId === result.nodeId ? null : p.current,
+        };
+      });
+    });
+  }, [bridge]);
+
+  // Run statuses overlaid on the canvas, only for the workflow that was run.
+  const statuses = useMemo<Record<string, NodeDisplayStatus>>(
+    () => (runWorkflowId === selectedId ? progress.statuses : {}),
+    [progress.statuses, runWorkflowId, selectedId],
+  );
+
+  const showLiveRun = runWorkflowId === selectedId;
+
+  // Filter the workflow list by name (case-insensitive).
+  const filteredWorkflows = useMemo(() => {
+    const list = workflows.data ?? [];
+    const q = search.trim().toLowerCase();
+    return q ? list.filter((w) => w.name.toLowerCase().includes(q)) : list;
+  }, [workflows.data, search]);
 
   const handleSave = (): void => {
     if (selectedId && graphRef.current) {
@@ -92,6 +138,7 @@ export function WorkflowsPage(): JSX.Element {
     if (!selectedId || !graphRef.current) return;
     setPaused(false);
     setInputRequest(null);
+    setProgress(EMPTY_PROGRESS);
     mutations.save.mutate(
       { id: selectedId, graph: graphRef.current },
       { onSuccess: () => run.mutate({ workflowId: selectedId }) },
@@ -240,7 +287,7 @@ export function WorkflowsPage(): JSX.Element {
 
       <div className="flex min-h-0 flex-1 gap-3">
         {/* Left: workflow list + palette */}
-        <aside className="flex w-60 shrink-0 flex-col gap-3 overflow-y-auto">
+        <aside className="flex w-60 shrink-0 flex-col gap-3 min-h-0">
           <form
             className="flex gap-2"
             onSubmit={(e) => {
@@ -287,8 +334,19 @@ export function WorkflowsPage(): JSX.Element {
             }}
           />
 
-          <div className="rounded-md border border-border">
-            {workflows.data?.map((w) => (
+          <div className="relative">
+            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search workflows by name"
+              aria-label="Search workflows by name"
+              className="w-full rounded-md border border-border bg-surface py-1.5 pl-8 pr-3 text-sm"
+            />
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border">
+            {filteredWorkflows.map((w) => (
               <div
                 key={w.id}
                 className={`group flex items-center gap-2 border-b border-border px-2.5 py-1.5 last:border-0 ${
@@ -338,9 +396,14 @@ export function WorkflowsPage(): JSX.Element {
             {workflows.data?.length === 0 && (
               <p className="px-3 py-2 text-sm text-muted">No workflows yet.</p>
             )}
+            {workflows.data && workflows.data.length > 0 && filteredWorkflows.length === 0 && (
+              <p className="px-3 py-2 text-sm text-muted">No workflows match “{search.trim()}”.</p>
+            )}
           </div>
 
-          <NodePalette />
+          <div className="shrink-0">
+            <NodePalette />
+          </div>
         </aside>
 
         {/* Center: canvas + toolbar */}
@@ -440,7 +503,13 @@ export function WorkflowsPage(): JSX.Element {
             />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <RunPanel result={run.data ?? null} running={run.isPending} error={runError} />
+            <RunPanel
+              result={run.data && run.data.workflowId === selectedId ? run.data : null}
+              running={run.isPending && showLiveRun}
+              error={showLiveRun ? runError : null}
+              liveResults={showLiveRun ? progress.results : []}
+              current={showLiveRun ? progress.current : null}
+            />
           </div>
         </aside>
       </div>
