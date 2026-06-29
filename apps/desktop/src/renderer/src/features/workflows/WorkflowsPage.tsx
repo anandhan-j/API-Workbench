@@ -1,5 +1,30 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Loader2, Pause, Play, Plus, Save, Search, Square, ToggleLeft, ToggleRight, Trash2, Upload, Workflow as WorkflowIcon } from 'lucide-react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  GripHorizontal,
+  Loader2,
+  Pause,
+  Play,
+  Plus,
+  Save,
+  Search,
+  Square,
+  ToggleLeft,
+  ToggleRight,
+  Trash2,
+  Upload,
+  Workflow as WorkflowIcon,
+} from 'lucide-react';
 import type {
   ExtractRule,
   NodePolicy,
@@ -9,11 +34,22 @@ import type {
   WorkflowInputRequest,
   WorkflowNode,
 } from '@shared/workflow';
-import { invoke, isBridgeAvailable, onWorkflowAwaitingInput, onWorkflowNodeProgress } from '../../lib/ipc';
+import {
+  invoke,
+  isBridgeAvailable,
+  onWorkflowAwaitingInput,
+  onWorkflowNodeProgress,
+} from '../../lib/ipc';
 import { usePersistentState } from '../../lib/use-persistent-state';
 import { useConfirm } from '../../components/confirm/ConfirmProvider';
 import { useActiveSelection, useWorkspaceDetail } from '../workspaces/use-workspaces';
-import { useWorkflow, useWorkflowMutations, useWorkflows, useRunWorkflow, useRunControls } from './use-workflows';
+import {
+  useWorkflow,
+  useWorkflowMutations,
+  useWorkflows,
+  useRunWorkflow,
+  useRunControls,
+} from './use-workflows';
 import { useProjectRequests } from './use-project-requests';
 import { requestDetailToNodeConfig } from './request-import';
 import { WorkflowCanvas, type FlowNode } from './WorkflowCanvas';
@@ -28,6 +64,8 @@ interface Mutators {
   setConfig: (id: string, config: WorkflowNode['config']) => void;
   setPolicy: (id: string, policy: NodePolicy | undefined) => void;
   remove: (id: string) => void;
+  group: () => void;
+  ungroup: () => void;
 }
 
 function errorMessage(error: unknown): string {
@@ -42,6 +80,32 @@ interface RunProgress {
 }
 
 const EMPTY_PROGRESS: RunProgress = { statuses: {}, results: [], current: null };
+
+/** Collapsible section header with a chevron toggle (used by the left sidebar). */
+function PanelHeader({
+  title,
+  collapsed,
+  onToggle,
+  trailing,
+}: {
+  title: string;
+  collapsed: boolean;
+  onToggle: () => void;
+  trailing?: ReactNode;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+      className="flex shrink-0 items-center gap-1.5 border-b border-border px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted hover:text-fg"
+    >
+      {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+      <span className="truncate">{title}</span>
+      {trailing}
+    </button>
+  );
+}
 
 export function WorkflowsPage(): JSX.Element {
   const bridge = isBridgeAvailable();
@@ -64,6 +128,7 @@ export function WorkflowsPage(): JSX.Element {
   const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null);
   const [inputRequest, setInputRequest] = useState<WorkflowInputRequest | null>(null);
   const [progress, setProgress] = useState<RunProgress>(EMPTY_PROGRESS);
+  const [grouping, setGrouping] = useState({ canGroup: false, canUngroup: false });
 
   const detail = useWorkflow(selectedId);
   const graphRef = useRef<WorkflowGraph | null>(null);
@@ -71,9 +136,39 @@ export function WorkflowsPage(): JSX.Element {
   const importInputRef = useRef<HTMLInputElement>(null);
 
   // Per-workflow auto-save preference (persisted across restarts).
-  const [autoSaveMap, setAutoSaveMap] = usePersistentState<Record<string, boolean>>('awb.workflow.autosave', {});
+  const [autoSaveMap, setAutoSaveMap] = usePersistentState<Record<string, boolean>>(
+    'awb.workflow.autosave',
+    {},
+  );
   const autoSaveOn = selectedId ? Boolean(autoSaveMap[selectedId]) : false;
   const [dirtyAt, setDirtyAt] = useState(0);
+
+  // Left sidebar layout: collapse state + draggable split height (persisted).
+  const [listCollapsed, setListCollapsed] = usePersistentState('awb.workflow.listCollapsed', false);
+  const [paletteCollapsed, setPaletteCollapsed] = usePersistentState(
+    'awb.workflow.paletteCollapsed',
+    false,
+  );
+  const [listHeight, setListHeight] = usePersistentState('awb.workflow.listHeight', 240);
+
+  // Drag the divider to resize the workflow list; the palette fills the rest.
+  const beginResize = useCallback(
+    (e: ReactPointerEvent): void => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startH = listHeight;
+      const onMove = (ev: PointerEvent): void => {
+        setListHeight(Math.max(80, Math.min(520, startH + (ev.clientY - startY))));
+      };
+      const onUp = (): void => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    },
+    [listHeight, setListHeight],
+  );
 
   // Auto-select the first workflow as the list resolves.
   useEffect(() => {
@@ -189,8 +284,17 @@ export function WorkflowsPage(): JSX.Element {
   };
 
   // Logs a line to the dispatch monitor (no-ops gracefully outside Electron).
-  const logDispatch = (level: 'info' | 'error', message: string, context?: Record<string, unknown>): void => {
-    void invoke('dispatch.emit', { level, source: 'workflow', message, ...(context ? { context } : {}) });
+  const logDispatch = (
+    level: 'info' | 'error',
+    message: string,
+    context?: Record<string, unknown>,
+  ): void => {
+    void invoke('dispatch.emit', {
+      level,
+      source: 'workflow',
+      message,
+      ...(context ? { context } : {}),
+    });
   };
 
   const handleExport = async (id: string, name: string): Promise<void> => {
@@ -205,7 +309,9 @@ export function WorkflowsPage(): JSX.Element {
       URL.revokeObjectURL(url);
       logDispatch('info', `Exported workflow "${name}"`, { workflowId: id });
     } catch (error) {
-      logDispatch('error', `Failed to export "${name}": ${errorMessage(error)}`, { workflowId: id });
+      logDispatch('error', `Failed to export "${name}": ${errorMessage(error)}`, {
+        workflowId: id,
+      });
     }
   };
 
@@ -215,9 +321,13 @@ export function WorkflowsPage(): JSX.Element {
       const data = JSON.parse(await file.text()) as WorkflowExport;
       const wf = await mutations.importWorkflow.mutateAsync({ projectId, data });
       setSelectedId(wf.id);
-      logDispatch('info', `Imported workflow "${wf.name}" from ${file.name}`, { workflowId: wf.id });
+      logDispatch('info', `Imported workflow "${wf.name}" from ${file.name}`, {
+        workflowId: wf.id,
+      });
     } catch (error) {
-      logDispatch('error', `Failed to import "${file.name}": ${errorMessage(error)}`, { file: file.name });
+      logDispatch('error', `Failed to import "${file.name}": ${errorMessage(error)}`, {
+        file: file.name,
+      });
     }
   };
 
@@ -225,7 +335,10 @@ export function WorkflowsPage(): JSX.Element {
     if (!selectedNode || selectedNode.data.kind !== 'request') return;
     const detail = await invoke('request.get', { id: requestId });
     const current = selectedNode.data.config as { extract?: ExtractRule[] };
-    mutatorsRef.current?.setConfig(selectedNode.id, requestDetailToNodeConfig(detail, current.extract ?? []));
+    mutatorsRef.current?.setConfig(
+      selectedNode.id,
+      requestDetailToNodeConfig(detail, current.extract ?? []),
+    );
   };
 
   const handleGraphChange = useCallback((g: WorkflowGraph): void => {
@@ -308,7 +421,11 @@ export function WorkflowsPage(): JSX.Element {
               aria-label="New workflow name"
               className="min-w-0 flex-1 rounded-md border border-border bg-surface px-3 py-1.5 text-sm"
             />
-            <button type="submit" aria-label="Create workflow" className="rounded-md bg-accent px-3 py-1.5 text-accent-fg">
+            <button
+              type="submit"
+              aria-label="Create workflow"
+              className="rounded-md bg-accent px-3 py-1.5 text-accent-fg"
+            >
               <Plus size={15} />
             </button>
           </form>
@@ -319,7 +436,11 @@ export function WorkflowsPage(): JSX.Element {
             disabled={mutations.importWorkflow.isPending}
             className="flex items-center justify-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2 disabled:opacity-40"
           >
-            {mutations.importWorkflow.isPending ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            {mutations.importWorkflow.isPending ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Upload size={14} />
+            )}
             Import workflow
           </button>
           <input
@@ -335,7 +456,10 @@ export function WorkflowsPage(): JSX.Element {
           />
 
           <div className="relative">
-            <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted"
+            />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -345,80 +469,146 @@ export function WorkflowsPage(): JSX.Element {
             />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border">
-            {filteredWorkflows.map((w) => (
-              <div
-                key={w.id}
-                className={`group flex items-center gap-2 border-b border-border px-2.5 py-1.5 last:border-0 ${
-                  w.id === selectedId ? 'bg-surface-2' : 'hover:bg-surface-2'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(w.id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
-                >
-                  <WorkflowIcon size={14} className="shrink-0 text-muted" />
-                  <span className="truncate">{w.name}</span>
-                  <span className="ml-auto shrink-0 text-[11px] text-muted">{w.nodeCount}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Export ${w.name}`}
-                  title="Export workflow"
-                  onClick={() => void handleExport(w.id, w.name)}
-                  className="shrink-0 text-muted opacity-0 hover:text-accent group-hover:opacity-100"
-                >
-                  <Download size={13} />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Delete ${w.name}`}
-                  onClick={async () => {
-                    if (
-                      await confirm({
-                        title: 'Delete workflow',
-                        message: `Delete workflow "${w.name}"? This cannot be undone.`,
-                        confirmLabel: 'Delete',
-                        danger: true,
-                      })
-                    ) {
-                      mutations.remove.mutate(w.id);
-                      if (selectedId === w.id) setSelectedId(null);
-                    }
-                  }}
-                  className="shrink-0 text-muted opacity-0 hover:text-rose-400 group-hover:opacity-100"
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))}
-            {workflows.data?.length === 0 && (
-              <p className="px-3 py-2 text-sm text-muted">No workflows yet.</p>
-            )}
-            {workflows.data && workflows.data.length > 0 && filteredWorkflows.length === 0 && (
-              <p className="px-3 py-2 text-sm text-muted">No workflows match “{search.trim()}”.</p>
-            )}
-          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-2">
+            {/* Workflows list — collapsible, resizable */}
+            <section
+              className={`flex flex-col overflow-hidden rounded-md border border-border ${
+                !listCollapsed && paletteCollapsed ? 'min-h-0 flex-1' : 'shrink-0'
+              }`}
+              style={!listCollapsed && !paletteCollapsed ? { height: listHeight } : undefined}
+            >
+              <PanelHeader
+                title="Workflows"
+                collapsed={listCollapsed}
+                onToggle={() => setListCollapsed((v) => !v)}
+                trailing={
+                  <span className="ml-auto shrink-0 text-[11px] normal-case text-muted">
+                    {filteredWorkflows.length}
+                  </span>
+                }
+              />
+              {!listCollapsed && (
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {filteredWorkflows.map((w) => (
+                    <div
+                      key={w.id}
+                      className={`group flex items-center gap-2 border-b border-border px-2.5 py-1.5 last:border-0 ${
+                        w.id === selectedId ? 'bg-surface-2' : 'hover:bg-surface-2'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(w.id)}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
+                      >
+                        <WorkflowIcon size={14} className="shrink-0 text-muted" />
+                        <span className="truncate">{w.name}</span>
+                        <span className="ml-auto shrink-0 text-[11px] text-muted">
+                          {w.nodeCount}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Export ${w.name}`}
+                        title="Export workflow"
+                        onClick={() => void handleExport(w.id, w.name)}
+                        className="shrink-0 text-muted opacity-0 hover:text-accent group-hover:opacity-100"
+                      >
+                        <Download size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${w.name}`}
+                        onClick={async () => {
+                          if (
+                            await confirm({
+                              title: 'Delete workflow',
+                              message: `Delete workflow "${w.name}"? This cannot be undone.`,
+                              confirmLabel: 'Delete',
+                              danger: true,
+                            })
+                          ) {
+                            mutations.remove.mutate(w.id);
+                            if (selectedId === w.id) setSelectedId(null);
+                          }
+                        }}
+                        className="shrink-0 text-muted opacity-0 hover:text-rose-400 group-hover:opacity-100"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                  {workflows.data?.length === 0 && (
+                    <p className="px-3 py-2 text-sm text-muted">No workflows yet.</p>
+                  )}
+                  {workflows.data &&
+                    workflows.data.length > 0 &&
+                    filteredWorkflows.length === 0 && (
+                      <p className="px-3 py-2 text-sm text-muted">
+                        No workflows match “{search.trim()}”.
+                      </p>
+                    )}
+                </div>
+              )}
+            </section>
 
-          <div className="shrink-0">
-            <NodePalette />
+            {/* Drag handle to resize the split — only when both panels are open */}
+            {!listCollapsed && !paletteCollapsed && (
+              <div
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Resize workflow list"
+                onPointerDown={beginResize}
+                className="group flex h-2 shrink-0 cursor-row-resize items-center justify-center rounded hover:bg-surface-2"
+              >
+                <GripHorizontal size={14} className="text-muted/60 group-hover:text-muted" />
+              </div>
+            )}
+
+            {/* Node palette — collapsible */}
+            <section
+              className={`flex flex-col overflow-hidden rounded-md border border-border ${
+                paletteCollapsed ? 'shrink-0' : 'min-h-[96px] flex-1'
+              }`}
+            >
+              <PanelHeader
+                title="Nodes"
+                collapsed={paletteCollapsed}
+                onToggle={() => setPaletteCollapsed((v) => !v)}
+              />
+              {!paletteCollapsed && (
+                <NodePalette
+                  onGroup={() => mutatorsRef.current?.group()}
+                  onUngroup={() => mutatorsRef.current?.ungroup()}
+                  canGroup={grouping.canGroup}
+                  canUngroup={grouping.canUngroup}
+                />
+              )}
+            </section>
           </div>
         </aside>
 
         {/* Center: canvas + toolbar */}
         <section className="flex min-w-0 flex-1 flex-col rounded-md border border-border">
           <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-            <span className="truncate text-sm font-medium">{detail.data?.name ?? 'Select a workflow'}</span>
+            <span className="truncate text-sm font-medium">
+              {detail.data?.name ?? 'Select a workflow'}
+            </span>
             <div className="ml-auto flex items-center gap-2">
               <button
                 type="button"
                 onClick={toggleAutoSave}
                 disabled={!selectedId}
-                title={autoSaveOn ? 'Auto-save is on for this workflow' : 'Auto-save is off for this workflow'}
+                title={
+                  autoSaveOn
+                    ? 'Auto-save is on for this workflow'
+                    : 'Auto-save is off for this workflow'
+                }
                 aria-pressed={autoSaveOn}
                 className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm disabled:opacity-40 ${
-                  autoSaveOn ? 'border-accent text-accent' : 'border-border text-muted hover:bg-surface-2'
+                  autoSaveOn
+                    ? 'border-accent text-accent'
+                    : 'border-border text-muted hover:bg-surface-2'
                 }`}
               >
                 {autoSaveOn ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
@@ -430,7 +620,11 @@ export function WorkflowsPage(): JSX.Element {
                 disabled={!selectedId || mutations.save.isPending}
                 className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2 disabled:opacity-40"
               >
-                {mutations.save.isPending ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                {mutations.save.isPending ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Save size={14} />
+                )}
                 Save
               </button>
               {run.isPending ? (
@@ -475,6 +669,7 @@ export function WorkflowsPage(): JSX.Element {
                 statuses={statuses}
                 onGraphChange={handleGraphChange}
                 onSelect={setSelectedNode}
+                onGroupingChange={setGrouping}
                 registerMutators={(m) => {
                   mutatorsRef.current = m;
                 }}
@@ -495,10 +690,18 @@ export function WorkflowsPage(): JSX.Element {
               workflows={(workflows.data ?? []).filter((w) => w.id !== selectedId)}
               projectRequests={projectRequests.data ?? []}
               onImportRequest={(id) => void handleImportRequest(id)}
-              lastResponse={run.data?.nodeResults.find((n) => n.nodeId === selectedNode?.id)?.response}
-              onRename={(name) => selectedNode && mutatorsRef.current?.rename(selectedNode.id, name)}
-              onConfig={(config) => selectedNode && mutatorsRef.current?.setConfig(selectedNode.id, config)}
-              onPolicy={(policy) => selectedNode && mutatorsRef.current?.setPolicy(selectedNode.id, policy)}
+              lastResponse={
+                run.data?.nodeResults.find((n) => n.nodeId === selectedNode?.id)?.response
+              }
+              onRename={(name) =>
+                selectedNode && mutatorsRef.current?.rename(selectedNode.id, name)
+              }
+              onConfig={(config) =>
+                selectedNode && mutatorsRef.current?.setConfig(selectedNode.id, config)
+              }
+              onPolicy={(policy) =>
+                selectedNode && mutatorsRef.current?.setPolicy(selectedNode.id, policy)
+              }
               onDelete={() => selectedNode && mutatorsRef.current?.remove(selectedNode.id)}
             />
           </div>

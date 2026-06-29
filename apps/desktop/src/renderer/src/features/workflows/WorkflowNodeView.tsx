@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { cn } from '../../lib/cn';
@@ -32,7 +32,10 @@ function sourceHandles(data: FlowNodeData): SourceHandle[] {
         ];
       case 'switch': {
         const cases = (data.config as { cases?: string[] }).cases ?? [];
-        return [...cases.map((c) => ({ id: c, label: c || '∅' })), { id: 'default', label: 'default' }];
+        return [
+          ...cases.map((c) => ({ id: c, label: c || '∅' })),
+          { id: 'default', label: 'default' },
+        ];
       }
       case 'loop':
         return [
@@ -119,12 +122,61 @@ export const GroupNodeView = memo(function GroupNodeView({
         selected ? 'border-accent' : 'border-border',
       )}
     >
-      <span className="absolute left-2 top-1 text-[11px] font-semibold text-muted">
-        {data.name || 'Group'}
-      </span>
+      {data.editing ? (
+        <GroupNameEditor
+          initial={data.name}
+          onCommit={(name) => data.onCommit?.(name)}
+          onCancel={() => data.onCancel?.()}
+        />
+      ) : (
+        <span
+          className="absolute left-2 top-1 text-[11px] font-semibold text-muted"
+          title="Double-click to rename"
+        >
+          {data.name || 'Group'}
+        </span>
+      )}
     </div>
   );
 });
+
+/** Inline editor for a group's name; mounted only while the group is being renamed. */
+function GroupNameEditor({
+  initial,
+  onCommit,
+  onCancel,
+}: {
+  initial: string;
+  onCommit: (name: string) => void;
+  onCancel: () => void;
+}): JSX.Element {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  const commit = (): void => onCommit(value.trim() || 'Group');
+  return (
+    <input
+      ref={ref}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+        }
+      }}
+      aria-label="Group name"
+      className="nodrag nopan absolute left-2 top-1 w-[calc(100%-1rem)] rounded border border-accent bg-surface px-1 py-0.5 text-[11px] font-semibold text-fg outline-none"
+    />
+  );
+}
 
 /** A one-line summary of a node's configuration for the card body. */
 function summarize(data: FlowNodeData): string {

@@ -35,6 +35,10 @@ export interface FlowNodeData {
 
 export interface GroupNodeData {
   name: string;
+  /** Injected by the canvas only for the group currently being renamed. */
+  editing?: boolean;
+  onCommit?: (name: string) => void;
+  onCancel?: () => void;
 }
 
 export type FlowNode = Node<FlowNodeData>;
@@ -71,7 +75,9 @@ export function boundsOf(positions: { x: number; y: number }[]): Bounds {
 }
 
 function groupBox(group: WorkflowGroup, byId: Map<string, WorkflowNode>): Bounds {
-  const members = group.childIds.map((id) => byId.get(id)).filter((n): n is WorkflowNode => Boolean(n));
+  const members = group.childIds
+    .map((id) => byId.get(id))
+    .filter((n): n is WorkflowNode => Boolean(n));
   const b = boundsOf(members.map((m) => m.position));
   return {
     x: b.x - GROUP_PADDING,

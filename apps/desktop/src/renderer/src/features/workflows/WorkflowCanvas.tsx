@@ -17,11 +17,23 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Box, Boxes, Redo2, Undo2 } from 'lucide-react';
-import type { NodePolicy, Workflow, WorkflowDetail, WorkflowGraph, WorkflowNode } from '@shared/workflow';
+import type {
+  NodePolicy,
+  Workflow,
+  WorkflowDetail,
+  WorkflowGraph,
+  WorkflowNode,
+} from '@shared/workflow';
 import { nodeTypes } from './WorkflowNodeView';
 import { DND_MIME } from './NodePalette';
 import { NODE_META } from './node-meta';
-import { isElementNode, toFlow, toGraph, type FlowNode, type NodeDisplayStatus } from './graph-mapping';
+import {
+  isElementNode,
+  toFlow,
+  toGraph,
+  type FlowNode,
+  type NodeDisplayStatus,
+} from './graph-mapping';
 import { cloneSelection } from './selection-clone';
 import { groupSelection, ungroup } from './grouping';
 import {
@@ -48,7 +60,11 @@ interface WorkflowCanvasProps {
     setConfig: (id: string, config: WorkflowNode['config']) => void;
     setPolicy: (id: string, policy: NodePolicy | undefined) => void;
     remove: (id: string) => void;
+    group: () => void;
+    ungroup: () => void;
   }) => void;
+  /** Reports whether the current selection can be grouped / ungrouped. */
+  onGroupingChange?: (state: { canGroup: boolean; canUngroup: boolean }) => void;
 }
 
 interface GraphState {
@@ -57,7 +73,9 @@ interface GraphState {
 }
 
 function uuid(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `n-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return (
+    globalThis.crypto?.randomUUID?.() ?? `n-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  );
 }
 
 const isTyping = (el: EventTarget | null): boolean =>
@@ -75,11 +93,14 @@ function Canvas({
   onGraphChange,
   onSelect,
   registerMutators,
+  onGroupingChange,
 }: WorkflowCanvasProps): JSX.Element {
   const initial = useMemo<GraphState>(() => {
     const f = toFlow(workflow.graph);
     return {
-      nodes: f.nodes.map((n) => (n.type === 'group' ? n : { ...n, deletable: n.data.kind !== 'start' })),
+      nodes: f.nodes.map((n) =>
+        n.type === 'group' ? n : { ...n, deletable: n.data.kind !== 'start' },
+      ),
       edges: f.edges,
     };
   }, [workflow.id]);
@@ -87,6 +108,7 @@ function Canvas({
   const [history, setHistory] = useState<History<GraphState>>(() => initHistory(initial));
   const { nodes, edges } = history.present;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const { screenToFlowPosition } = useReactFlow();
 
   // Latest values for the keyboard handler (avoids stale closures / rebinding).
@@ -174,7 +196,13 @@ function Canvas({
         data: { kind, name: meta.label, config: meta.defaultConfig() },
       };
       // Add the node selected (and deselect the rest) so its inspector opens immediately.
-      apply((s) => ({ ...s, nodes: s.nodes.map((n): Node => ({ ...n, selected: false })).concat(node) }), true);
+      apply(
+        (s) => ({
+          ...s,
+          nodes: s.nodes.map((n): Node => ({ ...n, selected: false })).concat(node),
+        }),
+        true,
+      );
       setSelectedIds(new Set([node.id]));
     },
     [screenToFlowPosition, apply],
@@ -202,7 +230,9 @@ function Canvas({
     );
     if (els.length === 0) return;
     const elIds = new Set(els.map((n) => n.id));
-    const internal = presentRef.current.edges.filter((e) => elIds.has(e.source) && elIds.has(e.target));
+    const internal = presentRef.current.edges.filter(
+      (e) => elIds.has(e.source) && elIds.has(e.target),
+    );
     clipboardRef.current = { nodes: els, edges: internal };
   }, []);
 
@@ -210,7 +240,10 @@ function Canvas({
     const clip = clipboardRef.current;
     if (!clip) return;
     const ids = new Set(clip.nodes.map((n) => n.id));
-    const cloned = cloneSelection(clip.nodes as FlowNode[], clip.edges, ids, uuid, { x: 32, y: 32 });
+    const cloned = cloneSelection(clip.nodes as FlowNode[], clip.edges, ids, uuid, {
+      x: 32,
+      y: 32,
+    });
     apply(
       (s) => ({
         nodes: s.nodes.map((n): Node => ({ ...n, selected: false })).concat(cloned.nodes),
@@ -242,14 +275,18 @@ function Canvas({
   // --- Grouping ---
 
   const doGroup = useCallback(() => {
-    apply((s) => ({ ...s, nodes: groupSelection(s.nodes, selectedRef.current, uuid(), 'Group') }), true);
+    apply(
+      (s) => ({ ...s, nodes: groupSelection(s.nodes, selectedRef.current, uuid(), 'Group') }),
+      true,
+    );
   }, [apply]);
 
   const doUngroup = useCallback(() => {
     const ids = selectedRef.current;
     const groupId =
       presentRef.current.nodes.find((n) => n.type === 'group' && ids.has(n.id))?.id ??
-      presentRef.current.nodes.find((n) => isElementNode(n) && ids.has(n.id) && n.parentNode)?.parentNode;
+      presentRef.current.nodes.find((n) => isElementNode(n) && ids.has(n.id) && n.parentNode)
+        ?.parentNode;
     if (groupId) apply((s) => ({ ...s, nodes: ungroup(s.nodes, groupId) }), true);
   }, [apply]);
 
@@ -298,8 +335,10 @@ function Canvas({
           }),
           true,
         ),
+      group: doGroup,
+      ungroup: doUngroup,
     });
-  }, [registerMutators, apply]);
+  }, [registerMutators, apply, doGroup, doUngroup]);
 
   // --- Keyboard shortcuts ---
 
@@ -335,21 +374,77 @@ function Canvas({
   }, [doUndo, doRedo, copy, cut, pasteClipboard, duplicate, doGroup, doUngroup]);
 
   const groupableCount = useMemo(
-    () =>
-      nodes.filter((n) => isElementNode(n) && selectedIds.has(n.id) && !n.parentNode).length,
+    () => nodes.filter((n) => isElementNode(n) && selectedIds.has(n.id) && !n.parentNode).length,
     [nodes, selectedIds],
   );
+
+  const canUngroup = useMemo(
+    () =>
+      nodes.some(
+        (n) =>
+          selectedIds.has(n.id) &&
+          (n.type === 'group' || (isElementNode(n) && Boolean(n.parentNode))),
+      ),
+    [nodes, selectedIds],
+  );
+
+  // Report grouping availability up so the page's palette can enable/disable its
+  // Group/Ungroup actions in step with the canvas selection.
+  useEffect(() => {
+    onGroupingChange?.({ canGroup: groupableCount >= 2, canUngroup });
+  }, [groupableCount, canUngroup, onGroupingChange]);
+
+  // --- Group rename (double-click a group's label) ---
+
+  const commitGroupName = useCallback(
+    (id: string, name: string) => {
+      apply(
+        (s) => ({
+          ...s,
+          nodes: s.nodes.map((n) =>
+            n.id === id && n.type === 'group' ? { ...n, data: { ...n.data, name } } : n,
+          ),
+        }),
+        true,
+      );
+      setEditingGroupId(null);
+    },
+    [apply],
+  );
+
+  const onNodeDoubleClick = useCallback((_event: React.MouseEvent, node: Node) => {
+    if (node.type === 'group') setEditingGroupId(node.id);
+  }, []);
+
+  // Inject the inline-rename props into the group node currently being edited.
+  const displayNodes = useMemo(() => {
+    if (!editingGroupId) return nodes;
+    return nodes.map((n) =>
+      n.id === editingGroupId && n.type === 'group'
+        ? {
+            ...n,
+            data: {
+              ...n.data,
+              editing: true,
+              onCommit: (name: string) => commitGroupName(n.id, name),
+              onCancel: () => setEditingGroupId(null),
+            },
+          }
+        : n,
+    );
+  }, [nodes, editingGroupId, commitGroupName]);
 
   return (
     <div className="h-full w-full">
       <ReactFlow
-        nodes={nodes}
+        nodes={displayNodes}
         edges={edges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeDragStart={onNodeDragStart}
+        onNodeDoubleClick={onNodeDoubleClick}
         onSelectionChange={({ nodes: sel }: { nodes: Node[]; edges: Edge[] }) => {
           setSelectedIds(new Set(sel.map((n: Node) => n.id)));
         }}
@@ -373,7 +468,11 @@ function Canvas({
           <ToolbarButton label="Group (Ctrl+G)" onClick={doGroup} disabled={groupableCount < 2}>
             <Boxes size={15} />
           </ToolbarButton>
-          <ToolbarButton label="Ungroup (Ctrl+Shift+G)" onClick={doUngroup} disabled={selectedIds.size === 0}>
+          <ToolbarButton
+            label="Ungroup (Ctrl+Shift+G)"
+            onClick={doUngroup}
+            disabled={selectedIds.size === 0}
+          >
             <Box size={15} />
           </ToolbarButton>
         </Panel>
