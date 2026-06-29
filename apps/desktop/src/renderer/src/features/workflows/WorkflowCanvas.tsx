@@ -17,11 +17,11 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Box, Boxes, Redo2, Undo2 } from 'lucide-react';
-import type { NodePolicy, NodeRunStatus, Workflow, WorkflowDetail, WorkflowGraph, WorkflowNode } from '@shared/workflow';
+import type { NodePolicy, Workflow, WorkflowDetail, WorkflowGraph, WorkflowNode } from '@shared/workflow';
 import { nodeTypes } from './WorkflowNodeView';
 import { DND_MIME } from './NodePalette';
 import { NODE_META } from './node-meta';
-import { isElementNode, toFlow, toGraph, type FlowNode } from './graph-mapping';
+import { isElementNode, toFlow, toGraph, type FlowNode, type NodeDisplayStatus } from './graph-mapping';
 import { cloneSelection } from './selection-clone';
 import { groupSelection, ungroup } from './grouping';
 import {
@@ -38,7 +38,7 @@ import {
 interface WorkflowCanvasProps {
   workflow: WorkflowDetail;
   workflows: Workflow[];
-  statuses: Record<string, NodeRunStatus>;
+  statuses: Record<string, NodeDisplayStatus>;
   /** Reports the latest graph and selected node up to the page. */
   onGraphChange: (graph: WorkflowGraph) => void;
   onSelect: (node: FlowNode | null) => void;

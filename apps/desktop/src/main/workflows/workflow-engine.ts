@@ -4,7 +4,10 @@ import type {
   NodeRunResult,
   RequestNodeConfig,
   WorkflowDetail,
+  WorkflowInputRequest,
+  WorkflowInputResult,
   WorkflowNode,
+  WorkflowProgressEvent,
   WorkflowRunResult,
   WorkflowRunStatus,
 } from '@shared/workflow';
@@ -36,6 +39,14 @@ export interface WorkflowEnginePorts {
   ): Promise<ExecutionResponse>;
   evaluate(template: string, ctx: RunContext): string;
   loadWorkflow(workflowId: string): WorkflowDetail;
+  /**
+   * Suspends the run at a user-input node and resolves once the user supplies (or
+   * cancels) the requested values. Omitted in headless runs, where the engine
+   * falls back to each field's evaluated default.
+   */
+  requestInput?(request: WorkflowInputRequest, ctx: RunContext): Promise<WorkflowInputResult>;
+  /** Called as each node starts (`running`) and finishes (`done`), for live UI. */
+  onNodeProgress?(event: WorkflowProgressEvent): void;
   now?: () => number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
@@ -118,13 +129,22 @@ export class WorkflowEngine {
       if (steps++ > MAX_STEPS) throw new WorkflowError('Workflow exceeded the maximum step count');
 
       if (current.kind === 'end') {
-        results.push(this.instant(current, 'success'));
+        this.progress(workflow.id, current);
+        const endResult = this.instant(current, 'success');
+        results.push(endResult);
+        this.progress(workflow.id, current, endResult);
         return 'success';
       }
 
+      this.progress(workflow.id, current);
       const { result, handle } = await this.executeWithPolicy(current, ctx, control, nestedStack, results, loopCounters);
       results.push(result);
+      this.progress(workflow.id, current, result);
       if (result.variablesSet) Object.assign(runtime, result.variablesSet);
+
+      // A node may suspend (e.g. user-input) and be cancelled while suspended;
+      // surface that as a cancelled run rather than a node failure.
+      if (control.signal.aborted) return 'cancelled';
 
       let chosen = handle;
       if (result.status === 'failed') {
@@ -265,6 +285,47 @@ export class WorkflowEngine {
           };
         }
 
+        case 'user-input': {
+          // Resolve each field's default template so the prompt is pre-filled.
+          const fields = node.config.fields.map((f) => ({
+            label: f.label,
+            variable: f.variable,
+            default: this.ports.evaluate(f.default, ctx),
+            secret: f.secret,
+          }));
+          // Headless fallback: no input port → accept the evaluated defaults.
+          if (!this.ports.requestInput) {
+            const values = Object.fromEntries(fields.map((f) => [f.variable, f.default]));
+            return {
+              result: {
+                ...base,
+                status: 'success',
+                durationMs: done(),
+                ...(Object.keys(values).length ? { variablesSet: values } : {}),
+                message: 'Auto-filled defaults (no input port)',
+              },
+              handle: null,
+            };
+          }
+          const { values, cancelled } = await this.ports.requestInput(
+            { workflowId: ctx.workflowId, nodeId: node.id, name: node.name, message: node.config.message, fields },
+            ctx,
+          );
+          if (cancelled) {
+            return { result: { ...base, status: 'failed', durationMs: done(), message: 'Input cancelled' }, handle: null };
+          }
+          return {
+            result: {
+              ...base,
+              status: 'success',
+              durationMs: done(),
+              ...(Object.keys(values).length ? { variablesSet: values } : {}),
+              message: Object.keys(values).length ? `Collected ${Object.keys(values).length} value(s)` : 'Continued',
+            },
+            handle: null,
+          };
+        }
+
         case 'sub-workflow': {
           const child = this.ports.loadWorkflow(node.config.workflowId);
           const childStatus = await this.runInto(child, ctx.runtime, results, control, stack);
@@ -312,6 +373,19 @@ export class WorkflowEngine {
       const message = error instanceof Error ? error.message : String(error);
       return { result: { ...base, status: 'failed', durationMs: done(), message }, handle: null };
     }
+  }
+
+  /** Emits a `running` event (no result) or a `done` event (with result). */
+  private progress(workflowId: string, node: WorkflowNode, result?: NodeRunResult): void {
+    if (!this.ports.onNodeProgress) return;
+    this.ports.onNodeProgress({
+      workflowId,
+      phase: result ? 'done' : 'running',
+      nodeId: node.id,
+      kind: node.kind,
+      name: node.name,
+      ...(result ? { result } : {}),
+    });
   }
 
   private truthy(expression: string, ctx: RunContext): boolean {

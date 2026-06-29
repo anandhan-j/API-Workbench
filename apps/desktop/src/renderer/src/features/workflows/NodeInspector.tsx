@@ -2,7 +2,14 @@ import { useState } from 'react';
 import { ChevronDown, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import type { ExecutionResponse } from '@shared/execution';
-import type { ExtractRule, NodePolicy, RequestNodeConfig, Workflow, WorkflowNode } from '@shared/workflow';
+import type {
+  ExtractRule,
+  NodePolicy,
+  RequestNodeConfig,
+  UserInputField,
+  Workflow,
+  WorkflowNode,
+} from '@shared/workflow';
 import { extractFromResponse } from '@shared/extract';
 import { Modal } from '../../components/menu/Modal';
 import { RequestEditor } from '../runner/RequestEditor';
@@ -228,6 +235,25 @@ export function NodeInspector({
         </Field>
       )}
 
+      {kind === 'user-input' && (
+        <>
+          <Field label="Prompt message" id="node-input-message">
+            <textarea
+              id="node-input-message"
+              value={(config.message as string) ?? ''}
+              onChange={(e) => set({ message: e.target.value })}
+              rows={2}
+              placeholder="Shown to the user when the run pauses"
+              className={fieldClass}
+            />
+          </Field>
+          <UserInputFieldsEditor
+            fields={(config.fields as UserInputField[]) ?? []}
+            onChange={(fields) => set({ fields })}
+          />
+        </>
+      )}
+
       {kind !== 'start' && kind !== 'end' && (
         <ReliabilitySection policy={node.data.policy} onPolicy={onPolicy} />
       )}
@@ -333,6 +359,71 @@ function ExtractEditor({
         })}
         <button type="button" onClick={add} className="flex items-center justify-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-2">
           <Plus size={12} /> Add mapping
+        </button>
+      </div>
+    </details>
+  );
+}
+
+function UserInputFieldsEditor({
+  fields,
+  onChange,
+}: {
+  fields: UserInputField[];
+  onChange: (fields: UserInputField[]) => void;
+}): JSX.Element {
+  const update = (i: number, patch: Partial<UserInputField>): void =>
+    onChange(fields.map((f, j) => (j === i ? { ...f, ...patch } : f)));
+  const add = (): void =>
+    onChange([...fields, { label: '', variable: '', default: '', secret: false }]);
+  const remove = (i: number): void => onChange(fields.filter((_, j) => j !== i));
+
+  return (
+    <details open className="rounded-md border border-border">
+      <summary className="cursor-pointer px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+        Fields (prompt → variables)
+      </summary>
+      <div className="flex flex-col gap-2 border-t border-border p-2.5">
+        {fields.length === 0 && (
+          <p className="text-[11px] text-muted">No fields — the node is a Continue/Cancel checkpoint.</p>
+        )}
+        {fields.map((field, i) => (
+          <div key={i} className="flex flex-col gap-1 rounded-md border border-border p-1.5">
+            <div className="flex items-center gap-1">
+              <input
+                value={field.variable}
+                onChange={(e) => update(i, { variable: e.target.value })}
+                placeholder="variable"
+                className={`${smallField} w-28 font-mono`}
+              />
+              <input
+                value={field.label}
+                onChange={(e) => update(i, { label: e.target.value })}
+                placeholder="Label"
+                className={`${smallField} min-w-0 flex-1`}
+              />
+              <button type="button" aria-label="Remove field" onClick={() => remove(i)} className="ml-auto text-muted hover:text-rose-400">
+                <Trash2 size={13} />
+              </button>
+            </div>
+            <input
+              value={field.default}
+              onChange={(e) => update(i, { default: e.target.value })}
+              placeholder="Default (template, e.g. {{token}})"
+              className={`${smallField} w-full font-mono`}
+            />
+            <label className="flex items-center gap-1.5 text-[11px] text-muted">
+              <input
+                type="checkbox"
+                checked={field.secret}
+                onChange={(e) => update(i, { secret: e.target.checked })}
+              />
+              Mask input (secret)
+            </label>
+          </div>
+        ))}
+        <button type="button" onClick={add} className="flex items-center justify-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-2">
+          <Plus size={12} /> Add field
         </button>
       </div>
     </details>

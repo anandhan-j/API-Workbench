@@ -137,4 +137,82 @@ describe('WorkflowService', () => {
   it('throws when running an unknown workflow', async () => {
     await expect(service.run({ workflowId: 'nope' })).rejects.toThrow();
   });
+
+  it('exports a workflow with its full graph, bundling referenced sub-workflows', () => {
+    const child = service.create({ projectId, name: 'Child' });
+    const parent = service.create({ projectId, name: 'Parent' });
+    const startId = parent.graph.nodes[0].id;
+    service.save({
+      id: parent.id,
+      graph: {
+        nodes: [
+          parent.graph.nodes[0],
+          {
+            id: 'req',
+            kind: 'request',
+            name: 'call',
+            position: pos,
+            config: { method: 'POST', url: 'https://x', headers: { 'X-A': '1' }, query: {}, body: { type: 'none' }, extract: [] },
+          },
+          { id: 'sub', kind: 'sub-workflow', name: 'child', position: pos, config: { workflowId: child.id } },
+          { id: 'end', kind: 'end', name: 'End', position: pos, config: {} },
+        ],
+        edges: [
+          { id: 'e1', source: startId, target: 'req' },
+          { id: 'e2', source: 'req', target: 'sub' },
+          { id: 'e3', source: 'sub', target: 'end' },
+        ],
+        groups: [],
+      },
+    });
+
+    const bundle = service.exportWorkflow(parent.id, 1234);
+    expect(bundle.formatVersion).toBe(1);
+    expect(bundle.exportedAt).toBe(1234);
+    expect(bundle.rootId).toBe(parent.id);
+    expect(bundle.workflows.map((w) => w.id).sort()).toEqual([child.id, parent.id].sort());
+    // The full request config travels with the bundle, not a reference.
+    const root = bundle.workflows.find((w) => w.id === parent.id);
+    const reqNode = root?.graph.nodes.find((n) => n.id === 'req');
+    expect(reqNode?.config).toMatchObject({ method: 'POST', url: 'https://x', headers: { 'X-A': '1' } });
+  });
+
+  it('imports a bundle with fresh ids, remapping sub-workflow references', () => {
+    const child = service.create({ projectId, name: 'Child' });
+    const parent = service.create({ projectId, name: 'Parent' });
+    service.save({
+      id: parent.id,
+      graph: {
+        nodes: [
+          parent.graph.nodes[0],
+          { id: 'sub', kind: 'sub-workflow', name: 'child', position: pos, config: { workflowId: child.id } },
+        ],
+        edges: [{ id: 'e1', source: parent.graph.nodes[0].id, target: 'sub' }],
+        groups: [],
+      },
+    });
+
+    const bundle = service.exportWorkflow(parent.id);
+    const before = service.list(projectId).length;
+    const imported = service.importWorkflow({ projectId, data: bundle });
+
+    // Two fresh workflows created (parent + child), with new ids.
+    expect(service.list(projectId).length).toBe(before + 2);
+    expect(imported.id).not.toBe(parent.id);
+
+    // The imported parent's sub-workflow points at the imported child, not the original.
+    const subNode = imported.graph.nodes.find((n) => n.kind === 'sub-workflow');
+    const newWorkflowId = (subNode?.config as { workflowId: string }).workflowId;
+    expect(newWorkflowId).not.toBe(child.id);
+    expect(service.get(newWorkflowId).name).toBe('Child');
+  });
+
+  it('round-trips a workflow through export and import', () => {
+    const created = service.create({ projectId, name: 'RoundTrip', description: 'desc' });
+    const bundle = service.exportWorkflow(created.id);
+    const imported = service.importWorkflow({ projectId, data: bundle });
+    expect(imported.name).toBe('RoundTrip');
+    expect(imported.description).toBe('desc');
+    expect(imported.graph.nodes).toHaveLength(created.graph.nodes.length);
+  });
 });

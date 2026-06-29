@@ -78,6 +78,7 @@ function initServices(): Services {
     },
     evaluate: (template, ctx) =>
       variables.evaluate({ template, context: { workflowId: ctx.workflowId, runtime: ctx.runtime } }),
+    appVersion: app.getVersion(),
   });
   return {
     persistence: service,

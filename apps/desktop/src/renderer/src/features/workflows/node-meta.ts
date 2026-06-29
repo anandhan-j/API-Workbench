@@ -1,6 +1,7 @@
 import {
   CircleDot,
   Flag,
+  FormInput,
   GitBranch,
   Hourglass,
   Repeat,
@@ -112,6 +113,15 @@ export const NODE_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     addable: true,
     defaultConfig: () => ({ workflowId: '' }),
   },
+  'user-input': {
+    kind: 'user-input',
+    label: 'User Input',
+    description: 'Pause and prompt the user for values.',
+    icon: FormInput,
+    accent: 'bg-orange-500/15 text-orange-400',
+    addable: true,
+    defaultConfig: () => ({ message: '', fields: [] }),
+  },
   end: {
     kind: 'end',
     label: 'End',
@@ -132,6 +142,7 @@ export const PALETTE_KINDS: WorkflowNodeKind[] = [
   'set-variable',
   'transform',
   'delay',
+  'user-input',
   'sub-workflow',
   'end',
 ];
