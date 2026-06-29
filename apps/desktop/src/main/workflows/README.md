@@ -12,6 +12,8 @@ See [Architecture.md](./Architecture.md), [ADR-0005](../../../../../docs/adr/000
   - `create(input)` — a new workflow seeded with a single start node.
   - `save(input)` — persists name/description/graph.
   - `delete(id)` — removes the workflow.
+  - `exportWorkflow(id)` — a self-contained `WorkflowExport`: the workflow plus every sub-workflow it references transitively, each with its full graph (request nodes keep their complete config, not a reference). Credential-store secrets are not inlined; `credentialId` references travel as-is.
+  - `importWorkflow({ projectId, data })` — recreates the bundle in a project with fresh ids, remapping sub-workflow links to the new ids; returns the new root workflow.
   - `run(request, control?, requestInput?)` — loads the workflow and executes it through the engine; returns a `WorkflowRunResult`. Cancellable/pausable via the `RunController`; `requestInput` (optional) suspends the run at user-input nodes.
 - `WorkflowEngine` — the deterministic, headless runtime. Construct it with `WorkflowEnginePorts` (`executeRequest`, `evaluate`, `loadWorkflow`, optional `now`/`sleep`). `run(workflow, options)` returns the ordered per-node results and final variables. **Determinism is the acceptance feature.**
 - `validateGraph(graph)` — pure structural validation (single start, no branching, acyclic); throws `WorkflowError`.
@@ -53,7 +55,7 @@ Workflows live in the `workflows` table (migration `0009-workflows`): `project_i
 
 ## IPC
 
-Wired to the renderer through `workflow.list`, `workflow.get`, `workflow.create`, `workflow.save`, `workflow.delete`, `workflow.run`, `workflow.cancel`/`pause`/`resume`, and `workflow.provideInput` (with the `workflow.awaitingInput` push event). The renderer's **Workflows** page hosts a React Flow designer (palette, canvas, node inspector) and a run panel showing per-node results and final variables, plus a modal prompt when a run suspends at a user-input node.
+Wired to the renderer through `workflow.list`, `workflow.get`, `workflow.create`, `workflow.save`, `workflow.delete`, `workflow.export`/`workflow.import`, `workflow.run`, `workflow.cancel`/`pause`/`resume`, and `workflow.provideInput` (with the `workflow.awaitingInput` push event). The renderer's **Workflows** page hosts a React Flow designer (palette, canvas, node inspector) and a run panel showing per-node results and final variables, plus a modal prompt when a run suspends at a user-input node. Each workflow row offers an **Export** action (downloads the bundle JSON) and the list has an **Import workflow** button (reads a bundle JSON and recreates it in the active project).
 
 ## Designer (Phase 13)
 

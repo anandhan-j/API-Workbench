@@ -1,0 +1,202 @@
+{
+  "formatVersion": 1,
+  "exportedAt": 1719619200000,
+  "appVersion": "0.1.0",
+  "rootId": "wf-parent",
+  "workflows": [
+    {
+      "id": "wf-parent",
+      "name": "Full Feature Demo",
+      "description": "Exercises every workflow node kind: user-input (with a secret field), set-variable, an authenticated request with body/headers/query/options/extract and a reliability policy, transform, condition, switch, a loop with a delay, a bundled sub-workflow, and a view-layer group. Runs against httpbin.org and still completes offline (the request node continues on error).",
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "kind": "start",
+            "name": "Start",
+            "position": { "x": 40, "y": 220 },
+            "config": {}
+          },
+          {
+            "id": "input-params",
+            "kind": "user-input",
+            "name": "Collect parameters",
+            "position": { "x": 220, "y": 220 },
+            "config": {
+              "message": "Provide the run parameters for this demo workflow.",
+              "fields": [
+                { "label": "Username", "variable": "username", "default": "demo", "secret": false },
+                { "label": "Password", "variable": "password", "default": "p@ssw0rd", "secret": true },
+                { "label": "Plan (free/pro/enterprise)", "variable": "plan", "default": "pro", "secret": false }
+              ]
+            }
+          },
+          {
+            "id": "set-base",
+            "kind": "set-variable",
+            "name": "Set base URL",
+            "position": { "x": 430, "y": 220 },
+            "config": { "key": "baseUrl", "value": "https://httpbin.org" }
+          },
+          {
+            "id": "auth-request",
+            "kind": "request",
+            "name": "Echo login",
+            "position": { "x": 640, "y": 220 },
+            "policy": { "retries": 2, "retryBackoffMs": 500, "timeoutMs": 20000, "onError": "continue" },
+            "config": {
+              "method": "POST",
+              "url": "{{baseUrl}}/post",
+              "headers": { "Content-Type": "application/json", "X-User": "{{username}}" },
+              "query": { "source": "api-workbench", "plan": "{{plan}}" },
+              "body": { "type": "json", "content": "{\"user\":\"{{username}}\",\"plan\":\"{{plan}}\"}" },
+              "auth": { "type": "bearer", "token": "{{password}}" },
+              "options": { "timeoutMs": 15000, "maxRetries": 1, "followRedirects": true },
+              "extract": [
+                { "variable": "echoedUser", "source": "body", "engine": "jsonpath", "expression": "$.json.user" },
+                { "variable": "httpStatus", "source": "status", "engine": "jsonpath", "expression": "" }
+              ]
+            }
+          },
+          {
+            "id": "build-greeting",
+            "kind": "transform",
+            "name": "Build greeting",
+            "position": { "x": 860, "y": 220 },
+            "config": {
+              "variable": "greeting",
+              "engine": "template",
+              "input": "",
+              "expression": "Hello {{echoedUser}} on the {{plan}} plan"
+            }
+          },
+          {
+            "id": "check-user",
+            "kind": "condition",
+            "name": "User echoed?",
+            "position": { "x": 1080, "y": 220 },
+            "config": { "expression": "{{echoedUser}}" }
+          },
+          {
+            "id": "switch-plan",
+            "kind": "switch",
+            "name": "Route by plan",
+            "position": { "x": 1300, "y": 120 },
+            "config": { "value": "{{plan}}", "cases": ["free", "pro", "enterprise"] }
+          },
+          {
+            "id": "set-guest",
+            "kind": "set-variable",
+            "name": "Tier: guest",
+            "position": { "x": 1300, "y": 420 },
+            "config": { "key": "tier", "value": "guest" }
+          },
+          {
+            "id": "set-free",
+            "kind": "set-variable",
+            "name": "Tier: free",
+            "position": { "x": 1540, "y": 20 },
+            "config": { "key": "tier", "value": "free" }
+          },
+          {
+            "id": "set-pro",
+            "kind": "set-variable",
+            "name": "Tier: pro",
+            "position": { "x": 1540, "y": 110 },
+            "config": { "key": "tier", "value": "pro" }
+          },
+          {
+            "id": "set-ent",
+            "kind": "set-variable",
+            "name": "Tier: enterprise",
+            "position": { "x": 1540, "y": 200 },
+            "config": { "key": "tier", "value": "enterprise" }
+          },
+          {
+            "id": "set-default",
+            "kind": "set-variable",
+            "name": "Tier: unknown",
+            "position": { "x": 1540, "y": 290 },
+            "config": { "key": "tier", "value": "unknown" }
+          },
+          {
+            "id": "retry-loop",
+            "kind": "loop",
+            "name": "Repeat twice",
+            "position": { "x": 1780, "y": 220 },
+            "config": { "mode": "times", "times": 2 }
+          },
+          {
+            "id": "wait",
+            "kind": "delay",
+            "name": "Wait between iterations",
+            "position": { "x": 1780, "y": 420 },
+            "config": { "ms": 500 }
+          },
+          {
+            "id": "run-child",
+            "kind": "sub-workflow",
+            "name": "Run child workflow",
+            "position": { "x": 2000, "y": 220 },
+            "config": { "workflowId": "wf-child" }
+          },
+          {
+            "id": "end",
+            "kind": "end",
+            "name": "End",
+            "position": { "x": 2200, "y": 220 },
+            "config": {}
+          }
+        ],
+        "edges": [
+          { "id": "e-start", "source": "start", "target": "input-params" },
+          { "id": "e-input", "source": "input-params", "target": "set-base" },
+          { "id": "e-base", "source": "set-base", "target": "auth-request" },
+          { "id": "e-req", "source": "auth-request", "target": "build-greeting" },
+          { "id": "e-greet", "source": "build-greeting", "target": "check-user" },
+          { "id": "e-cond-true", "source": "check-user", "target": "switch-plan", "sourceHandle": "true" },
+          { "id": "e-cond-false", "source": "check-user", "target": "set-guest", "sourceHandle": "false" },
+          { "id": "e-sw-free", "source": "switch-plan", "target": "set-free", "sourceHandle": "free" },
+          { "id": "e-sw-pro", "source": "switch-plan", "target": "set-pro", "sourceHandle": "pro" },
+          { "id": "e-sw-ent", "source": "switch-plan", "target": "set-ent", "sourceHandle": "enterprise" },
+          { "id": "e-sw-def", "source": "switch-plan", "target": "set-default", "sourceHandle": "default" },
+          { "id": "e-guest", "source": "set-guest", "target": "retry-loop" },
+          { "id": "e-free", "source": "set-free", "target": "retry-loop" },
+          { "id": "e-pro", "source": "set-pro", "target": "retry-loop" },
+          { "id": "e-ent", "source": "set-ent", "target": "retry-loop" },
+          { "id": "e-def", "source": "set-default", "target": "retry-loop" },
+          { "id": "e-loop-body", "source": "retry-loop", "target": "wait", "sourceHandle": "body" },
+          { "id": "e-wait", "source": "wait", "target": "retry-loop" },
+          { "id": "e-loop-done", "source": "retry-loop", "target": "run-child", "sourceHandle": "done" },
+          { "id": "e-child", "source": "run-child", "target": "end" }
+        ],
+        "groups": [
+          { "id": "group-setup", "name": "Setup", "childIds": ["input-params", "set-base"] }
+        ]
+      }
+    },
+    {
+      "id": "wf-child",
+      "name": "Child: mark ran",
+      "description": null,
+      "graph": {
+        "nodes": [
+          { "id": "c-start", "kind": "start", "name": "Start", "position": { "x": 40, "y": 80 }, "config": {} },
+          {
+            "id": "c-set",
+            "kind": "set-variable",
+            "name": "Mark child ran",
+            "position": { "x": 240, "y": 80 },
+            "config": { "key": "childRan", "value": "yes (tier={{tier}})" }
+          },
+          { "id": "c-end", "kind": "end", "name": "End", "position": { "x": 440, "y": 80 }, "config": {} }
+        ],
+        "edges": [
+          { "id": "ce-1", "source": "c-start", "target": "c-set" },
+          { "id": "ce-2", "source": "c-set", "target": "c-end" }
+        ],
+        "groups": []
+      }
+    }
+  ]
+}

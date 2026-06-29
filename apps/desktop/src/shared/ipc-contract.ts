@@ -44,6 +44,8 @@ import {
   WorkflowRunResult,
   WorkflowInputRequest,
   WorkflowInputResponse,
+  WorkflowExport,
+  ImportWorkflowInput,
 } from './workflow';
 
 /**
@@ -189,6 +191,8 @@ export const IpcChannels = {
   'workflow.create': { request: CreateWorkflowInput, response: WorkflowDetail },
   'workflow.save': { request: SaveWorkflowInput, response: WorkflowDetail },
   'workflow.delete': { request: IdOnly, response: Empty },
+  'workflow.export': { request: IdOnly, response: WorkflowExport },
+  'workflow.import': { request: ImportWorkflowInput, response: WorkflowDetail },
   'workflow.run': { request: WorkflowRunRequest, response: WorkflowRunResult },
   'workflow.cancel': { request: IdOnly, response: Empty },
   'workflow.pause': { request: IdOnly, response: Empty },

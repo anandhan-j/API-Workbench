@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { SaveWorkflowInput, WorkflowRunRequest } from '@shared/workflow';
+import type { ImportWorkflowInput, SaveWorkflowInput, WorkflowRunRequest } from '@shared/workflow';
 import { invoke, isBridgeAvailable } from '../../lib/ipc';
 
 /** React Query hooks over the workflow IPC channels (Phase 12). */
@@ -40,6 +40,13 @@ export function useWorkflowMutations(projectId: string | null | undefined) {
     }),
     remove: useMutation({
       mutationFn: (id: string) => invoke('workflow.delete', { id }),
+      onSuccess: invalidateList,
+    }),
+    exportWorkflow: useMutation({
+      mutationFn: (id: string) => invoke('workflow.export', { id }),
+    }),
+    importWorkflow: useMutation({
+      mutationFn: (input: ImportWorkflowInput) => invoke('workflow.import', input),
       onSuccess: invalidateList,
     }),
   };

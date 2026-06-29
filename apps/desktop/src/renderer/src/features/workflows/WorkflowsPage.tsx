@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Pause, Play, Plus, Save, Square, ToggleLeft, ToggleRight, Trash2, Workflow as WorkflowIcon } from 'lucide-react';
+import { Download, Loader2, Pause, Play, Plus, Save, Square, ToggleLeft, ToggleRight, Trash2, Upload, Workflow as WorkflowIcon } from 'lucide-react';
 import type {
   ExtractRule,
   NodePolicy,
   NodeRunStatus,
+  WorkflowExport,
   WorkflowGraph,
   WorkflowInputRequest,
   WorkflowNode,
@@ -26,6 +27,10 @@ interface Mutators {
   setConfig: (id: string, config: WorkflowNode['config']) => void;
   setPolicy: (id: string, policy: NodePolicy | undefined) => void;
   remove: (id: string) => void;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function WorkflowsPage(): JSX.Element {
@@ -51,6 +56,7 @@ export function WorkflowsPage(): JSX.Element {
   const detail = useWorkflow(selectedId);
   const graphRef = useRef<WorkflowGraph | null>(null);
   const mutatorsRef = useRef<Mutators | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   // Per-workflow auto-save preference (persisted across restarts).
   const [autoSaveMap, setAutoSaveMap] = usePersistentState<Record<string, boolean>>('awb.workflow.autosave', {});
@@ -133,6 +139,39 @@ export function WorkflowsPage(): JSX.Element {
       cancelled: true,
     });
     setInputRequest(null);
+  };
+
+  // Logs a line to the dispatch monitor (no-ops gracefully outside Electron).
+  const logDispatch = (level: 'info' | 'error', message: string, context?: Record<string, unknown>): void => {
+    void invoke('dispatch.emit', { level, source: 'workflow', message, ...(context ? { context } : {}) });
+  };
+
+  const handleExport = async (id: string, name: string): Promise<void> => {
+    try {
+      const data = await mutations.exportWorkflow.mutateAsync(id);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${name.replace(/[^\w.-]+/g, '-') || 'workflow'}.workflow.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      logDispatch('info', `Exported workflow "${name}"`, { workflowId: id });
+    } catch (error) {
+      logDispatch('error', `Failed to export "${name}": ${errorMessage(error)}`, { workflowId: id });
+    }
+  };
+
+  const handleImportFile = async (file: File): Promise<void> => {
+    if (!projectId) return;
+    try {
+      const data = JSON.parse(await file.text()) as WorkflowExport;
+      const wf = await mutations.importWorkflow.mutateAsync({ projectId, data });
+      setSelectedId(wf.id);
+      logDispatch('info', `Imported workflow "${wf.name}" from ${file.name}`, { workflowId: wf.id });
+    } catch (error) {
+      logDispatch('error', `Failed to import "${file.name}": ${errorMessage(error)}`, { file: file.name });
+    }
   };
 
   const handleImportRequest = async (requestId: string): Promise<void> => {
@@ -227,6 +266,27 @@ export function WorkflowsPage(): JSX.Element {
             </button>
           </form>
 
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            disabled={mutations.importWorkflow.isPending}
+            className="flex items-center justify-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2 disabled:opacity-40"
+          >
+            {mutations.importWorkflow.isPending ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            Import workflow
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleImportFile(file);
+              e.target.value = '';
+            }}
+          />
+
           <div className="rounded-md border border-border">
             {workflows.data?.map((w) => (
               <div
@@ -243,6 +303,15 @@ export function WorkflowsPage(): JSX.Element {
                   <WorkflowIcon size={14} className="shrink-0 text-muted" />
                   <span className="truncate">{w.name}</span>
                   <span className="ml-auto shrink-0 text-[11px] text-muted">{w.nodeCount}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Export ${w.name}`}
+                  title="Export workflow"
+                  onClick={() => void handleExport(w.id, w.name)}
+                  className="shrink-0 text-muted opacity-0 hover:text-accent group-hover:opacity-100"
+                >
+                  <Download size={13} />
                 </button>
                 <button
                   type="button"

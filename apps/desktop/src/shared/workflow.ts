@@ -282,6 +282,48 @@ export const SaveWorkflowInput = z.object({
 });
 export type SaveWorkflowInput = z.infer<typeof SaveWorkflowInput>;
 
+// --- Portable export / import ---
+
+export const WORKFLOW_EXPORT_FORMAT = 1;
+
+/**
+ * A single workflow inside an export bundle. The graph is carried verbatim, so
+ * every node's full configuration travels with it — request nodes keep their
+ * complete method/url/headers/query/body/auth/extract, not a reference. `id` is
+ * the original workflow id, retained so sub-workflow references between bundled
+ * workflows can be remapped to the fresh ids created on import.
+ */
+export const WorkflowExportItem = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  description: z.string().nullable(),
+  graph: WorkflowGraph,
+});
+export type WorkflowExportItem = z.infer<typeof WorkflowExportItem>;
+
+/**
+ * A self-contained workflow export. `workflows` holds the exported workflow
+ * (`rootId`) followed by every sub-workflow it references transitively, so an
+ * import needs nothing else. Secrets held in the credential store are NOT
+ * inlined; any `credentialId` reference is carried as-is (inline `auth` configs,
+ * which already live in the graph, do travel with it).
+ */
+export const WorkflowExport = z.object({
+  formatVersion: z.literal(WORKFLOW_EXPORT_FORMAT),
+  exportedAt: z.number(),
+  appVersion: z.string().optional(),
+  rootId: z.string(),
+  workflows: z.array(WorkflowExportItem).min(1),
+});
+export type WorkflowExport = z.infer<typeof WorkflowExport>;
+
+/** Imports an exported bundle into a project as a new workflow (with fresh ids). */
+export const ImportWorkflowInput = z.object({
+  projectId: z.string(),
+  data: WorkflowExport,
+});
+export type ImportWorkflowInput = z.infer<typeof ImportWorkflowInput>;
+
 // --- Run DTOs ---
 
 export const NodeRunStatus = z.enum(['success', 'failed', 'skipped']);

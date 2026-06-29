@@ -325,6 +325,8 @@ export function registerIpcHandlers(context: IpcContext): void {
       workflows.delete(request.id);
       return {};
     },
+    'workflow.export': (request) => workflows.exportWorkflow(request.id),
+    'workflow.import': (request) => workflows.importWorkflow(request),
     'workflow.run': async (request) => {
       const controller = new RunController();
       inflightWorkflows.set(request.workflowId, controller);
@@ -382,7 +384,14 @@ export function registerIpcHandlers(context: IpcContext): void {
         });
         throw new Error(`Invalid IPC request payload for "${channel}"`);
       }
-      const result = await handlers[channel](parsed.data as never);
+      let result: unknown;
+      try {
+        result = await handlers[channel](parsed.data as never);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error('ipc', `Handler for "${channel}" failed`, { message });
+        throw error;
+      }
       const validated = spec.response.safeParse(result);
       if (!validated.success) {
         logger.error('ipc', `Handler for "${channel}" produced an invalid response`, {
