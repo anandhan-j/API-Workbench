@@ -64,5 +64,6 @@ export function useRunControls() {
     pause: useMutation({ mutationFn: (id: string) => invoke('workflow.pause', { id }) }),
     resume: useMutation({ mutationFn: (id: string) => invoke('workflow.resume', { id }) }),
     cancel: useMutation({ mutationFn: (id: string) => invoke('workflow.cancel', { id }) }),
+    step: useMutation({ mutationFn: (id: string) => invoke('workflow.step', { id }) }),
   };
 }

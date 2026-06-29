@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { VariableContext, VariableScope } from '@shared/variable';
 import { invoke, isBridgeAvailable } from '../../lib/ipc';
 import { useActiveSelection } from '../workspaces/use-workspaces';
+import { useRuntimeValues } from './runtime-values';
 
 export interface VariableHoverPopoverProps {
   name: string;
@@ -52,6 +53,9 @@ export function VariableHoverPopover({
 }: VariableHoverPopoverProps): JSX.Element {
   const qc = useQueryClient();
   const active = useActiveSelection();
+  const runtimeValues = useRuntimeValues();
+  const runtimeValue = runtimeValues[name];
+  const hasRuntime = runtimeValue !== undefined;
   const context: VariableContext = {
     ...(active.data?.workspaceId ? { workspaceId: active.data.workspaceId } : {}),
     ...extraContext,
@@ -59,7 +63,7 @@ export function VariableHoverPopover({
   const valueQuery = useQuery({
     queryKey: ['evalVar', name, context],
     queryFn: () => invoke('variable.evaluate', { template: `{{${name}}}`, context }),
-    enabled: isBridgeAvailable() && !secret && !source,
+    enabled: isBridgeAvailable() && !secret && !source && !hasRuntime,
     staleTime: 2_000,
   });
 
@@ -120,11 +124,18 @@ export function VariableHoverPopover({
       <div className="mb-1 flex items-center justify-between gap-2">
         <span className="truncate font-mono font-medium text-fg">{name}</span>
         <span className="shrink-0 rounded bg-bg px-1.5 py-0.5 text-[10px] uppercase text-muted">
-          {source ? 'step' : (currentScope ?? 'unresolved')}
+          {hasRuntime ? 'run' : source ? 'step' : (currentScope ?? 'unresolved')}
         </span>
       </div>
 
-      {source ? (
+      {hasRuntime ? (
+        <div className="space-y-1">
+          <div className="rounded bg-bg px-2 py-1 font-mono text-fg">
+            {runtimeValue || <span className="text-muted">(empty)</span>}
+          </div>
+          <p className="text-[11px] text-muted">Current value in this run.</p>
+        </div>
+      ) : source ? (
         <div className="space-y-1">
           <div className="rounded bg-bg px-2 py-1 text-muted">
             Produced by <span className="font-medium text-fg">{source.nodeName}</span>

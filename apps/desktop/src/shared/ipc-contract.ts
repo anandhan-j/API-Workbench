@@ -28,13 +28,7 @@ import { ExecutionRequest, ExecutionResponse } from './execution';
 import { RunTestsRequest, TestReport } from './testing';
 import { ScriptRunRequest, ScriptRunResult, PreScriptRunRequest } from './scripting';
 import { CollectionVersion, VersionDiff, VersionSnapshot, RestoreResult } from './version';
-import {
-  Variable,
-  VariableScope,
-  VariableContext,
-  EvaluateRequest,
-  ResolvedKey,
-} from './variable';
+import { Variable, VariableScope, VariableContext, EvaluateRequest, ResolvedKey } from './variable';
 import {
   Workflow,
   WorkflowDetail,
@@ -94,51 +88,104 @@ export const IpcChannels = {
   // --- Workspaces ---
   'workspace.list': { request: Empty, response: z.array(Workspace) },
   'workspace.create': { request: CreateWorkspaceInput, response: Workspace },
-  'workspace.rename': { request: z.object({ id: z.string(), name: z.string().min(1) }), response: Workspace },
+  'workspace.rename': {
+    request: z.object({ id: z.string(), name: z.string().min(1) }),
+    response: Workspace,
+  },
   'workspace.delete': { request: IdOnly, response: Empty },
   'workspace.detail': { request: IdOnly, response: WorkspaceDetail },
   'workspace.setActive': { request: IdOnly, response: Empty },
   'workspace.getActive': { request: Empty, response: ActiveSelection },
-  'workspace.updateSettings': { request: z.object({ id: z.string(), settings: z.record(z.unknown()) }), response: Workspace },
+  'workspace.updateSettings': {
+    request: z.object({ id: z.string(), settings: z.record(z.unknown()) }),
+    response: Workspace,
+  },
   'workspace.export': { request: IdOnly, response: WorkspaceExport },
   'workspace.import': { request: z.object({ data: WorkspaceExport }), response: Workspace },
 
   // --- Projects ---
-  'project.listByWorkspace': { request: z.object({ workspaceId: z.string() }), response: z.array(Project) },
+  'project.listByWorkspace': {
+    request: z.object({ workspaceId: z.string() }),
+    response: z.array(Project),
+  },
   'project.create': { request: CreateProjectInput, response: Project },
   'project.delete': { request: IdOnly, response: Empty },
   'project.open': { request: IdOnly, response: Empty },
   'project.close': { request: Empty, response: Empty },
-  'project.recent': { request: z.object({ limit: z.number().optional() }), response: z.array(RecentProject) },
+  'project.recent': {
+    request: z.object({ limit: z.number().optional() }),
+    response: z.array(RecentProject),
+  },
 
   // --- Collections ---
-  'collection.list': { request: z.object({ projectId: z.string() }), response: z.array(Collection) },
+  'collection.list': {
+    request: z.object({ projectId: z.string() }),
+    response: z.array(Collection),
+  },
   'collection.create': { request: CreateCollectionInput, response: Collection },
-  'collection.rename': { request: z.object({ id: z.string(), name: z.string().min(1) }), response: Collection },
+  'collection.rename': {
+    request: z.object({ id: z.string(), name: z.string().min(1) }),
+    response: Collection,
+  },
   'collection.delete': { request: IdOnly, response: Empty },
-  'collection.tree': { request: z.object({ collectionId: z.string() }), response: z.array(TreeNode) },
-  'collection.source': { request: z.object({ collectionId: z.string() }), response: CollectionSourceInfo.nullable() },
+  'collection.tree': {
+    request: z.object({ collectionId: z.string() }),
+    response: z.array(TreeNode),
+  },
+  'collection.source': {
+    request: z.object({ collectionId: z.string() }),
+    response: CollectionSourceInfo.nullable(),
+  },
 
   // --- Folders ---
   'folder.create': { request: CreateFolderInput, response: Folder },
-  'folder.rename': { request: z.object({ id: z.string(), name: z.string().min(1) }), response: Folder },
+  'folder.rename': {
+    request: z.object({ id: z.string(), name: z.string().min(1) }),
+    response: Folder,
+  },
   'folder.move': { request: z.object({ id: z.string(), parentId: NullableId }), response: Folder },
   'folder.delete': { request: IdOnly, response: Empty },
 
   // --- Requests ---
   'request.create': { request: CreateRequestInput, response: RequestSummary },
-  'request.rename': { request: z.object({ id: z.string(), name: z.string().min(1) }), response: RequestSummary },
-  'request.update': { request: z.object({ id: z.string(), name: z.string().optional(), method: HttpMethod.optional(), url: z.string().optional() }), response: RequestSummary },
-  'request.move': { request: z.object({ id: z.string(), folderId: NullableId }), response: RequestSummary },
-  'request.copy': { request: z.object({ id: z.string(), folderId: NullableId.optional() }), response: RequestSummary },
+  'request.rename': {
+    request: z.object({ id: z.string(), name: z.string().min(1) }),
+    response: RequestSummary,
+  },
+  'request.update': {
+    request: z.object({
+      id: z.string(),
+      name: z.string().optional(),
+      method: HttpMethod.optional(),
+      url: z.string().optional(),
+    }),
+    response: RequestSummary,
+  },
+  'request.move': {
+    request: z.object({ id: z.string(), folderId: NullableId }),
+    response: RequestSummary,
+  },
+  'request.copy': {
+    request: z.object({ id: z.string(), folderId: NullableId.optional() }),
+    response: RequestSummary,
+  },
   'request.delete': { request: IdOnly, response: Empty },
   'request.toggleFavorite': { request: IdOnly, response: RequestSummary },
-  'request.favorites': { request: z.object({ collectionId: z.string() }), response: z.array(RequestSummary) },
-  'request.search': { request: z.object({ collectionId: z.string(), query: z.string() }), response: z.array(RequestSummary) },
+  'request.favorites': {
+    request: z.object({ collectionId: z.string() }),
+    response: z.array(RequestSummary),
+  },
+  'request.search': {
+    request: z.object({ collectionId: z.string(), query: z.string() }),
+    response: z.array(RequestSummary),
+  },
   'request.open': { request: IdOnly, response: RequestSummary },
   'request.get': { request: IdOnly, response: RequestDetailFull },
   'request.save': { request: SaveRequestInput, response: RequestSummary },
-  'request.history': { request: z.object({ limit: z.number().optional() }), response: z.array(RequestHistoryEntry) },
+  'request.history': {
+    request: z.object({ limit: z.number().optional() }),
+    response: z.array(RequestHistoryEntry),
+  },
   'request.clearHistory': { request: Empty, response: Empty },
 
   // --- Native file picker (for form-data / binary bodies) ---
@@ -157,12 +204,18 @@ export const IpcChannels = {
   'openapi.sync': { request: SyncRequest, response: SyncResult },
 
   // --- Authentication credentials (Phase 9) ---
-  'auth.list': { request: z.object({ scope: z.string(), scopeId: z.string().optional() }), response: z.array(CredentialMeta) },
+  'auth.list': {
+    request: z.object({ scope: z.string(), scopeId: z.string().optional() }),
+    response: z.array(CredentialMeta),
+  },
   'auth.save': { request: SaveCredentialInput, response: CredentialMeta },
   'auth.delete': { request: z.object({ id: z.string() }), response: z.object({}).strict() },
 
   // --- Request execution (Phase 10) ---
-  'request.execute': { request: z.object({ request: ExecutionRequest }), response: ExecutionResponse },
+  'request.execute': {
+    request: z.object({ request: ExecutionRequest }),
+    response: ExecutionResponse,
+  },
   'request.cancel': { request: z.object({ id: z.string() }), response: z.object({}).strict() },
 
   // --- Testing & assertions (Phase 11) ---
@@ -173,18 +226,42 @@ export const IpcChannels = {
   'script.runPre': { request: PreScriptRunRequest, response: ScriptRunResult },
 
   // --- Version control ---
-  'version.snapshot': { request: z.object({ collectionId: z.string(), label: z.string().optional() }), response: CollectionVersion },
-  'version.list': { request: z.object({ collectionId: z.string() }), response: z.array(CollectionVersion) },
+  'version.snapshot': {
+    request: z.object({ collectionId: z.string(), label: z.string().optional() }),
+    response: CollectionVersion,
+  },
+  'version.list': {
+    request: z.object({ collectionId: z.string() }),
+    response: z.array(CollectionVersion),
+  },
   'version.diff': { request: z.object({ versionId: z.string() }), response: VersionDiff },
   'version.get': { request: z.object({ versionId: z.string() }), response: VersionSnapshot },
   'version.restore': { request: z.object({ versionId: z.string() }), response: RestoreResult },
 
   // --- Variables ---
-  'variable.list': { request: z.object({ scope: VariableScope, scopeId: z.string().optional() }), response: z.array(Variable) },
-  'variable.set': { request: z.object({ scope: VariableScope, scopeId: z.string().optional(), key: z.string().min(1), value: z.string(), secret: z.boolean().optional() }), response: Variable },
-  'variable.delete': { request: z.object({ scope: VariableScope, scopeId: z.string().optional(), key: z.string() }), response: Empty },
+  'variable.list': {
+    request: z.object({ scope: VariableScope, scopeId: z.string().optional() }),
+    response: z.array(Variable),
+  },
+  'variable.set': {
+    request: z.object({
+      scope: VariableScope,
+      scopeId: z.string().optional(),
+      key: z.string().min(1),
+      value: z.string(),
+      secret: z.boolean().optional(),
+    }),
+    response: Variable,
+  },
+  'variable.delete': {
+    request: z.object({ scope: VariableScope, scopeId: z.string().optional(), key: z.string() }),
+    response: Empty,
+  },
   'variable.evaluate': { request: EvaluateRequest, response: z.object({ value: z.string() }) },
-  'variable.resolvedKeys': { request: z.object({ context: VariableContext.optional() }), response: z.array(ResolvedKey) },
+  'variable.resolvedKeys': {
+    request: z.object({ context: VariableContext.optional() }),
+    response: z.array(ResolvedKey),
+  },
 
   // --- Workflows (Phase 12) ---
   'workflow.list': { request: z.object({ projectId: z.string() }), response: z.array(Workflow) },
@@ -198,11 +275,18 @@ export const IpcChannels = {
   'workflow.cancel': { request: IdOnly, response: Empty },
   'workflow.pause': { request: IdOnly, response: Empty },
   'workflow.resume': { request: IdOnly, response: Empty },
+  'workflow.step': { request: IdOnly, response: Empty },
   'workflow.provideInput': { request: WorkflowInputResponse, response: Empty },
 
   // --- Preferences ---
-  'preferences.get': { request: z.object({ key: z.string() }), response: z.object({ value: z.unknown() }) },
-  'preferences.set': { request: z.object({ key: z.string(), value: z.unknown() }), response: Empty },
+  'preferences.get': {
+    request: z.object({ key: z.string() }),
+    response: z.object({ value: z.unknown() }),
+  },
+  'preferences.set': {
+    request: z.object({ key: z.string(), value: z.unknown() }),
+    response: Empty,
+  },
   'preferences.list': { request: Empty, response: z.array(Preference) },
 
   // --- Backups ---

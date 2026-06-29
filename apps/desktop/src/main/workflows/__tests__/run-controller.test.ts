@@ -47,4 +47,63 @@ describe('RunController', () => {
     c.pause();
     expect(c.isPaused).toBe(false);
   });
+
+  it('startStepping runs the first node, then suspends before each next node', async () => {
+    const c = new RunController();
+    c.startStepping();
+    expect(c.isStepping).toBe(true);
+    // First checkpoint (before the start node) proceeds immediately.
+    await expect(c.waitIfPaused()).resolves.toBeUndefined();
+    // The next checkpoint blocks until step().
+    let ran = false;
+    const wait = c.waitIfPaused().then(() => {
+      ran = true;
+    });
+    await Promise.resolve();
+    expect(ran).toBe(false);
+    c.step();
+    await wait;
+    expect(ran).toBe(true);
+  });
+
+  it('step grants exactly one node per call', async () => {
+    const c = new RunController();
+    c.startStepping();
+    await c.waitIfPaused(); // start node runs (initial budget)
+    // Suspends before the next node...
+    let second = false;
+    const wait2 = c.waitIfPaused().then(() => {
+      second = true;
+    });
+    await Promise.resolve();
+    expect(second).toBe(false);
+    c.step(); // ...one step releases exactly that node
+    await wait2;
+    expect(second).toBe(true);
+    // ...and the following node suspends again.
+    let third = false;
+    c.waitIfPaused().then(() => {
+      third = true;
+    });
+    await Promise.resolve();
+    expect(third).toBe(false);
+  });
+
+  it('resume exits step mode and runs the rest to completion', async () => {
+    const c = new RunController();
+    c.startStepping();
+    await c.waitIfPaused(); // start node
+    const wait = c.waitIfPaused().then(() => undefined); // suspends
+    c.resume();
+    await expect(wait).resolves.toBeUndefined();
+    expect(c.isStepping).toBe(false);
+    await expect(c.waitIfPaused()).resolves.toBeUndefined(); // no longer stepping
+  });
+
+  it('step is a no-op after cancellation', () => {
+    const c = new RunController();
+    c.cancel();
+    c.step();
+    expect(c.isPaused).toBe(false);
+  });
 });

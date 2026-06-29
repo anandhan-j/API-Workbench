@@ -12,13 +12,17 @@ import {
   ChevronRight,
   Download,
   GripHorizontal,
+  ListChecks,
   Loader2,
   Pause,
   Play,
   Plus,
+  RotateCcw,
   Save,
   Search,
+  SlidersHorizontal,
   Square,
+  StepForward,
   ToggleLeft,
   ToggleRight,
   Trash2,
@@ -33,6 +37,7 @@ import type {
   WorkflowGraph,
   WorkflowInputRequest,
   WorkflowNode,
+  WorkflowRunResult,
 } from '@shared/workflow';
 import {
   invoke,
@@ -60,6 +65,7 @@ import { RunPanel, type RunningNode } from './RunPanel';
 import { WorkflowInputPrompt } from './WorkflowInputPrompt';
 import { upstreamVariables } from './flow-variables';
 import { useVariableKeys } from '../variables/use-variable-keys';
+import { RuntimeValuesContext } from '../variables/runtime-values';
 import type { VariableSuggestion } from '../variables/suggestion';
 import type { VariableContext } from '@shared/variable';
 
@@ -82,9 +88,11 @@ interface RunProgress {
   statuses: Record<string, NodeDisplayStatus>;
   results: NodeRunResult[];
   current: RunningNode | null;
+  /** Runtime variables accumulated so far (merged from each node's variablesSet). */
+  runtime: Record<string, string>;
 }
 
-const EMPTY_PROGRESS: RunProgress = { statuses: {}, results: [], current: null };
+const EMPTY_PROGRESS: RunProgress = { statuses: {}, results: [], current: null, runtime: {} };
 
 /** Collapsible section header with a chevron toggle (used by the left sidebar). */
 function PanelHeader({
@@ -134,6 +142,12 @@ export function WorkflowsPage(): JSX.Element {
   const [inputRequest, setInputRequest] = useState<WorkflowInputRequest | null>(null);
   const [progress, setProgress] = useState<RunProgress>(EMPTY_PROGRESS);
   const [grouping, setGrouping] = useState({ canGroup: false, canUngroup: false });
+  // Per-workflow run history (in memory): switching workflows restores results.
+  const [runHistory, setRunHistory] = useState<Record<string, WorkflowRunResult[]>>({});
+  // Which history entry is on screen per workflow (undefined = latest, null = reset).
+  const [viewIndex, setViewIndex] = useState<Record<string, number | null>>({});
+  // Run mode: false = run to completion, true = step one node at a time (persisted).
+  const [stepMode, setStepMode] = usePersistentState('awb.workflow.stepMode', false);
 
   const detail = useWorkflow(selectedId);
   const graphRef = useRef<WorkflowGraph | null>(null);
@@ -231,18 +245,57 @@ export function WorkflowsPage(): JSX.Element {
           statuses: { ...p.statuses, [result.nodeId]: result.status },
           results: [...p.results, result],
           current: p.current?.nodeId === result.nodeId ? null : p.current,
+          runtime: { ...p.runtime, ...(result.variablesSet ?? {}) },
         };
       });
     });
   }, [bridge]);
 
-  // Run statuses overlaid on the canvas, only for the workflow that was run.
-  const statuses = useMemo<Record<string, NodeDisplayStatus>>(
-    () => (runWorkflowId === selectedId ? progress.statuses : {}),
-    [progress.statuses, runWorkflowId, selectedId],
-  );
+  // The selected workflow's stored runs and which one is on screen.
+  const isRunningThis = run.isPending && runWorkflowId === selectedId;
+  const selectedHistory = selectedId ? (runHistory[selectedId] ?? []) : [];
+  const rawViewIndex = selectedId ? viewIndex[selectedId] : null;
+  const viewIdx = rawViewIndex === undefined ? 0 : rawViewIndex;
+  const displayedRun = viewIdx === null ? null : (selectedHistory[viewIdx] ?? null);
 
-  const showLiveRun = runWorkflowId === selectedId;
+  // Canvas overlay follows whatever run is on screen — live while running, the
+  // viewed history entry otherwise, nothing when reset — so the two stay in sync.
+  const statuses = useMemo<Record<string, NodeDisplayStatus>>(() => {
+    if (isRunningThis) return progress.statuses;
+    if (!displayedRun) return {};
+    const map: Record<string, NodeDisplayStatus> = {};
+    for (const n of displayedRun.nodeResults) map[n.nodeId] = n.status;
+    return map;
+  }, [isRunningThis, progress.statuses, displayedRun]);
+
+  // Whether the in-flight run was started in step mode, the live runtime values,
+  // and per-node results — fed to the canvas (node hover) and inspector (variable
+  // hover) so the user can inspect results and values as they step.
+  const isStepRun = Boolean(run.variables?.stepMode);
+  const runtimeValues = isRunningThis ? progress.runtime : (displayedRun?.finalVariables ?? {});
+  const nodeResultMap = useMemo<Record<string, NodeRunResult>>(() => {
+    const src = isRunningThis ? progress.results : (displayedRun?.nodeResults ?? []);
+    const map: Record<string, NodeRunResult> = {};
+    for (const r of src) map[r.nodeId] = r;
+    return map;
+  }, [isRunningThis, progress.results, displayedRun]);
+
+  // F10 (or the Next button) advances a paused step run by exactly one node.
+  const stepHotkey = useRef<() => boolean>(() => false);
+  stepHotkey.current = () => {
+    if (isStepRun && run.isPending && !progress.current && selectedId) {
+      controls.step.mutate(selectedId);
+      return true;
+    }
+    return false;
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'F10' && stepHotkey.current()) e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Filter the workflow list by name (case-insensitive).
   const filteredWorkflows = useMemo(() => {
@@ -259,13 +312,35 @@ export function WorkflowsPage(): JSX.Element {
 
   const handleRun = (): void => {
     if (!selectedId || !graphRef.current) return;
+    const id = selectedId;
     setPaused(false);
     setInputRequest(null);
     setProgress(EMPTY_PROGRESS);
+    setViewIndex((v) => ({ ...v, [id]: 0 }));
     mutations.save.mutate(
-      { id: selectedId, graph: graphRef.current },
-      { onSuccess: () => run.mutate({ workflowId: selectedId }) },
+      { id, graph: graphRef.current },
+      {
+        onSuccess: () =>
+          run.mutate(
+            { workflowId: id, ...(stepMode ? { stepMode: true } : {}) },
+            {
+              onSuccess: (result) => {
+                setRunHistory((h) => ({ ...h, [id]: [result, ...(h[id] ?? [])].slice(0, 10) }));
+                setViewIndex((v) => ({ ...v, [id]: 0 }));
+              },
+            },
+          ),
+      },
     );
+  };
+
+  // Clear the on-screen run (and canvas overlay) without dropping it from history.
+  const handleReset = (id: string): void => {
+    setViewIndex((v) => ({ ...v, [id]: null }));
+    if (runWorkflowId === id) {
+      setProgress(EMPTY_PROGRESS);
+      run.reset();
+    }
   };
 
   const handlePauseResume = (): void => {
@@ -281,6 +356,10 @@ export function WorkflowsPage(): JSX.Element {
 
   const handleCancel = (): void => {
     if (selectedId) controls.cancel.mutate(selectedId);
+  };
+
+  const handleStep = (): void => {
+    if (selectedId) controls.step.mutate(selectedId);
   };
 
   // Surface a prompt when a run suspends at a user-input node for this workflow.
@@ -656,35 +735,97 @@ export function WorkflowsPage(): JSX.Element {
                 Save
               </button>
               {run.isPending ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={handlePauseResume}
-                    className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
-                  >
-                    {paused ? <Play size={14} /> : <Pause size={14} />}
-                    {paused ? 'Resume' : 'Pause'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCancel}
-                    className="flex items-center gap-1.5 rounded-md border border-rose-500/40 px-3 py-1.5 text-sm text-rose-400 hover:bg-rose-500/10"
-                  >
-                    <Square size={14} /> Cancel
-                  </button>
-                  <span className="flex items-center gap-1.5 text-sm text-muted">
-                    <Loader2 size={14} className="animate-spin" /> Running
-                  </span>
-                </>
+                isStepRun ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleStep}
+                      disabled={Boolean(progress.current)}
+                      title="Next node (F10)"
+                      className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm text-accent-fg disabled:opacity-40"
+                    >
+                      <StepForward size={14} /> Next
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => selectedId && controls.resume.mutate(selectedId)}
+                      className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
+                    >
+                      <Play size={14} /> Resume
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancel}
+                      className="flex items-center gap-1.5 rounded-md border border-rose-500/40 px-3 py-1.5 text-sm text-rose-400 hover:bg-rose-500/10"
+                    >
+                      <Square size={14} /> Cancel
+                    </button>
+                    <span className="flex items-center gap-1.5 text-sm text-muted">
+                      {progress.current ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" /> Running
+                        </>
+                      ) : (
+                        'Paused'
+                      )}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handlePauseResume}
+                      className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
+                    >
+                      {paused ? <Play size={14} /> : <Pause size={14} />}
+                      {paused ? 'Resume' : 'Pause'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancel}
+                      className="flex items-center gap-1.5 rounded-md border border-rose-500/40 px-3 py-1.5 text-sm text-rose-400 hover:bg-rose-500/10"
+                    >
+                      <Square size={14} /> Cancel
+                    </button>
+                    <span className="flex items-center gap-1.5 text-sm text-muted">
+                      <Loader2 size={14} className="animate-spin" /> Running
+                    </span>
+                  </>
+                )
               ) : (
-                <button
-                  type="button"
-                  onClick={handleRun}
-                  disabled={!selectedId}
-                  className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm text-accent-fg disabled:opacity-40"
-                >
-                  <Play size={14} /> Run
-                </button>
+                <>
+                  {displayedRun && (
+                    <button
+                      type="button"
+                      onClick={() => selectedId && handleReset(selectedId)}
+                      className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
+                    >
+                      <RotateCcw size={14} /> Reset
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setStepMode((m) => !m)}
+                    aria-pressed={stepMode}
+                    title={stepMode ? 'Mode: step one node at a time' : 'Mode: run to completion'}
+                    className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm ${
+                      stepMode
+                        ? 'border-accent text-accent'
+                        : 'border-border text-muted hover:bg-surface-2'
+                    }`}
+                  >
+                    <StepForward size={14} /> Step mode
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRun}
+                    disabled={!selectedId}
+                    className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm text-accent-fg disabled:opacity-40"
+                  >
+                    {stepMode ? <StepForward size={14} /> : <Play size={14} />}
+                    {stepMode ? 'Step' : 'Run'}
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -695,6 +836,7 @@ export function WorkflowsPage(): JSX.Element {
                 workflow={detail.data}
                 workflows={(workflows.data ?? []).filter((w) => w.id !== detail.data?.id)}
                 statuses={statuses}
+                results={nodeResultMap}
                 onGraphChange={handleGraphChange}
                 onSelect={setSelectedNode}
                 onGroupingChange={setGrouping}
@@ -711,42 +853,59 @@ export function WorkflowsPage(): JSX.Element {
         </section>
 
         {/* Right: inspector + run results */}
-        <aside className="flex w-80 shrink-0 flex-col divide-y divide-border overflow-hidden rounded-md border border-border">
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <NodeInspector
-              node={selectedNode}
-              workflows={(workflows.data ?? []).filter((w) => w.id !== selectedId)}
-              projectRequests={projectRequests.data ?? []}
-              onImportRequest={(id) => void handleImportRequest(id)}
-              suggestions={inspectorSuggestions}
-              variableContext={variableContext}
-              flowSuggestions={flowSuggestions}
-              lastResponse={
-                run.data?.nodeResults.find((n) => n.nodeId === selectedNode?.id)?.response
-              }
-              onRename={(name) =>
-                selectedNode && mutatorsRef.current?.rename(selectedNode.id, name)
-              }
-              onConfig={(config) =>
-                selectedNode && mutatorsRef.current?.setConfig(selectedNode.id, config)
-              }
-              onPolicy={(policy) =>
-                selectedNode && mutatorsRef.current?.setPolicy(selectedNode.id, policy)
-              }
-              onDelete={() => selectedNode && mutatorsRef.current?.remove(selectedNode.id)}
-            />
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <RunPanel
-              result={run.data && run.data.workflowId === selectedId ? run.data : null}
-              running={run.isPending && showLiveRun}
-              error={showLiveRun ? runError : null}
-              liveResults={showLiveRun ? progress.results : []}
-              current={showLiveRun ? progress.current : null}
-              selectedNodeId={selectedNode?.id ?? null}
-              onSelectStage={(id) => mutatorsRef.current?.focusNode(id)}
-            />
-          </div>
+        <aside className="flex w-80 shrink-0 flex-col overflow-hidden rounded-md border border-border">
+          <section className="flex min-h-0 flex-1 flex-col">
+            <h2 className="flex shrink-0 items-center gap-1.5 border-b border-border bg-surface-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+              <SlidersHorizontal size={12} /> Node Details
+            </h2>
+            <RuntimeValuesContext.Provider value={runtimeValues}>
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+                <NodeInspector
+                  node={selectedNode}
+                  workflows={(workflows.data ?? []).filter((w) => w.id !== selectedId)}
+                  projectRequests={projectRequests.data ?? []}
+                  onImportRequest={(id) => void handleImportRequest(id)}
+                  suggestions={inspectorSuggestions}
+                  variableContext={variableContext}
+                  flowSuggestions={flowSuggestions}
+                  lastResponse={
+                    displayedRun?.nodeResults.find((n) => n.nodeId === selectedNode?.id)?.response
+                  }
+                  onRename={(name) =>
+                    selectedNode && mutatorsRef.current?.rename(selectedNode.id, name)
+                  }
+                  onConfig={(config) =>
+                    selectedNode && mutatorsRef.current?.setConfig(selectedNode.id, config)
+                  }
+                  onPolicy={(policy) =>
+                    selectedNode && mutatorsRef.current?.setPolicy(selectedNode.id, policy)
+                  }
+                  onDelete={() => selectedNode && mutatorsRef.current?.remove(selectedNode.id)}
+                />
+              </div>
+            </RuntimeValuesContext.Provider>
+          </section>
+          <section className="flex min-h-0 flex-1 flex-col border-t-4 border-bg">
+            <h2 className="flex shrink-0 items-center gap-1.5 border-b border-border bg-surface-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+              <ListChecks size={12} /> Run Results
+            </h2>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <RunPanel
+                result={isRunningThis ? null : displayedRun}
+                running={isRunningThis}
+                error={runWorkflowId === selectedId && !displayedRun ? runError : null}
+                liveResults={isRunningThis ? progress.results : []}
+                current={isRunningThis ? progress.current : null}
+                selectedNodeId={selectedNode?.id ?? null}
+                onSelectStage={(id) => mutatorsRef.current?.focusNode(id)}
+                history={selectedHistory}
+                historyIndex={viewIdx === null ? -1 : viewIdx}
+                onSelectHistory={(i) =>
+                  selectedId && setViewIndex((v) => ({ ...v, [selectedId]: i }))
+                }
+              />
+            </div>
+          </section>
         </aside>
       </div>
 

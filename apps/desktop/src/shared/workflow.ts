@@ -365,6 +365,8 @@ export type WorkflowRunResult = z.infer<typeof WorkflowRunResult>;
 export const WorkflowRunRequest = z.object({
   workflowId: z.string(),
   runtime: z.record(z.string()).optional(),
+  /** Start paused before the first node; advance one node at a time via workflow.step. */
+  stepMode: z.boolean().optional(),
 });
 export type WorkflowRunRequest = z.infer<typeof WorkflowRunRequest>;
 

@@ -2,11 +2,7 @@ import { app, dialog, ipcMain, BrowserWindow } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
-import {
-  IpcChannels,
-  type DispatchEvent,
-  type IpcChannelName,
-} from '@shared/ipc-contract';
+import { IpcChannels, type DispatchEvent, type IpcChannelName } from '@shared/ipc-contract';
 import type { WorkflowInputRequest, WorkflowInputResult } from '@shared/workflow';
 import { logger } from '../services/logger';
 import type { PersistenceService } from '../persistence';
@@ -92,8 +88,19 @@ type Handler<C extends IpcChannelName> = (
 ) => Promise<unknown> | unknown;
 
 export function registerIpcHandlers(context: IpcContext): void {
-  const { persistence, workspaces, collections, imports, sync, versioning, variables, auth, execution, testRunner, workflows } =
-    context;
+  const {
+    persistence,
+    workspaces,
+    collections,
+    imports,
+    sync,
+    versioning,
+    variables,
+    auth,
+    execution,
+    testRunner,
+    workflows,
+  } = context;
 
   // Adapter exposing just what the script sandbox needs from the variable engine.
   const scriptVariables = {
@@ -295,8 +302,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         variables: scriptVariables,
       }),
 
-    'version.snapshot': (request) =>
-      versioning.snapshot(request.collectionId, request.label),
+    'version.snapshot': (request) => versioning.snapshot(request.collectionId, request.label),
     'version.list': (request) => versioning.listVersions(request.collectionId),
     'version.diff': (request) => versioning.diff(request.versionId),
     'version.get': (request) => versioning.getSnapshot(request.versionId),
@@ -336,6 +342,8 @@ export function registerIpcHandlers(context: IpcContext): void {
     'workflow.run': async (request) => {
       const controller = new RunController();
       inflightWorkflows.set(request.workflowId, controller);
+      // Step mode: run the start node, then suspend before each node via workflow.step.
+      if (request.stepMode) controller.startStepping();
       try {
         return await workflows.run(
           request,
@@ -363,6 +371,10 @@ export function registerIpcHandlers(context: IpcContext): void {
     },
     'workflow.resume': (request) => {
       inflightWorkflows.get(request.id)?.resume();
+      return {};
+    },
+    'workflow.step': (request) => {
+      inflightWorkflows.get(request.id)?.step();
       return {};
     },
     'workflow.provideInput': (request) => {

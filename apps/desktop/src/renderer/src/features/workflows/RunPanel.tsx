@@ -34,6 +34,11 @@ interface RunPanelProps {
   selectedNodeId?: string | null;
   /** Selecting a stage focuses its node on the canvas. */
   onSelectStage?: (nodeId: string) => void;
+  /** Past runs of the selected workflow (newest first), for the history selector. */
+  history?: WorkflowRunResult[];
+  /** Index into `history` currently shown; -1 when the view was reset. */
+  historyIndex?: number;
+  onSelectHistory?: (index: number) => void;
 }
 
 const rowKey = (n: NodeRunResult, i: number): string => `${n.nodeId}-${i}`;
@@ -54,6 +59,9 @@ export function RunPanel({
   current,
   selectedNodeId,
   onSelectStage,
+  history,
+  historyIndex,
+  onSelectHistory,
 }: RunPanelProps): JSX.Element {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [modalResponse, setModalResponse] = useState<ExecutionResponse | null>(null);
@@ -90,7 +98,8 @@ export function RunPanel({
   if (error && !running) {
     return <p className="whitespace-pre-wrap break-words p-4 text-sm text-rose-400">{error}</p>;
   }
-  if (!running && !result && liveResults.length === 0) {
+  const hist = history ?? [];
+  if (!running && !result && liveResults.length === 0 && hist.length === 0) {
     return <p className="p-4 text-sm text-muted">Run the workflow to see step-by-step results.</p>;
   }
 
@@ -125,7 +134,7 @@ export function RunPanel({
           <>
             <StatusBadge status={result.status} />
             <span className="text-muted">{result.durationMs} ms</span>
-            <span className="ml-auto flex items-center gap-2 text-[11px]">
+            <span className="flex items-center gap-2 text-[11px]">
               {counts.success > 0 && <span className="text-emerald-400">{counts.success} ✓</span>}
               {counts.failed > 0 && <span className="text-rose-400">{counts.failed} ✗</span>}
               {counts.skipped > 0 && (
@@ -134,6 +143,22 @@ export function RunPanel({
             </span>
           </>
         ) : null}
+        {hist.length > 0 && (
+          <select
+            value={historyIndex ?? 0}
+            onChange={(e) => onSelectHistory?.(Number(e.target.value))}
+            aria-label="Run history"
+            className="ml-auto rounded border border-border bg-surface px-1.5 py-0.5 text-[11px]"
+          >
+            {(historyIndex ?? 0) < 0 && <option value={-1}>Cleared</option>}
+            {hist.map((r, i) => (
+              <option key={`${r.startedAt}-${i}`} value={i}>
+                {new Date(r.startedAt).toLocaleTimeString()} · {r.status}
+                {i === 0 ? ' (latest)' : ''}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       <ol className="flex flex-col gap-1">
@@ -155,6 +180,10 @@ export function RunPanel({
         })}
         {showRunningRow && current && <RunningRow node={current} />}
       </ol>
+
+      {!running && !result && hist.length > 0 && (
+        <p className="text-sm text-muted">Run cleared — pick a past run above, or re-run.</p>
+      )}
 
       {!running && variables.length > 0 && (
         <div>

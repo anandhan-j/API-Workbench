@@ -16,9 +16,12 @@ import ReactFlow, {
   type NodeChange,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { createPortal } from 'react-dom';
 import { Box, Boxes, Redo2, Undo2 } from 'lucide-react';
+import { cn } from '../../lib/cn';
 import type {
   NodePolicy,
+  NodeRunResult,
   Workflow,
   WorkflowDetail,
   WorkflowGraph,
@@ -66,6 +69,8 @@ interface WorkflowCanvasProps {
   }) => void;
   /** Reports whether the current selection can be grouped / ungrouped. */
   onGroupingChange?: (state: { canGroup: boolean; canUngroup: boolean }) => void;
+  /** Per-node run results, keyed by node id — shown on node hover. */
+  results?: Record<string, NodeRunResult>;
 }
 
 interface GraphState {
@@ -95,6 +100,7 @@ function Canvas({
   onSelect,
   registerMutators,
   onGroupingChange,
+  results = {},
 }: WorkflowCanvasProps): JSX.Element {
   const initial = useMemo<GraphState>(() => {
     const f = toFlow(workflow.graph);
@@ -110,6 +116,9 @@ function Canvas({
   const { nodes, edges } = history.present;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [hoverResult, setHoverResult] = useState<{ nodeId: string; x: number; y: number } | null>(
+    null,
+  );
   const { screenToFlowPosition, fitView } = useReactFlow();
 
   // Latest values for the keyboard handler (avoids stale closures / rebinding).
@@ -457,6 +466,10 @@ function Canvas({
         onConnect={onConnect}
         onNodeDragStart={onNodeDragStart}
         onNodeDoubleClick={onNodeDoubleClick}
+        onNodeMouseEnter={(e: React.MouseEvent, node: Node) => {
+          if (results[node.id]) setHoverResult({ nodeId: node.id, x: e.clientX, y: e.clientY });
+        }}
+        onNodeMouseLeave={() => setHoverResult(null)}
         onSelectionChange={({ nodes: sel }: { nodes: Node[]; edges: Edge[] }) => {
           setSelectedIds(new Set(sel.map((n: Node) => n.id)));
         }}
@@ -492,7 +505,80 @@ function Canvas({
         <Controls />
         <MiniMap pannable zoomable className="!bg-surface" />
       </ReactFlow>
+      {hoverResult && results[hoverResult.nodeId] && (
+        <NodeResultHover result={results[hoverResult.nodeId]} x={hoverResult.x} y={hoverResult.y} />
+      )}
     </div>
+  );
+}
+
+function statusClass(status: NodeRunResult['status']): string {
+  if (status === 'success') return 'bg-emerald-500/15 text-emerald-400';
+  if (status === 'failed') return 'bg-rose-500/15 text-rose-400';
+  return 'bg-amber-500/15 text-amber-400';
+}
+
+/** Floating card shown when hovering a node that has a run result. */
+function NodeResultHover({
+  result,
+  x,
+  y,
+}: {
+  result: NodeRunResult;
+  x: number;
+  y: number;
+}): JSX.Element {
+  const vars = result.variablesSet ? Object.entries(result.variablesSet) : [];
+  const left = Math.max(8, Math.min(x + 14, window.innerWidth - 272));
+  const top = Math.min(y + 14, window.innerHeight - 220);
+  return createPortal(
+    <div
+      style={{ position: 'fixed', left, top, zIndex: 70 }}
+      className="pointer-events-none w-64 rounded-md border border-border bg-surface p-2.5 text-xs shadow-xl"
+    >
+      <div className="mb-1 flex items-center gap-2">
+        <span
+          className={cn(
+            'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase',
+            statusClass(result.status),
+          )}
+        >
+          {result.status}
+        </span>
+        <span className="truncate font-medium">{result.name}</span>
+        <span className="ml-auto shrink-0 text-[10px] text-muted">{result.durationMs}ms</span>
+      </div>
+      {result.message && (
+        <p className="mb-1 whitespace-pre-wrap break-words text-muted">{result.message}</p>
+      )}
+      {result.response && (
+        <p className="mb-1 text-muted">
+          <span
+            className={cn(
+              'font-semibold',
+              result.response.ok ? 'text-emerald-400' : 'text-rose-400',
+            )}
+          >
+            {result.response.status} {result.response.statusText}
+          </span>
+          {` · ${result.response.sizeBytes} B`}
+        </p>
+      )}
+      {vars.length > 0 && (
+        <div className="rounded border border-border">
+          {vars.map(([k, v]) => (
+            <div
+              key={k}
+              className="flex justify-between gap-2 border-b border-border px-1.5 py-0.5 last:border-0"
+            >
+              <span className="shrink-0 font-mono text-muted">{k}</span>
+              <span className="truncate font-mono text-fg">{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>,
+    document.body,
   );
 }
 
