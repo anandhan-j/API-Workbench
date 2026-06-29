@@ -62,6 +62,7 @@ interface WorkflowCanvasProps {
     remove: (id: string) => void;
     group: () => void;
     ungroup: () => void;
+    focusNode: (id: string) => void;
   }) => void;
   /** Reports whether the current selection can be grouped / ungrouped. */
   onGroupingChange?: (state: { canGroup: boolean; canUngroup: boolean }) => void;
@@ -109,7 +110,7 @@ function Canvas({
   const { nodes, edges } = history.present;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
 
   // Latest values for the keyboard handler (avoids stale closures / rebinding).
   const presentRef = useRef<GraphState>(history.present);
@@ -290,6 +291,16 @@ function Canvas({
     if (groupId) apply((s) => ({ ...s, nodes: ungroup(s.nodes, groupId) }), true);
   }, [apply]);
 
+  // Select and center a node — used by the run panel to jump to a stage's node.
+  const focusNode = useCallback(
+    (id: string) => {
+      apply((s) => ({ ...s, nodes: s.nodes.map((n) => ({ ...n, selected: n.id === id })) }), false);
+      setSelectedIds(new Set([id]));
+      fitView({ nodes: [{ id }], duration: 300, padding: 0.6, maxZoom: 1.2 });
+    },
+    [apply, fitView],
+  );
+
   const doUndo = useCallback(() => setHistory((h) => undoHistory(h)), []);
   const doRedo = useCallback(() => setHistory((h) => redoHistory(h)), []);
 
@@ -337,8 +348,9 @@ function Canvas({
         ),
       group: doGroup,
       ungroup: doUngroup,
+      focusNode,
     });
-  }, [registerMutators, apply, doGroup, doUngroup]);
+  }, [registerMutators, apply, doGroup, doUngroup, focusNode]);
 
   // --- Keyboard shortcuts ---
 

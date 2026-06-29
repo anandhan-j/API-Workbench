@@ -70,6 +70,7 @@ interface Mutators {
   remove: (id: string) => void;
   group: () => void;
   ungroup: () => void;
+  focusNode: (id: string) => void;
 }
 
 function errorMessage(error: unknown): string {
@@ -742,6 +743,8 @@ export function WorkflowsPage(): JSX.Element {
               error={showLiveRun ? runError : null}
               liveResults={showLiveRun ? progress.results : []}
               current={showLiveRun ? progress.current : null}
+              selectedNodeId={selectedNode?.id ?? null}
+              onSelectStage={(id) => mutatorsRef.current?.focusNode(id)}
             />
           </div>
         </aside>

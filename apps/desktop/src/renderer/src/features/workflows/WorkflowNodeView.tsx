@@ -57,6 +57,9 @@ export const WorkflowNodeView = memo(function WorkflowNodeView({
   const meta = NODE_META[data.kind];
   const Icon = meta.icon;
   const handles = sourceHandles(data);
+  // The ring conveys run status (or a plain border when idle); selection is shown
+  // as a separate offset outline so it stays visible on top of a status ring —
+  // i.e. you can still tell a post-run node is selected.
   const statusRing =
     data.status === 'running'
       ? 'ring-2 ring-accent animate-pulse'
@@ -69,9 +72,12 @@ export const WorkflowNodeView = memo(function WorkflowNodeView({
             : selected
               ? 'ring-2 ring-accent'
               : 'ring-1 ring-border';
+  const selectedOutline = selected ? 'outline outline-2 outline-offset-2 outline-accent' : '';
 
   return (
-    <div className={cn('relative w-44 rounded-lg bg-surface shadow-sm', statusRing)}>
+    <div
+      className={cn('relative w-44 rounded-lg bg-surface shadow-sm', statusRing, selectedOutline)}
+    >
       {data.kind !== 'start' && (
         <Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5 !bg-muted" />
       )}
