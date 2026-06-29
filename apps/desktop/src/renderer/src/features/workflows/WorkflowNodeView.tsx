@@ -151,6 +151,11 @@ function summarize(data: FlowNodeData): string {
     }
     case 'sub-workflow':
       return 'runs another workflow';
+    case 'user-input': {
+      const c = data.config as { fields?: unknown[] };
+      const count = c.fields?.length ?? 0;
+      return count ? `prompts for ${count} value${count === 1 ? '' : 's'}` : 'pauses for the user';
+    }
     default:
       return '';
   }

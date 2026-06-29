@@ -1,4 +1,4 @@
-export { WorkflowService, type WorkflowServiceDeps } from './workflow-service';
+export { WorkflowService, type WorkflowServiceDeps, type RequestInput } from './workflow-service';
 export {
   WorkflowEngine,
   type WorkflowEnginePorts,

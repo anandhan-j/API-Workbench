@@ -29,6 +29,7 @@ export const WorkflowNodeKind = z.enum([
   'switch',
   'loop',
   'transform',
+  'user-input',
   'end',
 ]);
 export type WorkflowNodeKind = z.infer<typeof WorkflowNodeKind>;
@@ -119,6 +120,33 @@ export const SetVariableNodeConfig = z.object({
 });
 export type SetVariableNodeConfig = z.infer<typeof SetVariableNodeConfig>;
 
+/**
+ * A single value the run asks the user to supply when it reaches a user-input
+ * node. `variable` is the runtime variable the submitted value is written to;
+ * `default` is a template, evaluated against the run context, used to pre-fill
+ * the prompt; `secret` masks the input field.
+ */
+export const UserInputField = z.object({
+  label: z.string().default(''),
+  variable: z.string(),
+  default: z.string().default(''),
+  secret: z.boolean().default(false),
+});
+export type UserInputField = z.infer<typeof UserInputField>;
+
+/**
+ * Pauses the run and asks the user to fill in `fields`; the submitted values are
+ * written to the runtime variables named by each field, so later nodes can
+ * reference them via `{{ variable }}`. With no fields it is a plain checkpoint
+ * (Continue/Cancel). Runs headlessly (no input port) by falling back to the
+ * fields' evaluated defaults.
+ */
+export const UserInputNodeConfig = z.object({
+  message: z.string().default(''),
+  fields: z.array(UserInputField).default([]),
+});
+export type UserInputNodeConfig = z.infer<typeof UserInputNodeConfig>;
+
 export const DelayNodeConfig = z.object({
   ms: z.number().int().min(0).max(600_000),
 });
@@ -187,6 +215,7 @@ export const WorkflowNode = z.discriminatedUnion('kind', [
   z.object({ ...nodeBase, kind: z.literal('switch'), config: SwitchNodeConfig }),
   z.object({ ...nodeBase, kind: z.literal('loop'), config: LoopNodeConfig }),
   z.object({ ...nodeBase, kind: z.literal('transform'), config: TransformNodeConfig }),
+  z.object({ ...nodeBase, kind: z.literal('user-input'), config: UserInputNodeConfig }),
   z.object({ ...nodeBase, kind: z.literal('end'), config: EndNodeConfig }),
 ]);
 export type WorkflowNode = z.infer<typeof WorkflowNode>;
@@ -296,3 +325,35 @@ export const WorkflowRunRequest = z.object({
   runtime: z.record(z.string()).optional(),
 });
 export type WorkflowRunRequest = z.infer<typeof WorkflowRunRequest>;
+
+// --- User-input pause/resume DTOs ---
+
+/**
+ * Pushed to the renderer when a run reaches a user-input node and suspends. The
+ * run stays alive (blocked in the engine) until the renderer replies with a
+ * {@link WorkflowInputResponse} on the `workflow.provideInput` channel. `fields`
+ * carry their defaults already evaluated against the run context.
+ */
+export const WorkflowInputRequest = z.object({
+  workflowId: z.string(),
+  nodeId: z.string(),
+  name: z.string(),
+  message: z.string(),
+  fields: z.array(UserInputField),
+});
+export type WorkflowInputRequest = z.infer<typeof WorkflowInputRequest>;
+
+/** The renderer's reply that unblocks a suspended user-input node. */
+export const WorkflowInputResponse = z.object({
+  workflowId: z.string(),
+  nodeId: z.string(),
+  values: z.record(z.string()).default({}),
+  cancelled: z.boolean().default(false),
+});
+export type WorkflowInputResponse = z.infer<typeof WorkflowInputResponse>;
+
+/** The engine-facing outcome of a {@link WorkflowInputRequest}. */
+export interface WorkflowInputResult {
+  values: Record<string, string>;
+  cancelled: boolean;
+}

@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Pause, Play, Plus, Save, Square, ToggleLeft, ToggleRight, Trash2, Workflow as WorkflowIcon } from 'lucide-react';
-import type { ExtractRule, NodePolicy, NodeRunStatus, WorkflowGraph, WorkflowNode } from '@shared/workflow';
-import { invoke, isBridgeAvailable } from '../../lib/ipc';
+import type {
+  ExtractRule,
+  NodePolicy,
+  NodeRunStatus,
+  WorkflowGraph,
+  WorkflowInputRequest,
+  WorkflowNode,
+} from '@shared/workflow';
+import { invoke, isBridgeAvailable, onWorkflowAwaitingInput } from '../../lib/ipc';
 import { usePersistentState } from '../../lib/use-persistent-state';
 import { useConfirm } from '../../components/confirm/ConfirmProvider';
 import { useActiveSelection, useWorkspaceDetail } from '../workspaces/use-workspaces';
@@ -12,6 +19,7 @@ import { WorkflowCanvas, type FlowNode } from './WorkflowCanvas';
 import { NodePalette } from './NodePalette';
 import { NodeInspector } from './NodeInspector';
 import { RunPanel } from './RunPanel';
+import { WorkflowInputPrompt } from './WorkflowInputPrompt';
 
 interface Mutators {
   rename: (id: string, name: string) => void;
@@ -38,6 +46,7 @@ export function WorkflowsPage(): JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null);
+  const [inputRequest, setInputRequest] = useState<WorkflowInputRequest | null>(null);
 
   const detail = useWorkflow(selectedId);
   const graphRef = useRef<WorkflowGraph | null>(null);
@@ -76,6 +85,7 @@ export function WorkflowsPage(): JSX.Element {
   const handleRun = (): void => {
     if (!selectedId || !graphRef.current) return;
     setPaused(false);
+    setInputRequest(null);
     mutations.save.mutate(
       { id: selectedId, graph: graphRef.current },
       { onSuccess: () => run.mutate({ workflowId: selectedId }) },
@@ -95,6 +105,34 @@ export function WorkflowsPage(): JSX.Element {
 
   const handleCancel = (): void => {
     if (selectedId) controls.cancel.mutate(selectedId);
+  };
+
+  // Surface a prompt when a run suspends at a user-input node for this workflow.
+  useEffect(() => {
+    if (!bridge) return;
+    return onWorkflowAwaitingInput((req) => setInputRequest(req));
+  }, [bridge]);
+
+  const handleProvideInput = (values: Record<string, string>): void => {
+    if (!inputRequest) return;
+    void invoke('workflow.provideInput', {
+      workflowId: inputRequest.workflowId,
+      nodeId: inputRequest.nodeId,
+      values,
+      cancelled: false,
+    });
+    setInputRequest(null);
+  };
+
+  const handleCancelInput = (): void => {
+    if (!inputRequest) return;
+    void invoke('workflow.provideInput', {
+      workflowId: inputRequest.workflowId,
+      nodeId: inputRequest.nodeId,
+      values: {},
+      cancelled: true,
+    });
+    setInputRequest(null);
   };
 
   const handleImportRequest = async (requestId: string): Promise<void> => {
@@ -337,6 +375,14 @@ export function WorkflowsPage(): JSX.Element {
           </div>
         </aside>
       </div>
+
+      {inputRequest && (
+        <WorkflowInputPrompt
+          request={inputRequest}
+          onSubmit={handleProvideInput}
+          onCancel={handleCancelInput}
+        />
+      )}
     </div>
   );
 }

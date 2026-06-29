@@ -7,6 +7,7 @@ import {
   type IpcResponse,
   type WorkbenchApi,
 } from '@shared/ipc-contract';
+import type { WorkflowInputRequest } from '@shared/workflow';
 
 /**
  * Preload bridge. Exposes ONLY the enumerated invoke channels plus a single
@@ -33,6 +34,12 @@ const api: WorkbenchApi = {
     const handler = (_event: IpcRendererEvent, payload: DispatchEvent): void => listener(payload);
     ipcRenderer.on('dispatch.event', handler);
     return () => ipcRenderer.off('dispatch.event', handler);
+  },
+
+  onWorkflowAwaitingInput(listener: (event: WorkflowInputRequest) => void): () => void {
+    const handler = (_event: IpcRendererEvent, payload: WorkflowInputRequest): void => listener(payload);
+    ipcRenderer.on('workflow.awaitingInput', handler);
+    return () => ipcRenderer.off('workflow.awaitingInput', handler);
   },
 };
 

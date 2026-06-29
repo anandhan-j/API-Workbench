@@ -7,6 +7,7 @@ import {
   type DispatchEvent,
   type IpcChannelName,
 } from '@shared/ipc-contract';
+import type { WorkflowInputRequest, WorkflowInputResult } from '@shared/workflow';
 import { logger } from '../services/logger';
 import type { PersistenceService } from '../persistence';
 import type { WorkspaceManager } from '../workspace';
@@ -46,6 +47,39 @@ export interface IpcContext {
 const inflightExecutions = new Map<string, AbortController>();
 /** Tracks in-flight workflow runs by workflow id so they can be cancelled/paused. */
 const inflightWorkflows = new Map<string, RunController>();
+/**
+ * Resolvers for user-input nodes currently suspended awaiting a renderer reply,
+ * keyed by `workflowId:nodeId`. `workflow.provideInput` (or cancellation) settles
+ * them, unblocking the engine.
+ */
+const pendingInputs = new Map<string, (result: WorkflowInputResult) => void>();
+
+/**
+ * Pushes a user-input request to the renderer and resolves once the user replies
+ * via `workflow.provideInput` or the run is cancelled. Resolves cancelled when no
+ * window can receive the prompt.
+ */
+function awaitUserInput(
+  request: WorkflowInputRequest,
+  controller: RunController,
+): Promise<WorkflowInputResult> {
+  const key = `${request.workflowId}:${request.nodeId}`;
+  const window = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+  if (!window) return Promise.resolve({ values: {}, cancelled: true });
+
+  return new Promise<WorkflowInputResult>((resolve) => {
+    const settle = (result: WorkflowInputResult): void => {
+      if (!pendingInputs.has(key)) return;
+      pendingInputs.delete(key);
+      controller.signal.removeEventListener('abort', onAbort);
+      resolve(result);
+    };
+    const onAbort = (): void => settle({ values: {}, cancelled: true });
+    pendingInputs.set(key, settle);
+    controller.signal.addEventListener('abort', onAbort, { once: true });
+    window.webContents.send('workflow.awaitingInput', request);
+  });
+}
 
 type Handler<C extends IpcChannelName> = (
   request: ReturnType<(typeof IpcChannels)[C]['request']['parse']>,
@@ -295,9 +329,15 @@ export function registerIpcHandlers(context: IpcContext): void {
       const controller = new RunController();
       inflightWorkflows.set(request.workflowId, controller);
       try {
-        return await workflows.run(request, controller);
+        return await workflows.run(request, controller, (input) => awaitUserInput(input, controller));
       } finally {
         inflightWorkflows.delete(request.workflowId);
+        // Drop any input that was still pending for this workflow.
+        for (const key of [...pendingInputs.keys()]) {
+          if (key.startsWith(`${request.workflowId}:`)) {
+            pendingInputs.get(key)?.({ values: {}, cancelled: true });
+          }
+        }
       }
     },
     'workflow.cancel': (request) => {
@@ -310,6 +350,13 @@ export function registerIpcHandlers(context: IpcContext): void {
     },
     'workflow.resume': (request) => {
       inflightWorkflows.get(request.id)?.resume();
+      return {};
+    },
+    'workflow.provideInput': (request) => {
+      pendingInputs.get(`${request.workflowId}:${request.nodeId}`)?.({
+        values: request.values,
+        cancelled: request.cancelled,
+      });
       return {};
     },
 

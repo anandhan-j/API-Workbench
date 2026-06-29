@@ -42,6 +42,8 @@ import {
   SaveWorkflowInput,
   WorkflowRunRequest,
   WorkflowRunResult,
+  WorkflowInputRequest,
+  WorkflowInputResponse,
 } from './workflow';
 
 /**
@@ -191,6 +193,7 @@ export const IpcChannels = {
   'workflow.cancel': { request: IdOnly, response: Empty },
   'workflow.pause': { request: IdOnly, response: Empty },
   'workflow.resume': { request: IdOnly, response: Empty },
+  'workflow.provideInput': { request: WorkflowInputResponse, response: Empty },
 
   // --- Preferences ---
   'preferences.get': { request: z.object({ key: z.string() }), response: z.object({ value: z.unknown() }) },
@@ -209,6 +212,7 @@ export type IpcResponse<C extends IpcChannelName> = z.infer<(typeof IpcChannels)
 
 export const IpcEvents = {
   'dispatch.event': DispatchEvent,
+  'workflow.awaitingInput': WorkflowInputRequest,
 } as const;
 
 export type IpcEventName = keyof typeof IpcEvents;
@@ -220,4 +224,5 @@ export const EVENT_CHANNEL_NAMES = Object.keys(IpcEvents) as IpcEventName[];
 export interface WorkbenchApi {
   invoke<C extends IpcChannelName>(channel: C, request: IpcRequest<C>): Promise<IpcResponse<C>>;
   onDispatchEvent(listener: (event: DispatchEvent) => void): () => void;
+  onWorkflowAwaitingInput(listener: (event: WorkflowInputRequest) => void): () => void;
 }

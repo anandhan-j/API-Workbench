@@ -4,6 +4,8 @@ import type {
   NodeRunResult,
   RequestNodeConfig,
   WorkflowDetail,
+  WorkflowInputRequest,
+  WorkflowInputResult,
   WorkflowNode,
   WorkflowRunResult,
   WorkflowRunStatus,
@@ -36,6 +38,12 @@ export interface WorkflowEnginePorts {
   ): Promise<ExecutionResponse>;
   evaluate(template: string, ctx: RunContext): string;
   loadWorkflow(workflowId: string): WorkflowDetail;
+  /**
+   * Suspends the run at a user-input node and resolves once the user supplies (or
+   * cancels) the requested values. Omitted in headless runs, where the engine
+   * falls back to each field's evaluated default.
+   */
+  requestInput?(request: WorkflowInputRequest, ctx: RunContext): Promise<WorkflowInputResult>;
   now?: () => number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
@@ -125,6 +133,10 @@ export class WorkflowEngine {
       const { result, handle } = await this.executeWithPolicy(current, ctx, control, nestedStack, results, loopCounters);
       results.push(result);
       if (result.variablesSet) Object.assign(runtime, result.variablesSet);
+
+      // A node may suspend (e.g. user-input) and be cancelled while suspended;
+      // surface that as a cancelled run rather than a node failure.
+      if (control.signal.aborted) return 'cancelled';
 
       let chosen = handle;
       if (result.status === 'failed') {
@@ -260,6 +272,47 @@ export class WorkflowEngine {
               durationMs: done(),
               variablesSet: { [node.config.variable]: value },
               message: `${node.config.variable} = ${value}`,
+            },
+            handle: null,
+          };
+        }
+
+        case 'user-input': {
+          // Resolve each field's default template so the prompt is pre-filled.
+          const fields = node.config.fields.map((f) => ({
+            label: f.label,
+            variable: f.variable,
+            default: this.ports.evaluate(f.default, ctx),
+            secret: f.secret,
+          }));
+          // Headless fallback: no input port → accept the evaluated defaults.
+          if (!this.ports.requestInput) {
+            const values = Object.fromEntries(fields.map((f) => [f.variable, f.default]));
+            return {
+              result: {
+                ...base,
+                status: 'success',
+                durationMs: done(),
+                ...(Object.keys(values).length ? { variablesSet: values } : {}),
+                message: 'Auto-filled defaults (no input port)',
+              },
+              handle: null,
+            };
+          }
+          const { values, cancelled } = await this.ports.requestInput(
+            { workflowId: ctx.workflowId, nodeId: node.id, name: node.name, message: node.config.message, fields },
+            ctx,
+          );
+          if (cancelled) {
+            return { result: { ...base, status: 'failed', durationMs: done(), message: 'Input cancelled' }, handle: null };
+          }
+          return {
+            result: {
+              ...base,
+              status: 'success',
+              durationMs: done(),
+              ...(Object.keys(values).length ? { variablesSet: values } : {}),
+              message: Object.keys(values).length ? `Collected ${Object.keys(values).length} value(s)` : 'Continued',
             },
             handle: null,
           };

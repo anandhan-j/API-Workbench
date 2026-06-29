@@ -7,12 +7,20 @@ import type {
   Workflow,
   WorkflowDetail,
   WorkflowGraph,
+  WorkflowInputRequest,
+  WorkflowInputResult,
   WorkflowRunRequest,
   WorkflowRunResult,
 } from '@shared/workflow';
 import type { PersistenceService } from '../persistence/persistence-service';
 import type { WorkflowRow } from '../persistence/schema';
 import { WorkflowEngine, type RunContext, type RunControl } from './workflow-engine';
+
+/** Suspends a run at a user-input node until the user replies (injected by the IPC layer). */
+export type RequestInput = (
+  request: WorkflowInputRequest,
+  ctx: RunContext,
+) => Promise<WorkflowInputResult>;
 
 /**
  * Side-effecting capabilities the service supplies to the engine, injected from
@@ -96,12 +104,17 @@ export class WorkflowService {
   // --- Run ---
 
   /** Loads the workflow and executes it deterministically through the engine. */
-  async run(request: WorkflowRunRequest, control?: RunControl): Promise<WorkflowRunResult> {
+  async run(
+    request: WorkflowRunRequest,
+    control?: RunControl,
+    requestInput?: RequestInput,
+  ): Promise<WorkflowRunResult> {
     const workflow = this.get(request.workflowId); // validates existence
     const engine = new WorkflowEngine({
       executeRequest: this.deps.executeRequest,
       evaluate: this.deps.evaluate,
       loadWorkflow: (id) => this.get(id),
+      ...(requestInput ? { requestInput } : {}),
     });
     return engine.run(workflow, {
       ...(request.runtime !== undefined ? { runtime: request.runtime } : {}),

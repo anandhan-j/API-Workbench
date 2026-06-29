@@ -202,4 +202,53 @@ describe('WorkflowEngine', () => {
     expect(result.status).toBe('cancelled');
     expect(result.nodeResults).toHaveLength(0);
   });
+
+  const userInput = (id: string, fields: { variable: string; default?: string }[]): WorkflowNode => ({
+    id,
+    kind: 'user-input',
+    name: `ask ${id}`,
+    position: pos,
+    config: {
+      message: 'Provide values',
+      fields: fields.map((f) => ({ label: f.variable, variable: f.variable, default: f.default ?? '', secret: false })),
+    },
+  });
+
+  it('writes user-supplied input into runtime variables for later nodes', async () => {
+    const requestInput = vi.fn(async () => ({ values: { token: 'abc' }, cancelled: false }));
+    const wf = linearWorkflow('w', [start(), userInput('ask', [{ variable: 'token' }]), request('r'), end()]);
+    const executeRequest = vi.fn(async () => okResponse());
+    const result = await new WorkflowEngine(makePorts({ requestInput, executeRequest })).run(wf);
+
+    expect(result.status).toBe('success');
+    expect(result.finalVariables).toMatchObject({ token: 'abc' });
+    const ctx = (executeRequest.mock.calls[0] as unknown[])[1] as RunContext;
+    expect(ctx.runtime).toMatchObject({ token: 'abc' });
+  });
+
+  it('passes evaluated field defaults to the input request', async () => {
+    const requestInput = vi.fn(async () => ({ values: {}, cancelled: false }));
+    const wf = linearWorkflow('w', [start(), userInput('ask', [{ variable: 'token', default: '{{seed}}-x' }]), end()]);
+    await new WorkflowEngine(makePorts({ requestInput })).run(wf, { runtime: { seed: 'S' } });
+
+    const sentFields = (requestInput.mock.calls[0] as unknown[])[0] as { fields: { default: string }[] };
+    expect(sentFields.fields[0].default).toBe('S-x');
+  });
+
+  it('falls back to evaluated defaults when no input port is provided', async () => {
+    const wf = linearWorkflow('w', [start(), userInput('ask', [{ variable: 'token', default: '{{seed}}!' }]), end()]);
+    const result = await new WorkflowEngine(makePorts()).run(wf, { runtime: { seed: 'D' } });
+
+    expect(result.status).toBe('success');
+    expect(result.finalVariables).toMatchObject({ token: 'D!' });
+  });
+
+  it('fails the node when the user cancels the input', async () => {
+    const requestInput = vi.fn(async () => ({ values: {}, cancelled: true }));
+    const wf = linearWorkflow('w', [start(), userInput('ask', [{ variable: 'token' }]), end()]);
+    const result = await new WorkflowEngine(makePorts({ requestInput })).run(wf);
+
+    expect(result.status).toBe('failed');
+    expect(result.nodeResults.find((n) => n.nodeId === 'ask')?.message).toMatch(/cancelled/i);
+  });
 });

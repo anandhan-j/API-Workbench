@@ -12,7 +12,7 @@ See [Architecture.md](./Architecture.md), [ADR-0005](../../../../../docs/adr/000
   - `create(input)` — a new workflow seeded with a single start node.
   - `save(input)` — persists name/description/graph.
   - `delete(id)` — removes the workflow.
-  - `run(request, signal?)` — loads the workflow and executes it through the engine; returns a `WorkflowRunResult`. Cancellable via the `AbortSignal`.
+  - `run(request, control?, requestInput?)` — loads the workflow and executes it through the engine; returns a `WorkflowRunResult`. Cancellable/pausable via the `RunController`; `requestInput` (optional) suspends the run at user-input nodes.
 - `WorkflowEngine` — the deterministic, headless runtime. Construct it with `WorkflowEnginePorts` (`executeRequest`, `evaluate`, `loadWorkflow`, optional `now`/`sleep`). `run(workflow, options)` returns the ordered per-node results and final variables. **Determinism is the acceptance feature.**
 - `validateGraph(graph)` — pure structural validation (single start, no branching, acyclic); throws `WorkflowError`.
 
@@ -25,11 +25,14 @@ See [Architecture.md](./Architecture.md), [ADR-0005](../../../../../docs/adr/000
 | `set-variable` | Evaluates a `{{ template }}` and writes a runtime variable that later nodes can read. |
 | `delay` | Waits a fixed number of milliseconds. |
 | `sub-workflow` | Runs another workflow as a reusable component; its final variables merge back. Cycle-guarded. |
+| `user-input` | Suspends the run and prompts the user for values; the submitted values are written to runtime variables. With no fields it is a Continue/Cancel checkpoint. |
 | `end` | Terminates the run successfully. |
 
 Mapping arrived in **Phase 15**: request nodes carry an `extract` list (response body/header/status → runtime variable via JSONPath/JMESPath/regex), and a **transform** node computes a variable from context (template or path/regex over a resolved input). Extraction logic is a shared, total module (`shared/extract.ts`) used by both the engine and the designer's live preview. See [Phase 15](../../../../../docs/PHASE_15.md).
 
 Control flow arrived in **Phase 14**: **condition** (true/false), **switch** (cases + default), and **loop** (times/while) nodes route along labelled edges; any node may carry a `NodePolicy` (retries, timeout, `onError` fail/continue/route); and runs support cancellation plus in-memory pause/resume via a `RunController` (IPC `workflow.pause`/`workflow.resume`/`workflow.cancel`). `validateGraph` permits branching from branch nodes and loop cycles; termination is bounded by per-loop caps and a global step limit. See [Phase 14](../../../../../docs/PHASE_14.md).
+
+Interactive pauses: a **user-input** node suspends the run mid-flight via the optional `requestInput` engine port. The IPC layer implements that port by pushing a `workflow.awaitingInput` event to the renderer and blocking until the renderer replies on `workflow.provideInput` (or the run is cancelled). The engine stays deterministic and headless — with no `requestInput` port (tests / headless runs) the node falls back to each field's evaluated default.
 
 ## Usage
 
@@ -50,7 +53,7 @@ Workflows live in the `workflows` table (migration `0009-workflows`): `project_i
 
 ## IPC
 
-Wired to the renderer through `workflow.list`, `workflow.get`, `workflow.create`, `workflow.save`, `workflow.delete`, `workflow.run`, and `workflow.cancel`. The renderer's **Workflows** page hosts a React Flow designer (palette, canvas, node inspector) and a run panel showing per-node results and final variables.
+Wired to the renderer through `workflow.list`, `workflow.get`, `workflow.create`, `workflow.save`, `workflow.delete`, `workflow.run`, `workflow.cancel`/`pause`/`resume`, and `workflow.provideInput` (with the `workflow.awaitingInput` push event). The renderer's **Workflows** page hosts a React Flow designer (palette, canvas, node inspector) and a run panel showing per-node results and final variables, plus a modal prompt when a run suspends at a user-input node.
 
 ## Designer (Phase 13)
 
