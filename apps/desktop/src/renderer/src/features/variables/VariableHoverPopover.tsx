@@ -118,7 +118,9 @@ export function VariableHoverPopover({
       // no token under the cursor and schedules a close — so moving onto the
       // Edit/Save buttons would hide the popover. Stop it at the root.
       onMouseMove={(e) => e.stopPropagation()}
-      style={{ position: 'fixed', top: anchor.bottom + 4, left, zIndex: 60 }}
+      // Above modals (the workflow request editor opens at z-100) so the value
+      // card is visible when hovering a token inside a dialog.
+      style={{ position: 'fixed', top: anchor.bottom + 4, left, zIndex: 200 }}
       className="w-64 rounded-md border border-border bg-surface p-3 text-xs shadow-xl"
     >
       <div className="mb-1 flex items-center justify-between gap-2">
