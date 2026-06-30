@@ -24,6 +24,8 @@ import { resolveTarget, validateGraph } from './workflow-graph';
 export interface RunContext {
   workflowId: string;
   runtime: Record<string, string>;
+  /** Active workspace id, used when persisting workspace-scoped variables. */
+  workspaceId?: string;
 }
 
 /** Cooperative cancellation + pause control the engine checks between nodes. */
@@ -41,6 +43,11 @@ export interface WorkflowEnginePorts {
   evaluate(template: string, ctx: RunContext): string;
   loadWorkflow(workflowId: string): WorkflowDetail;
   /**
+   * Persists a variable to a durable scope (set-variable nodes with a non-runtime
+   * scope). Omitted in headless/test runs that have no variable store.
+   */
+  setVariable?(scope: 'workspace' | 'global', key: string, value: string, ctx: RunContext): void;
+  /**
    * Suspends the run at a user-input node and resolves once the user supplies (or
    * cancels) the requested values. Omitted in headless runs, where the engine
    * falls back to each field's evaluated default.
@@ -56,6 +63,7 @@ export interface RunOptions {
   runtime?: Record<string, string>;
   signal?: AbortSignal;
   control?: RunControl;
+  workspaceId?: string;
 }
 
 const MAX_STEPS = 1_000_000;
@@ -101,7 +109,14 @@ export class WorkflowEngine {
         : NO_PAUSE);
     const runtime: Record<string, string> = { ...(options.runtime ?? {}) };
     const nodeResults: NodeRunResult[] = [];
-    const status = await this.runInto(workflow, runtime, nodeResults, control, new Set());
+    const status = await this.runInto(
+      workflow,
+      runtime,
+      nodeResults,
+      control,
+      new Set(),
+      options.workspaceId,
+    );
     return {
       workflowId: workflow.id,
       status,
@@ -118,6 +133,7 @@ export class WorkflowEngine {
     results: NodeRunResult[],
     control: RunControl,
     stack: Set<string>,
+    workspaceId?: string,
   ): Promise<WorkflowRunStatus> {
     if (stack.has(workflow.id))
       throw new WorkflowError(`Sub-workflow cycle detected at "${workflow.id}"`);
@@ -125,7 +141,11 @@ export class WorkflowEngine {
       throw new WorkflowError(`Sub-workflow nesting exceeded ${MAX_DEPTH}`);
     const index = validateGraph(workflow.graph);
     const nestedStack = new Set(stack).add(workflow.id);
-    const ctx: RunContext = { workflowId: workflow.id, runtime };
+    const ctx: RunContext = {
+      workflowId: workflow.id,
+      runtime,
+      ...(workspaceId ? { workspaceId } : {}),
+    };
     const loopCounters = new Map<string, number>();
 
     let current: WorkflowNode | undefined = workflow.graph.nodes.find((n) => n.kind === 'start');
@@ -267,13 +287,20 @@ export class WorkflowEngine {
 
         case 'set-variable': {
           const value = this.ports.evaluate(node.config.value, ctx);
+          const scope = node.config.scope ?? 'runtime';
+          // Persist to the durable store for workspace/global; always set it in the
+          // run's runtime too so later steps in this run can read it immediately.
+          if (scope !== 'runtime') this.ports.setVariable?.(scope, node.config.key, value, ctx);
           return {
             result: {
               ...base,
               status: 'success',
               durationMs: done(),
               variablesSet: { [node.config.key]: value },
-              message: `${node.config.key} = ${value}`,
+              message:
+                scope === 'runtime'
+                  ? `${node.config.key} = ${value}`
+                  : `${node.config.key} = ${value} (${scope})`,
             },
             handle: null,
           };
@@ -377,7 +404,14 @@ export class WorkflowEngine {
 
         case 'sub-workflow': {
           const child = this.ports.loadWorkflow(node.config.workflowId);
-          const childStatus = await this.runInto(child, ctx.runtime, results, control, stack);
+          const childStatus = await this.runInto(
+            child,
+            ctx.runtime,
+            results,
+            control,
+            stack,
+            ctx.workspaceId,
+          );
           return {
             result: {
               ...base,

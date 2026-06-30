@@ -43,6 +43,8 @@ export interface WorkflowServiceDeps {
     signal?: AbortSignal,
   ): Promise<ExecutionResponse>;
   evaluate(template: string, ctx: RunContext): string;
+  /** Persists a set-variable node's value to a durable scope (workspace/global). */
+  setVariable?(scope: 'workspace' | 'global', key: string, value: string, ctx: RunContext): void;
   /** Stamped into export bundles for diagnostics; optional. */
   appVersion?: string;
 }
@@ -57,7 +59,10 @@ function remapSubWorkflowIds(graph: WorkflowGraph, idMap: Map<string, string>): 
     ...graph,
     nodes: graph.nodes.map((node) =>
       node.kind === 'sub-workflow' && idMap.has(node.config.workflowId)
-        ? { ...node, config: { ...node.config, workflowId: idMap.get(node.config.workflowId) as string } }
+        ? {
+            ...node,
+            config: { ...node.config, workflowId: idMap.get(node.config.workflowId) as string },
+          }
         : node,
     ),
   };
@@ -66,7 +71,9 @@ function remapSubWorkflowIds(graph: WorkflowGraph, idMap: Map<string, string>): 
 /** A blank graph seeded with a single start node so the canvas is never empty. */
 function seedGraph(): WorkflowGraph {
   return {
-    nodes: [{ id: randomUUID(), kind: 'start', name: 'Start', position: { x: 80, y: 80 }, config: {} }],
+    nodes: [
+      { id: randomUUID(), kind: 'start', name: 'Start', position: { x: 80, y: 80 }, config: {} },
+    ],
     edges: [],
     groups: [],
   };
@@ -193,7 +200,8 @@ export class WorkflowService {
       }
 
       const newRootId = idMap.get(data.rootId);
-      if (!newRootId) throw new WorkflowError(`Export root "${data.rootId}" is missing from the bundle`);
+      if (!newRootId)
+        throw new WorkflowError(`Export root "${data.rootId}" is missing from the bundle`);
       return this.toDetail(this.persistence.workflows.get(newRootId));
     });
   }
@@ -212,11 +220,13 @@ export class WorkflowService {
       executeRequest: this.deps.executeRequest,
       evaluate: this.deps.evaluate,
       loadWorkflow: (id) => this.get(id),
+      ...(this.deps.setVariable ? { setVariable: this.deps.setVariable } : {}),
       ...(requestInput ? { requestInput } : {}),
       ...(onProgress ? { onNodeProgress: onProgress } : {}),
     });
     return engine.run(workflow, {
       ...(request.runtime !== undefined ? { runtime: request.runtime } : {}),
+      ...(request.workspaceId ? { workspaceId: request.workspaceId } : {}),
       ...(control ? { control } : {}),
     });
   }

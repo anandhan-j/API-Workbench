@@ -378,7 +378,11 @@ export function WorkflowsPage(): JSX.Element {
       {
         onSuccess: () =>
           run.mutate(
-            { workflowId: id, ...(stepMode ? { stepMode: true } : {}) },
+            {
+              workflowId: id,
+              ...(stepMode ? { stepMode: true } : {}),
+              ...(active.data?.workspaceId ? { workspaceId: active.data.workspaceId } : {}),
+            },
             {
               onSuccess: (result) => {
                 setRunHistory((h) => ({ ...h, [id]: [result, ...(h[id] ?? [])].slice(0, 10) }));

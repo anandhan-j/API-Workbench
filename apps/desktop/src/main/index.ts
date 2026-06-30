@@ -72,12 +72,33 @@ function initServices(): Services {
           ? { ...config, auth: auth.getConfig(config.credentialId) }
           : config;
       return execution.run(
-        { ...cfg, variableContext: { workflowId: ctx.workflowId, runtime: ctx.runtime } },
+        {
+          ...cfg,
+          variableContext: {
+            ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
+            workflowId: ctx.workflowId,
+            runtime: ctx.runtime,
+          },
+        },
         signal,
       );
     },
     evaluate: (template, ctx) =>
-      variables.evaluate({ template, context: { workflowId: ctx.workflowId, runtime: ctx.runtime } }),
+      variables.evaluate({
+        template,
+        context: {
+          ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
+          workflowId: ctx.workflowId,
+          runtime: ctx.runtime,
+        },
+      }),
+    setVariable: (scope, key, value, ctx) =>
+      variables.set({
+        scope,
+        ...(scope === 'workspace' && ctx.workspaceId ? { scopeId: ctx.workspaceId } : {}),
+        key,
+        value,
+      }),
     appVersion: app.getVersion(),
   });
   return {

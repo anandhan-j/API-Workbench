@@ -85,6 +85,30 @@ describe('VariableService', () => {
     expect(masked.value).toBeUndefined();
   });
 
+  it('keeps the secret flag when overwriting a secret with a value-only set', () => {
+    variables.set({ scope: 'global', key: 'token', value: 'first', secret: true });
+    // A set-variable node / hover edit overwrites the value without passing `secret`.
+    variables.set({ scope: 'global', key: 'token', value: 'second' });
+
+    const raw = service.db.select().from(variablesTable).all();
+    expect(raw).toHaveLength(1); // overwritten in place, not duplicated
+    expect(raw[0].secret).toBe(true); // still a secret
+    expect(raw[0].encrypted).toBe(true);
+    expect(raw[0].value).not.toBe('second'); // stored encrypted, not plaintext
+
+    const resolved = variables.resolve({});
+    expect(resolved.get('token')?.value).toBe('second'); // new value
+    expect(variables.list('global')[0].value).toBeUndefined(); // still masked
+  });
+
+  it('an explicit secret:false overwrite turns a secret into a plain value', () => {
+    variables.set({ scope: 'global', key: 'token', value: 'first', secret: true });
+    variables.set({ scope: 'global', key: 'token', value: 'second', secret: false });
+    const raw = service.db.select().from(variablesTable).all();
+    expect(raw[0].secret).toBe(false);
+    expect(raw[0].value).toBe('second');
+  });
+
   it('decrypts secret values during resolution', () => {
     variables.set({ scope: 'global', key: 'token', value: 'super-secret', secret: true });
     const resolved = variables.resolve({});
@@ -148,7 +172,12 @@ describe('VariableService', () => {
 
   it('substitutes {{ key }} from the resolved precedence map', () => {
     variables.set({ scope: 'global', key: 'host', value: 'api.example.com' });
-    variables.set({ scope: 'workspace', scopeId: 'ws1', key: 'host', value: 'staging.example.com' });
+    variables.set({
+      scope: 'workspace',
+      scopeId: 'ws1',
+      key: 'host',
+      value: 'staging.example.com',
+    });
     const out = variables.evaluate({
       template: 'https://{{host}}/v1',
       context: { workspaceId: 'ws1' },

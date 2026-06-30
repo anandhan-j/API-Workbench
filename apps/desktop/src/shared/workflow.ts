@@ -122,6 +122,11 @@ export type TransformNodeConfig = z.infer<typeof TransformNodeConfig>;
 export const SetVariableNodeConfig = z.object({
   key: z.string(),
   value: z.string(),
+  /**
+   * Where the value is written. 'runtime' (default) sets it only for this run;
+   * 'workspace'/'global' also persist it to the variable store for reuse.
+   */
+  scope: z.enum(['runtime', 'workspace', 'global']).optional(),
 });
 export type SetVariableNodeConfig = z.infer<typeof SetVariableNodeConfig>;
 
@@ -375,6 +380,8 @@ export const WorkflowRunRequest = z.object({
   runtime: z.record(z.string()).optional(),
   /** Start paused before the first node; advance one node at a time via workflow.step. */
   stepMode: z.boolean().optional(),
+  /** Active workspace, so set-variable nodes can persist to workspace scope. */
+  workspaceId: z.string().optional(),
 });
 export type WorkflowRunRequest = z.infer<typeof WorkflowRunRequest>;
 

@@ -80,7 +80,11 @@ export class VariableService {
    */
   set(input: SetVariableInput): Variable {
     const scopeId = normalizeScopeId(input.scope, input.scopeId);
-    const secret = input.secret ?? false;
+    // On a value-only overwrite (no explicit `secret`, e.g. a set-variable node or
+    // hover edit), keep the existing variable's secret flag so updating a secret's
+    // value never silently turns it into stored plaintext.
+    const existing = this.persistence.variables.get(input.scope, scopeId, input.key);
+    const secret = input.secret ?? existing?.secret ?? false;
     let value = input.value;
     let encrypted = false;
     if (secret && this.encryptor.isAvailable()) {

@@ -136,6 +136,42 @@ describe('WorkflowEngine', () => {
     expect(result.nodeResults.find((n) => n.nodeId === 'end')?.status).toBe('success');
   });
 
+  it('persists a workspace-scoped set-variable via the setVariable port', async () => {
+    const setVariable = vi.fn();
+    const wf = linearWorkflow('w', [
+      start(),
+      {
+        id: 'sv',
+        kind: 'set-variable',
+        name: 'set token',
+        position: pos,
+        config: { key: 'token', value: 'abc', scope: 'workspace' },
+      },
+      end(),
+    ]);
+    const result = await new WorkflowEngine(makePorts({ setVariable })).run(wf, {
+      workspaceId: 'ws1',
+    });
+
+    expect(result.status).toBe('success');
+    // Persisted to the durable store, with the workspace id from the run...
+    expect(setVariable).toHaveBeenCalledWith(
+      'workspace',
+      'token',
+      'abc',
+      expect.objectContaining({ workspaceId: 'ws1' }),
+    );
+    // ...and still available in this run's runtime for later steps.
+    expect(result.finalVariables).toMatchObject({ token: 'abc' });
+  });
+
+  it('a runtime-scoped set-variable does not call the persist port', async () => {
+    const setVariable = vi.fn();
+    const wf = linearWorkflow('w', [start(), setVar('sv', 'a', '1'), end()]);
+    await new WorkflowEngine(makePorts({ setVariable })).run(wf, { workspaceId: 'ws1' });
+    expect(setVariable).not.toHaveBeenCalled();
+  });
+
   it('propagates set-variable values into later nodes', async () => {
     const executeRequest = vi.fn(async () => okResponse());
     const wf = linearWorkflow('w', [

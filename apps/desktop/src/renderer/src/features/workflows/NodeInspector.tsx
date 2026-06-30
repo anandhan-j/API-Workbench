@@ -167,6 +167,21 @@ export function NodeInspector({
               className={fieldClass}
             />
           </Field>
+          <Field label="Save to" id="node-setvar-scope">
+            <select
+              id="node-setvar-scope"
+              value={(config.scope as string) ?? 'runtime'}
+              onChange={(e) => set({ scope: e.target.value })}
+              className={fieldClass}
+            >
+              <option value="runtime">Runtime — this run only</option>
+              <option value="workspace">Environment — persist to workspace</option>
+              <option value="global">Global — persist everywhere</option>
+            </select>
+            <p className="mt-1 text-[11px] text-muted">
+              Environment/Global persist the value to the variable store for reuse across runs.
+            </p>
+          </Field>
         </>
       )}
 
