@@ -267,6 +267,10 @@ export const IpcChannels = {
   'workflow.list': { request: z.object({ projectId: z.string() }), response: z.array(Workflow) },
   'workflow.get': { request: z.object({ id: z.string() }), response: WorkflowDetail },
   'workflow.create': { request: CreateWorkflowInput, response: WorkflowDetail },
+  'workflow.rename': {
+    request: z.object({ id: z.string(), name: z.string().min(1) }),
+    response: Workflow,
+  },
   'workflow.save': { request: SaveWorkflowInput, response: WorkflowDetail },
   'workflow.delete': { request: IdOnly, response: Empty },
   'workflow.export': { request: IdOnly, response: WorkflowExport },

@@ -131,6 +131,20 @@ export class WorkflowService {
     return this.toDetail(row);
   }
 
+  /**
+   * Renames a workflow without touching its graph. Returns the updated summary;
+   * a blank/whitespace-only name is rejected upstream by the IPC schema, and the
+   * value is trimmed for consistency with {@link create} and {@link save}.
+   */
+  rename(id: string, name: string): Workflow {
+    this.persistence.workflows.get(id); // validates existence
+    const row = this.persistence.workflows.update(id, {
+      name: name.trim(),
+      updatedAt: Date.now(),
+    });
+    return this.toSummary(row);
+  }
+
   delete(id: string): void {
     this.persistence.workflows.delete(id);
   }

@@ -38,6 +38,13 @@ export function useWorkflowMutations(projectId: string | null | undefined) {
         void qc.invalidateQueries({ queryKey: ['workflow', wf.id] });
       },
     }),
+    rename: useMutation({
+      mutationFn: (input: { id: string; name: string }) => invoke('workflow.rename', input),
+      onSuccess: (wf) => {
+        invalidateList();
+        void qc.invalidateQueries({ queryKey: ['workflow', wf.id] });
+      },
+    }),
     remove: useMutation({
       mutationFn: (id: string) => invoke('workflow.delete', { id }),
       onSuccess: invalidateList,

@@ -40,7 +40,9 @@ export const RequestSummary = z.object({
   id: z.string(),
   collectionId: z.string(),
   folderId: z.string().nullable(),
-  name: z.string().min(1),
+  // May be empty for operations imported with no `summary`; the UI falls back to
+  // the endpoint path. Creating a request still requires a name (CreateRequestInput).
+  name: z.string(),
   method: HttpMethod,
   url: z.string(),
   favorite: z.boolean(),

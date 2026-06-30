@@ -90,6 +90,21 @@ describe('WorkflowService', () => {
     expect(reloaded.graph.edges).toHaveLength(1);
   });
 
+  it('renames a workflow without touching its graph', () => {
+    const created = service.create({ projectId, name: 'Old name' });
+    const renamed = service.rename(created.id, '  New name  ');
+    expect(renamed.name).toBe('New name'); // trimmed
+    expect(renamed.nodeCount).toBe(created.graph.nodes.length);
+
+    const reloaded = service.get(created.id);
+    expect(reloaded.name).toBe('New name');
+    expect(reloaded.graph.nodes).toHaveLength(created.graph.nodes.length);
+  });
+
+  it('throws when renaming an unknown workflow', () => {
+    expect(() => service.rename('nope', 'X')).toThrow();
+  });
+
   it('deletes a workflow', () => {
     const wf = service.create({ projectId, name: 'Temp' });
     service.delete(wf.id);

@@ -15,7 +15,9 @@ import {
   ListChecks,
   Variable as VariableIcon,
   Loader2,
+  MoreHorizontal,
   Pause,
+  Pencil,
   Play,
   Plus,
   RotateCcw,
@@ -48,6 +50,7 @@ import {
 } from '../../lib/ipc';
 import { usePersistentState } from '../../lib/use-persistent-state';
 import { useConfirm } from '../../components/confirm/ConfirmProvider';
+import { ContextMenu, type MenuItem } from '../../components/menu/ContextMenu';
 import { useActiveSelection, useWorkspaceDetail } from '../workspaces/use-workspaces';
 import {
   useWorkflow,
@@ -164,6 +167,15 @@ export function WorkflowsPage(): JSX.Element {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
+  // Inline rename: list row (renamingId) and the canvas header title (headerEditing).
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [headerEditing, setHeaderEditing] = useState(false);
+  const [headerDraft, setHeaderDraft] = useState('');
+  // Open "..." actions menu for a workflow row, anchored at viewport coords.
+  const [rowMenu, setRowMenu] = useState<{ id: string; name: string; x: number; y: number } | null>(
+    null,
+  );
   const [search, setSearch] = useState('');
   const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null);
   const [inputRequest, setInputRequest] = useState<WorkflowInputRequest | null>(null);
@@ -426,6 +438,43 @@ export function WorkflowsPage(): JSX.Element {
   const handleSave = (): void => {
     if (selectedId && graphRef.current) {
       mutations.save.mutate({ id: selectedId, graph: graphRef.current });
+    }
+  };
+
+  // Begin/commit/cancel inline rename of a workflow in the list.
+  const beginRename = (id: string, current: string): void => {
+    setRenamingId(id);
+    setRenameDraft(current);
+  };
+
+  const commitRename = (id: string, currentName: string): void => {
+    const trimmed = renameDraft.trim();
+    if (trimmed && trimmed !== currentName) {
+      mutations.rename.mutate({ id, name: trimmed });
+    }
+    setRenamingId(null);
+  };
+
+  // Commit an inline rename from the canvas header title.
+  const commitHeaderRename = (): void => {
+    const trimmed = headerDraft.trim();
+    if (selectedId && trimmed && trimmed !== detail.data?.name) {
+      mutations.rename.mutate({ id: selectedId, name: trimmed });
+    }
+    setHeaderEditing(false);
+  };
+
+  const handleDeleteWorkflow = async (id: string, name: string): Promise<void> => {
+    if (
+      await confirm({
+        title: 'Delete workflow',
+        message: `Delete workflow "${name}"? This cannot be undone.`,
+        confirmLabel: 'Delete',
+        danger: true,
+      })
+    ) {
+      mutations.remove.mutate(id);
+      if (selectedId === id) setSelectedId(null);
     }
   };
 
@@ -726,45 +775,54 @@ export function WorkflowsPage(): JSX.Element {
                         w.id === selectedId ? 'bg-surface-2' : 'hover:bg-surface-2'
                       }`}
                     >
+                      {renamingId === w.id ? (
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          <WorkflowIcon size={14} className="shrink-0 text-muted" />
+                          <input
+                            type="text"
+                            autoFocus
+                            aria-label={`Rename ${w.name}`}
+                            value={renameDraft}
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            onBlur={() => commitRename(w.id, w.name)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                commitRename(w.id, w.name);
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                setRenamingId(null);
+                              }
+                            }}
+                            className="min-w-0 flex-1 rounded border border-accent bg-surface px-1.5 py-0.5 text-sm outline-none"
+                          />
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(w.id)}
+                          onDoubleClick={() => beginRename(w.id, w.name)}
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
+                        >
+                          <WorkflowIcon size={14} className="shrink-0 text-muted" />
+                          <span className="truncate">{w.name}</span>
+                          <span className="ml-auto shrink-0 text-[11px] text-muted">
+                            {w.nodeCount}
+                          </span>
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => setSelectedId(w.id)}
-                        className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
-                      >
-                        <WorkflowIcon size={14} className="shrink-0 text-muted" />
-                        <span className="truncate">{w.name}</span>
-                        <span className="ml-auto shrink-0 text-[11px] text-muted">
-                          {w.nodeCount}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Export ${w.name}`}
-                        title="Export workflow"
-                        onClick={() => void handleExport(w.id, w.name)}
-                        className="shrink-0 text-muted opacity-0 hover:text-accent group-hover:opacity-100"
-                      >
-                        <Download size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Delete ${w.name}`}
-                        onClick={async () => {
-                          if (
-                            await confirm({
-                              title: 'Delete workflow',
-                              message: `Delete workflow "${w.name}"? This cannot be undone.`,
-                              confirmLabel: 'Delete',
-                              danger: true,
-                            })
-                          ) {
-                            mutations.remove.mutate(w.id);
-                            if (selectedId === w.id) setSelectedId(null);
-                          }
+                        aria-label={`Actions for ${w.name}`}
+                        title="More actions"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const r = e.currentTarget.getBoundingClientRect();
+                          setRowMenu({ id: w.id, name: w.name, x: r.right - 176, y: r.bottom + 2 });
                         }}
-                        className="shrink-0 text-muted opacity-0 hover:text-rose-400 group-hover:opacity-100"
+                        className="shrink-0 text-muted opacity-0 hover:text-fg group-hover:opacity-100"
                       >
-                        <Trash2 size={13} />
+                        <MoreHorizontal size={15} />
                       </button>
                     </div>
                   ))}
@@ -781,6 +839,34 @@ export function WorkflowsPage(): JSX.Element {
                 </div>
               )}
             </section>
+
+            {rowMenu && (
+              <ContextMenu
+                x={rowMenu.x}
+                y={rowMenu.y}
+                items={
+                  [
+                    {
+                      label: 'Rename',
+                      icon: <Pencil size={13} />,
+                      onSelect: () => beginRename(rowMenu.id, rowMenu.name),
+                    },
+                    {
+                      label: 'Export',
+                      icon: <Download size={13} />,
+                      onSelect: () => void handleExport(rowMenu.id, rowMenu.name),
+                    },
+                    {
+                      label: 'Delete',
+                      icon: <Trash2 size={13} />,
+                      danger: true,
+                      onSelect: () => void handleDeleteWorkflow(rowMenu.id, rowMenu.name),
+                    },
+                  ] satisfies MenuItem[]
+                }
+                onClose={() => setRowMenu(null)}
+              />
+            )}
 
             {/* Drag handle to resize the split — only when both panels are open */}
             {!listCollapsed && !paletteCollapsed && (
@@ -821,9 +907,39 @@ export function WorkflowsPage(): JSX.Element {
         {/* Center: canvas + toolbar */}
         <section className="flex min-w-0 flex-1 flex-col rounded-md border border-border">
           <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-            <span className="truncate text-sm font-medium">
-              {detail.data?.name ?? 'Select a workflow'}
-            </span>
+            {headerEditing && detail.data ? (
+              <input
+                type="text"
+                autoFocus
+                aria-label="Rename workflow"
+                value={headerDraft}
+                onChange={(e) => setHeaderDraft(e.target.value)}
+                onBlur={commitHeaderRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commitHeaderRename();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setHeaderEditing(false);
+                  }
+                }}
+                className="min-w-0 max-w-xs rounded border border-accent bg-surface px-1.5 py-0.5 text-sm font-medium outline-none"
+              />
+            ) : (
+              <span
+                className={`truncate text-sm font-medium ${detail.data ? 'cursor-text' : ''}`}
+                title={detail.data ? 'Double-click to rename' : undefined}
+                onDoubleClick={() => {
+                  if (detail.data) {
+                    setHeaderDraft(detail.data.name);
+                    setHeaderEditing(true);
+                  }
+                }}
+              >
+                {detail.data?.name ?? 'Select a workflow'}
+              </span>
+            )}
             <div className="ml-auto flex items-center gap-2">
               <button
                 type="button"

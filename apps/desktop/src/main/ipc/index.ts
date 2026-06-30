@@ -332,6 +332,7 @@ export function registerIpcHandlers(context: IpcContext): void {
     'workflow.list': (request) => workflows.list(request.projectId),
     'workflow.get': (request) => workflows.get(request.id),
     'workflow.create': (request) => workflows.create(request),
+    'workflow.rename': (request) => workflows.rename(request.id, request.name),
     'workflow.save': (request) => workflows.save(request),
     'workflow.delete': (request) => {
       workflows.delete(request.id);
