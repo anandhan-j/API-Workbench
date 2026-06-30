@@ -212,15 +212,12 @@ export function WorkflowsPage(): JSX.Element {
   // Heights for the right-pane sections that aren't the last expanded one
   // (the last expanded section flexes to fill); dragged via the handles.
   const [detailsHeight, setDetailsHeight] = usePersistentState('awb.workflow.detailsHeight', 240);
-  const [variablesHeight, setVariablesHeight] = usePersistentState(
-    'awb.workflow.variablesHeight',
-    180,
-  );
+  const [resultsHeight, setResultsHeight] = usePersistentState('awb.workflow.resultsHeight', 240);
   // The last expanded right-pane section flexes; the others use a fixed height.
   const rightSections: Array<'details' | 'variables' | 'results'> = [];
   if (!detailsCollapsed) rightSections.push('details');
-  if (!variablesCollapsed) rightSections.push('variables');
   if (!resultsCollapsed) rightSections.push('results');
+  if (!variablesCollapsed) rightSections.push('variables');
   const lastRightSection = rightSections[rightSections.length - 1];
 
   // Drag the divider to resize the workflow list; the palette fills the rest.
@@ -1039,43 +1036,17 @@ export function WorkflowsPage(): JSX.Element {
           )}
           <section
             className={`flex flex-col overflow-hidden ${
-              variablesCollapsed
+              resultsCollapsed
                 ? 'shrink-0'
-                : lastRightSection === 'variables'
+                : lastRightSection === 'results'
                   ? 'min-h-0 flex-1'
                   : 'shrink-0'
             }`}
             style={
-              !variablesCollapsed && lastRightSection !== 'variables'
-                ? { height: variablesHeight }
+              !resultsCollapsed && lastRightSection !== 'results'
+                ? { height: resultsHeight }
                 : undefined
             }
-          >
-            <PanelHeader
-              title="Workflow Variables"
-              icon={<VariableIcon size={12} />}
-              className="bg-surface-2"
-              collapsed={variablesCollapsed}
-              onToggle={() => setVariablesCollapsed((v) => !v)}
-            />
-            {!variablesCollapsed && (
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <WorkflowVariablesPanel
-                  graph={liveGraph}
-                  variableContext={variableContext ?? {}}
-                  subWorkflowVars={subWorkflowVarsResolver}
-                  runtimeValues={runtimeValues}
-                />
-              </div>
-            )}
-          </section>
-          {!variablesCollapsed && lastRightSection !== 'variables' && (
-            <VResizeHandle onPointerDown={beginVResize(variablesHeight, setVariablesHeight)} />
-          )}
-          <section
-            className={`flex flex-col overflow-hidden ${
-              resultsCollapsed ? 'shrink-0' : 'min-h-0 flex-1'
-            }`}
           >
             <PanelHeader
               title="Run Results"
@@ -1099,6 +1070,32 @@ export function WorkflowsPage(): JSX.Element {
                   onSelectHistory={(i) =>
                     selectedId && setViewIndex((v) => ({ ...v, [selectedId]: i }))
                   }
+                />
+              </div>
+            )}
+          </section>
+          {!resultsCollapsed && lastRightSection !== 'results' && (
+            <VResizeHandle onPointerDown={beginVResize(resultsHeight, setResultsHeight)} />
+          )}
+          <section
+            className={`flex flex-col overflow-hidden ${
+              variablesCollapsed ? 'shrink-0' : 'min-h-0 flex-1'
+            }`}
+          >
+            <PanelHeader
+              title="Workflow Variables"
+              icon={<VariableIcon size={12} />}
+              className="bg-surface-2"
+              collapsed={variablesCollapsed}
+              onToggle={() => setVariablesCollapsed((v) => !v)}
+            />
+            {!variablesCollapsed && (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <WorkflowVariablesPanel
+                  graph={liveGraph}
+                  variableContext={variableContext ?? {}}
+                  subWorkflowVars={subWorkflowVarsResolver}
+                  runtimeValues={runtimeValues}
                 />
               </div>
             )}
