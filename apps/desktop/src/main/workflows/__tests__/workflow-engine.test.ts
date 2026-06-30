@@ -1,7 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import type { ExecutionResponse } from '@shared/execution';
-import type { RequestNodeConfig, WorkflowDetail, WorkflowGraph, WorkflowNode } from '@shared/workflow';
+import type {
+  RequestNodeConfig,
+  WorkflowDetail,
+  WorkflowGraph,
+  WorkflowNode,
+} from '@shared/workflow';
 import { WorkflowEngine, type WorkflowEnginePorts, type RunContext } from '../workflow-engine';
 
 const pos = { x: 0, y: 0 };
@@ -63,8 +68,20 @@ function linearWorkflow(id: string, nodes: WorkflowNode[]): WorkflowDetail {
   };
 }
 
-const start = (): WorkflowNode => ({ id: 'start', kind: 'start', name: 'Start', position: pos, config: {} });
-const end = (): WorkflowNode => ({ id: 'end', kind: 'end', name: 'End', position: pos, config: {} });
+const start = (): WorkflowNode => ({
+  id: 'start',
+  kind: 'start',
+  name: 'Start',
+  position: pos,
+  config: {},
+});
+const end = (): WorkflowNode => ({
+  id: 'end',
+  kind: 'end',
+  name: 'End',
+  position: pos,
+  config: {},
+});
 const setVar = (id: string, key: string, value: string): WorkflowNode => ({
   id,
   kind: 'set-variable',
@@ -77,7 +94,15 @@ const request = (id: string, config?: Partial<RequestNodeConfig>): WorkflowNode 
   kind: 'request',
   name: `req ${id}`,
   position: pos,
-  config: { method: 'GET', url: 'https://x', headers: {}, query: {}, body: { type: 'none' }, extract: [], ...config },
+  config: {
+    method: 'GET',
+    url: 'https://x',
+    headers: {},
+    query: {},
+    body: { type: 'none' },
+    extract: [],
+    ...config,
+  },
 });
 
 describe('WorkflowEngine', () => {
@@ -88,6 +113,27 @@ describe('WorkflowEngine', () => {
     expect(result.status).toBe('success');
     expect(result.nodeResults.map((n) => n.nodeId)).toEqual(['start', 'v', 'r', 'end']);
     expect(result.nodeResults.every((n) => n.status === 'success')).toBe(true);
+  });
+
+  it('marks the run and the End node failed when the End outcome is "fail"', async () => {
+    const failEnd: WorkflowNode = {
+      id: 'end',
+      kind: 'end',
+      name: 'End',
+      position: pos,
+      config: { outcome: 'fail' },
+    };
+    const wf = linearWorkflow('w', [start(), failEnd]);
+    const result = await new WorkflowEngine(makePorts()).run(wf);
+
+    expect(result.status).toBe('failed');
+    expect(result.nodeResults.find((n) => n.nodeId === 'end')?.status).toBe('failed');
+  });
+
+  it('a success End leaves the run successful', async () => {
+    const result = await new WorkflowEngine(makePorts()).run(linearWorkflow('w', [start(), end()]));
+    expect(result.status).toBe('success');
+    expect(result.nodeResults.find((n) => n.nodeId === 'end')?.status).toBe('success');
   });
 
   it('propagates set-variable values into later nodes', async () => {
@@ -111,8 +157,7 @@ describe('WorkflowEngine', () => {
   it('is deterministic: identical inputs yield identical results', async () => {
     const build = (): WorkflowDetail =>
       linearWorkflow('w', [start(), setVar('v', 'a', '{{seed}}!'), request('r'), end()]);
-    const run = () =>
-      new WorkflowEngine(makePorts()).run(build(), { runtime: { seed: 'x' } });
+    const run = () => new WorkflowEngine(makePorts()).run(build(), { runtime: { seed: 'x' } });
 
     const a = await run();
     const b = await run();
@@ -167,10 +212,23 @@ describe('WorkflowEngine', () => {
     ]);
     const parent = linearWorkflow('parent', [
       start(),
-      { id: 'sub', kind: 'sub-workflow', name: 'call child', position: pos, config: { workflowId: 'child' } },
+      {
+        id: 'sub',
+        kind: 'sub-workflow',
+        name: 'call child',
+        position: pos,
+        config: { workflowId: 'child' },
+      },
       end(),
     ]);
-    const ports = makePorts({ loadWorkflow: (id) => (id === 'child' ? child : (() => { throw new Error('?'); })()) });
+    const ports = makePorts({
+      loadWorkflow: (id) =>
+        id === 'child'
+          ? child
+          : (() => {
+              throw new Error('?');
+            })(),
+    });
     const result = await new WorkflowEngine(ports).run(parent);
 
     expect(result.status).toBe('success');
@@ -182,7 +240,13 @@ describe('WorkflowEngine', () => {
   it('detects sub-workflow recursion and fails the node', async () => {
     const selfRef = linearWorkflow('loop', [
       start(),
-      { id: 'sub', kind: 'sub-workflow', name: 'self', position: pos, config: { workflowId: 'loop' } },
+      {
+        id: 'sub',
+        kind: 'sub-workflow',
+        name: 'self',
+        position: pos,
+        config: { workflowId: 'loop' },
+      },
       end(),
     ]);
     const ports = makePorts({ loadWorkflow: () => selfRef });
@@ -203,20 +267,33 @@ describe('WorkflowEngine', () => {
     expect(result.nodeResults).toHaveLength(0);
   });
 
-  const userInput = (id: string, fields: { variable: string; default?: string }[]): WorkflowNode => ({
+  const userInput = (
+    id: string,
+    fields: { variable: string; default?: string }[],
+  ): WorkflowNode => ({
     id,
     kind: 'user-input',
     name: `ask ${id}`,
     position: pos,
     config: {
       message: 'Provide values',
-      fields: fields.map((f) => ({ label: f.variable, variable: f.variable, default: f.default ?? '', secret: false })),
+      fields: fields.map((f) => ({
+        label: f.variable,
+        variable: f.variable,
+        default: f.default ?? '',
+        secret: false,
+      })),
     },
   });
 
   it('writes user-supplied input into runtime variables for later nodes', async () => {
     const requestInput = vi.fn(async () => ({ values: { token: 'abc' }, cancelled: false }));
-    const wf = linearWorkflow('w', [start(), userInput('ask', [{ variable: 'token' }]), request('r'), end()]);
+    const wf = linearWorkflow('w', [
+      start(),
+      userInput('ask', [{ variable: 'token' }]),
+      request('r'),
+      end(),
+    ]);
     const executeRequest = vi.fn(async () => okResponse());
     const result = await new WorkflowEngine(makePorts({ requestInput, executeRequest })).run(wf);
 
@@ -228,15 +305,25 @@ describe('WorkflowEngine', () => {
 
   it('passes evaluated field defaults to the input request', async () => {
     const requestInput = vi.fn(async () => ({ values: {}, cancelled: false }));
-    const wf = linearWorkflow('w', [start(), userInput('ask', [{ variable: 'token', default: '{{seed}}-x' }]), end()]);
+    const wf = linearWorkflow('w', [
+      start(),
+      userInput('ask', [{ variable: 'token', default: '{{seed}}-x' }]),
+      end(),
+    ]);
     await new WorkflowEngine(makePorts({ requestInput })).run(wf, { runtime: { seed: 'S' } });
 
-    const sentFields = (requestInput.mock.calls[0] as unknown[])[0] as { fields: { default: string }[] };
+    const sentFields = (requestInput.mock.calls[0] as unknown[])[0] as {
+      fields: { default: string }[];
+    };
     expect(sentFields.fields[0].default).toBe('S-x');
   });
 
   it('falls back to evaluated defaults when no input port is provided', async () => {
-    const wf = linearWorkflow('w', [start(), userInput('ask', [{ variable: 'token', default: '{{seed}}!' }]), end()]);
+    const wf = linearWorkflow('w', [
+      start(),
+      userInput('ask', [{ variable: 'token', default: '{{seed}}!' }]),
+      end(),
+    ]);
     const result = await new WorkflowEngine(makePorts()).run(wf, { runtime: { seed: 'D' } });
 
     expect(result.status).toBe('success');
@@ -254,8 +341,9 @@ describe('WorkflowEngine', () => {
 
   it('emits a running then a done progress event for each node', async () => {
     const events: { phase: string; nodeId: string; status?: string }[] = [];
-    const onNodeProgress = vi.fn((e: { phase: string; nodeId: string; result?: { status: string } }) =>
-      events.push({ phase: e.phase, nodeId: e.nodeId, status: e.result?.status }),
+    const onNodeProgress = vi.fn(
+      (e: { phase: string; nodeId: string; result?: { status: string } }) =>
+        events.push({ phase: e.phase, nodeId: e.nodeId, status: e.result?.status }),
     );
     const wf = linearWorkflow('w', [start(), setVar('v', 'a', '1'), end()]);
     await new WorkflowEngine(makePorts({ onNodeProgress })).run(wf);

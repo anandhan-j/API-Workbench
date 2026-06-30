@@ -215,6 +215,10 @@ function summarize(data: FlowNodeData): string {
       const c = data.config as { variable?: string; engine?: string };
       return c.variable ? `${c.variable} ← ${c.engine ?? 'template'}` : 'unset';
     }
+    case 'end': {
+      const c = data.config as { outcome?: string };
+      return c.outcome === 'fail' ? 'ends the run as failed' : 'ends the run';
+    }
     case 'sub-workflow':
       return 'runs another workflow';
     case 'user-input': {

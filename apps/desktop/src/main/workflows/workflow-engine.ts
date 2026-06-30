@@ -136,11 +136,16 @@ export class WorkflowEngine {
       if (steps++ > MAX_STEPS) throw new WorkflowError('Workflow exceeded the maximum step count');
 
       if (current.kind === 'end') {
+        const failed = current.config.outcome === 'fail';
         this.progress(workflow.id, current);
-        const endResult = this.instant(current, 'success');
+        const endResult = this.instant(
+          current,
+          failed ? 'failed' : 'success',
+          failed ? 'Ended with failure' : undefined,
+        );
         results.push(endResult);
         this.progress(workflow.id, current, endResult);
-        return 'success';
+        return failed ? 'failed' : 'success';
       }
 
       this.progress(workflow.id, current);

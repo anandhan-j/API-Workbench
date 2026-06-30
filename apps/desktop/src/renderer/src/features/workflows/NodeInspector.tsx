@@ -391,6 +391,23 @@ export function NodeInspector({
         </>
       )}
 
+      {kind === 'end' && (
+        <Field label="Outcome" id="node-end-outcome">
+          <select
+            id="node-end-outcome"
+            value={(config.outcome as string) ?? 'success'}
+            onChange={(e) => set({ outcome: e.target.value })}
+            className={fieldClass}
+          >
+            <option value="success">Success — finish the run normally</option>
+            <option value="fail">Fail — end the run as failed</option>
+          </select>
+          <p className="mt-1 text-[11px] text-muted">
+            A failed end marks the whole run as failed and shows this node in red after a run.
+          </p>
+        </Field>
+      )}
+
       {kind !== 'start' && kind !== 'end' && (
         <ReliabilitySection policy={node.data.policy} onPolicy={onPolicy} />
       )}

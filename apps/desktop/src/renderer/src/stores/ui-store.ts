@@ -52,8 +52,8 @@ export const useUiStore = create<UiState>()(
     (set) => ({
       theme: 'dark',
       fontScale: 1,
-      sidebarCollapsed: false,
-      monitorOpen: true,
+      sidebarCollapsed: true,
+      monitorOpen: false,
       tabs: DEFAULT_TABS,
       activeTabId: 'home',
 

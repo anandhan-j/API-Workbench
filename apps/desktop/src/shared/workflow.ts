@@ -59,7 +59,12 @@ export type NodePolicy = z.infer<typeof NodePolicy>;
 export const StartNodeConfig = z.object({}).strict();
 export type StartNodeConfig = z.infer<typeof StartNodeConfig>;
 
-export const EndNodeConfig = z.object({}).strict();
+export const EndNodeConfig = z
+  .object({
+    /** 'fail' marks the whole run as failed when reached; defaults to success. */
+    outcome: z.enum(['success', 'fail']).optional(),
+  })
+  .strict();
 export type EndNodeConfig = z.infer<typeof EndNodeConfig>;
 
 /** Extraction engines for mapping data out of a response (Phase 15). */

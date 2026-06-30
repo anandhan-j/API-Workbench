@@ -100,20 +100,25 @@ function PanelHeader({
   collapsed,
   onToggle,
   trailing,
+  icon,
+  className,
 }: {
   title: string;
   collapsed: boolean;
   onToggle: () => void;
   trailing?: ReactNode;
+  icon?: ReactNode;
+  className?: string;
 }): JSX.Element {
   return (
     <button
       type="button"
       onClick={onToggle}
       aria-expanded={!collapsed}
-      className="flex shrink-0 items-center gap-1.5 border-b border-border px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted hover:text-fg"
+      className={`flex shrink-0 items-center gap-1.5 border-b border-border px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted hover:text-fg ${className ?? ''}`}
     >
       {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+      {icon}
       <span className="truncate">{title}</span>
       {trailing}
     </button>
@@ -169,6 +174,15 @@ export function WorkflowsPage(): JSX.Element {
     false,
   );
   const [listHeight, setListHeight] = usePersistentState('awb.workflow.listHeight', 240);
+  // Collapse state for the right inspector / run-results sections (persisted).
+  const [detailsCollapsed, setDetailsCollapsed] = usePersistentState(
+    'awb.workflow.detailsCollapsed',
+    false,
+  );
+  const [resultsCollapsed, setResultsCollapsed] = usePersistentState(
+    'awb.workflow.resultsCollapsed',
+    false,
+  );
 
   // Drag the divider to resize the workflow list; the palette fills the rest.
   const beginResize = useCallback(
@@ -854,57 +868,77 @@ export function WorkflowsPage(): JSX.Element {
 
         {/* Right: inspector + run results */}
         <aside className="flex w-80 shrink-0 flex-col overflow-hidden rounded-md border border-border">
-          <section className="flex min-h-0 flex-1 flex-col">
-            <h2 className="flex shrink-0 items-center gap-1.5 border-b border-border bg-surface-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
-              <SlidersHorizontal size={12} /> Node Details
-            </h2>
-            <RuntimeValuesContext.Provider value={runtimeValues}>
-              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-                <NodeInspector
-                  node={selectedNode}
-                  workflows={(workflows.data ?? []).filter((w) => w.id !== selectedId)}
-                  projectRequests={projectRequests.data ?? []}
-                  onImportRequest={(id) => void handleImportRequest(id)}
-                  suggestions={inspectorSuggestions}
-                  variableContext={variableContext}
-                  flowSuggestions={flowSuggestions}
-                  lastResponse={
-                    displayedRun?.nodeResults.find((n) => n.nodeId === selectedNode?.id)?.response
+          <section
+            className={`flex flex-col overflow-hidden ${
+              detailsCollapsed ? 'shrink-0' : 'min-h-0 flex-1'
+            }`}
+          >
+            <PanelHeader
+              title="Node Details"
+              icon={<SlidersHorizontal size={12} />}
+              className="bg-surface-2"
+              collapsed={detailsCollapsed}
+              onToggle={() => setDetailsCollapsed((v) => !v)}
+            />
+            {!detailsCollapsed && (
+              <RuntimeValuesContext.Provider value={runtimeValues}>
+                <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+                  <NodeInspector
+                    node={selectedNode}
+                    workflows={(workflows.data ?? []).filter((w) => w.id !== selectedId)}
+                    projectRequests={projectRequests.data ?? []}
+                    onImportRequest={(id) => void handleImportRequest(id)}
+                    suggestions={inspectorSuggestions}
+                    variableContext={variableContext}
+                    flowSuggestions={flowSuggestions}
+                    lastResponse={
+                      displayedRun?.nodeResults.find((n) => n.nodeId === selectedNode?.id)?.response
+                    }
+                    onRename={(name) =>
+                      selectedNode && mutatorsRef.current?.rename(selectedNode.id, name)
+                    }
+                    onConfig={(config) =>
+                      selectedNode && mutatorsRef.current?.setConfig(selectedNode.id, config)
+                    }
+                    onPolicy={(policy) =>
+                      selectedNode && mutatorsRef.current?.setPolicy(selectedNode.id, policy)
+                    }
+                    onDelete={() => selectedNode && mutatorsRef.current?.remove(selectedNode.id)}
+                  />
+                </div>
+              </RuntimeValuesContext.Provider>
+            )}
+          </section>
+          <section
+            className={`flex flex-col overflow-hidden border-t-4 border-bg ${
+              resultsCollapsed ? 'shrink-0' : 'min-h-0 flex-1'
+            }`}
+          >
+            <PanelHeader
+              title="Run Results"
+              icon={<ListChecks size={12} />}
+              className="bg-surface-2"
+              collapsed={resultsCollapsed}
+              onToggle={() => setResultsCollapsed((v) => !v)}
+            />
+            {!resultsCollapsed && (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <RunPanel
+                  result={isRunningThis ? null : displayedRun}
+                  running={isRunningThis}
+                  error={runWorkflowId === selectedId && !displayedRun ? runError : null}
+                  liveResults={isRunningThis ? progress.results : []}
+                  current={isRunningThis ? progress.current : null}
+                  selectedNodeId={selectedNode?.id ?? null}
+                  onSelectStage={(id) => mutatorsRef.current?.focusNode(id)}
+                  history={selectedHistory}
+                  historyIndex={viewIdx === null ? -1 : viewIdx}
+                  onSelectHistory={(i) =>
+                    selectedId && setViewIndex((v) => ({ ...v, [selectedId]: i }))
                   }
-                  onRename={(name) =>
-                    selectedNode && mutatorsRef.current?.rename(selectedNode.id, name)
-                  }
-                  onConfig={(config) =>
-                    selectedNode && mutatorsRef.current?.setConfig(selectedNode.id, config)
-                  }
-                  onPolicy={(policy) =>
-                    selectedNode && mutatorsRef.current?.setPolicy(selectedNode.id, policy)
-                  }
-                  onDelete={() => selectedNode && mutatorsRef.current?.remove(selectedNode.id)}
                 />
               </div>
-            </RuntimeValuesContext.Provider>
-          </section>
-          <section className="flex min-h-0 flex-1 flex-col border-t-4 border-bg">
-            <h2 className="flex shrink-0 items-center gap-1.5 border-b border-border bg-surface-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
-              <ListChecks size={12} /> Run Results
-            </h2>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <RunPanel
-                result={isRunningThis ? null : displayedRun}
-                running={isRunningThis}
-                error={runWorkflowId === selectedId && !displayedRun ? runError : null}
-                liveResults={isRunningThis ? progress.results : []}
-                current={isRunningThis ? progress.current : null}
-                selectedNodeId={selectedNode?.id ?? null}
-                onSelectStage={(id) => mutatorsRef.current?.focusNode(id)}
-                history={selectedHistory}
-                historyIndex={viewIdx === null ? -1 : viewIdx}
-                onSelectHistory={(i) =>
-                  selectedId && setViewIndex((v) => ({ ...v, [selectedId]: i }))
-                }
-              />
-            </div>
+            )}
           </section>
         </aside>
       </div>
