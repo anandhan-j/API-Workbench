@@ -63,7 +63,8 @@ import { NodePalette } from './NodePalette';
 import { NodeInspector } from './NodeInspector';
 import { RunPanel, type RunningNode } from './RunPanel';
 import { WorkflowInputPrompt } from './WorkflowInputPrompt';
-import { upstreamVariables } from './flow-variables';
+import { producedVariableNames, upstreamVariables } from './flow-variables';
+import { useQueries } from '@tanstack/react-query';
 import { useVariableKeys } from '../variables/use-variable-keys';
 import { RuntimeValuesContext } from '../variables/runtime-values';
 import type { VariableSuggestion } from '../variables/suggestion';
@@ -207,17 +208,58 @@ export function WorkflowsPage(): JSX.Element {
   // active workspace, plus variables produced by the selected node's upstream
   // steps (computed from the live graph, so they update as the user edits).
   const storedKeys = useVariableKeys();
+
+  // Sub-workflow nodes expose the variables their referenced workflow sets to the
+  // parent (the engine shares one runtime). Fetch those graphs so downstream
+  // nodes can autocomplete them.
+  const subWorkflowIds = useMemo(() => {
+    const graph = graphRef.current ?? detail.data?.graph ?? null;
+    if (!graph) return [];
+    const ids = new Set<string>();
+    for (const n of graph.nodes) {
+      if (n.kind === 'sub-workflow') {
+        const id = (n.config as { workflowId?: string }).workflowId;
+        if (id) ids.add(id);
+      }
+    }
+    return [...ids];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirtyAt, detail.data]);
+
+  const subWorkflowQueries = useQueries({
+    queries: subWorkflowIds.map((id) => ({
+      queryKey: ['workflow', id],
+      queryFn: () => invoke('workflow.get', { id }),
+      enabled: bridge,
+      staleTime: 5_000,
+    })),
+  });
+  const subVarsSignature = subWorkflowQueries
+    .map((q, i) => `${subWorkflowIds[i]}:${q.dataUpdatedAt ?? 0}`)
+    .join('|');
+  const subWorkflowVars = useMemo<Record<string, string[]>>(() => {
+    const map: Record<string, string[]> = {};
+    subWorkflowQueries.forEach((q, i) => {
+      const id = subWorkflowIds[i];
+      if (id && q.data) map[id] = producedVariableNames(q.data.graph);
+    });
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subVarsSignature]);
+
   const flowSuggestions = useMemo<VariableSuggestion[]>(() => {
     const graph = graphRef.current ?? detail.data?.graph ?? null;
     if (!graph || !selectedNode) return [];
-    return upstreamVariables(graph, selectedNode.id).map((v) => ({
-      key: v.key,
-      scope: 'runtime' as const,
-      secret: false,
-      source: { nodeName: v.nodeName, field: v.field },
-    }));
+    return upstreamVariables(graph, selectedNode.id, (id) => subWorkflowVars[id] ?? []).map(
+      (v) => ({
+        key: v.key,
+        scope: 'runtime' as const,
+        secret: false,
+        source: { nodeName: v.nodeName, field: v.field },
+      }),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirtyAt, selectedNode, detail.data]);
+  }, [dirtyAt, selectedNode, detail.data, subWorkflowVars]);
   const inspectorSuggestions = useMemo<VariableSuggestion[]>(() => {
     const seen = new Set(flowSuggestions.map((sug) => sug.key));
     return [...flowSuggestions, ...storedKeys.filter((k) => !seen.has(k.key))];
@@ -888,6 +930,10 @@ export function WorkflowsPage(): JSX.Element {
                     workflows={(workflows.data ?? []).filter((w) => w.id !== selectedId)}
                     projectRequests={projectRequests.data ?? []}
                     onImportRequest={(id) => void handleImportRequest(id)}
+                    onOpenWorkflow={(id) => {
+                      setSelectedId(id);
+                      setSelectedNode(null);
+                    }}
                     suggestions={inspectorSuggestions}
                     variableContext={variableContext}
                     flowSuggestions={flowSuggestions}

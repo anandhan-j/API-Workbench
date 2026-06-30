@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkflowGraph, WorkflowNode } from '@shared/workflow';
-import { upstreamVariables, variablesProducedBy } from './flow-variables';
+import { producedVariableNames, upstreamVariables, variablesProducedBy } from './flow-variables';
 
 function node(
   id: string,
@@ -74,5 +74,49 @@ describe('upstreamVariables', () => {
         .map((v) => v.key)
         .sort(),
     ).toEqual(['pin', 'token', 'userId']);
+  });
+});
+
+describe('sub-workflow variable exposure', () => {
+  const childGraph: WorkflowGraph = {
+    nodes: [
+      node('s', 'start'),
+      node('v', 'set-variable', { key: 'token' }),
+      node('t', 'transform', { variable: 'userId' }),
+      node('e', 'end'),
+    ],
+    edges: [],
+    groups: [],
+  };
+
+  it('producedVariableNames lists every variable a graph writes', () => {
+    expect(producedVariableNames(childGraph).sort()).toEqual(['token', 'userId']);
+  });
+
+  it("exposes a sub-workflow's outputs to later parent steps via the resolver", () => {
+    const parent: WorkflowGraph = {
+      nodes: [
+        node('s', 'start'),
+        node('sub', 'sub-workflow', { workflowId: 'child1' }, 'Login flow'),
+        node('c', 'condition', { expression: '' }, 'Check'),
+        node('e', 'end'),
+      ],
+      edges: [
+        { id: 'e1', source: 's', target: 'sub' },
+        { id: 'e2', source: 'sub', target: 'c' },
+        { id: 'e3', source: 'c', target: 'e' },
+      ],
+      groups: [],
+    };
+    const resolver = (id: string): string[] => (id === 'child1' ? ['token', 'userId'] : []);
+
+    const up = upstreamVariables(parent, 'c', resolver);
+    expect(up.map((v) => v.key).sort()).toEqual(['token', 'userId']);
+    expect(up.every((v) => v.field === 'sub-workflow')).toBe(true);
+    expect(up.find((v) => v.key === 'token')?.nodeName).toBe('Login flow');
+  });
+
+  it('contributes nothing without a resolver', () => {
+    expect(variablesProducedBy(node('sub', 'sub-workflow', { workflowId: 'x' }))).toEqual([]);
   });
 });

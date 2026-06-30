@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { ChevronDown, ExternalLink, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import type { ExecutionResponse } from '@shared/execution';
 import type {
@@ -51,6 +51,8 @@ interface NodeInspectorProps {
   variableContext?: VariableContext;
   /** Upstream-step variables, forwarded into the request node editor. */
   flowSuggestions?: VariableSuggestion[];
+  /** Opens (selects) the workflow a sub-workflow node references. */
+  onOpenWorkflow?: (workflowId: string) => void;
   onRename: (name: string) => void;
   onConfig: (config: WorkflowNode['config']) => void;
   onPolicy: (policy: NodePolicy | undefined) => void;
@@ -66,6 +68,7 @@ export function NodeInspector({
   suggestions = [],
   variableContext,
   flowSuggestions = [],
+  onOpenWorkflow,
   onRename,
   onConfig,
   onPolicy,
@@ -367,6 +370,19 @@ export function NodeInspector({
               </option>
             ))}
           </select>
+          {onOpenWorkflow && (
+            <button
+              type="button"
+              onClick={() => config.workflowId && onOpenWorkflow(config.workflowId as string)}
+              disabled={!config.workflowId}
+              className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ExternalLink size={14} /> Open workflow
+            </button>
+          )}
+          <p className="mt-1 text-[11px] text-muted">
+            Variables the sub-workflow sets are available to later steps here.
+          </p>
         </Field>
       )}
 

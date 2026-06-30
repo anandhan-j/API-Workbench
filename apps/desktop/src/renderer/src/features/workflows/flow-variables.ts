@@ -15,8 +15,19 @@ export interface FlowVariable {
   field: string;
 }
 
-/** The runtime variable keys a single node writes into the context. */
-export function variablesProducedBy(node: WorkflowNode): { key: string; field: string }[] {
+/** Resolves the variable names a referenced sub-workflow produces. */
+export type SubWorkflowVarsResolver = (workflowId: string) => string[];
+
+/**
+ * The runtime variable keys a single node writes into the context. A sub-workflow
+ * node contributes the variables produced inside the workflow it runs (resolved
+ * via `subWorkflowVars`), since the engine threads one shared runtime map through
+ * the child — so those values are available to later parent steps.
+ */
+export function variablesProducedBy(
+  node: WorkflowNode,
+  subWorkflowVars?: SubWorkflowVarsResolver,
+): { key: string; field: string }[] {
   switch (node.kind) {
     case 'set-variable': {
       const key = (node.config as { key?: string }).key?.trim();
@@ -40,9 +51,26 @@ export function variablesProducedBy(node: WorkflowNode): { key: string; field: s
         .filter((k): k is string => Boolean(k))
         .map((k) => ({ key: k, field: 'input' }));
     }
+    case 'sub-workflow': {
+      const id = (node.config as { workflowId?: string }).workflowId;
+      if (!id || !subWorkflowVars) return [];
+      return subWorkflowVars(id).map((key) => ({ key, field: 'sub-workflow' }));
+    }
     default:
       return [];
   }
+}
+
+/**
+ * All variable names a graph's nodes write directly (no sub-workflow recursion) —
+ * used to expose a sub-workflow's outputs to its parent.
+ */
+export function producedVariableNames(graph: WorkflowGraph): string[] {
+  const names = new Set<string>();
+  for (const node of graph.nodes) {
+    for (const { key } of variablesProducedBy(node)) names.add(key);
+  }
+  return [...names];
 }
 
 function kindLabel(kind: WorkflowNode['kind']): string {
@@ -55,7 +83,11 @@ function kindLabel(kind: WorkflowNode['kind']): string {
  * nearest producing step (breadth-first from the node). Cycles (loops) are
  * handled via a visited set.
  */
-export function upstreamVariables(graph: WorkflowGraph, nodeId: string): FlowVariable[] {
+export function upstreamVariables(
+  graph: WorkflowGraph,
+  nodeId: string,
+  subWorkflowVars?: SubWorkflowVarsResolver,
+): FlowVariable[] {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const preds = new Map<string, string[]>();
   for (const e of graph.edges) {
@@ -84,7 +116,7 @@ export function upstreamVariables(graph: WorkflowGraph, nodeId: string): FlowVar
   for (const id of order) {
     const node = byId.get(id);
     if (!node) continue;
-    for (const { key, field } of variablesProducedBy(node)) {
+    for (const { key, field } of variablesProducedBy(node, subWorkflowVars)) {
       if (taken.has(key)) continue;
       taken.add(key);
       result.push({
