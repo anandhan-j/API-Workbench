@@ -237,6 +237,52 @@ describe('WorkflowEngine', () => {
     expect(result.nodeResults.some((n) => n.nodeId === 'cv')).toBe(true);
   });
 
+  it('merges variables from multiple sub-workflows, each seeing the previous one', async () => {
+    const childA = linearWorkflow('childA', [
+      { id: 'as', kind: 'start', name: 'Start', position: pos, config: {} },
+      setVar('av', 'a', '1'),
+      { id: 'ae', kind: 'end', name: 'End', position: pos, config: {} },
+    ]);
+    const childB = linearWorkflow('childB', [
+      { id: 'bs', kind: 'start', name: 'Start', position: pos, config: {} },
+      setVar('bv', 'b', '{{a}}2'), // reads childA's variable from the shared runtime
+      { id: 'be', kind: 'end', name: 'End', position: pos, config: {} },
+    ]);
+    const parent = linearWorkflow('parent', [
+      start(),
+      {
+        id: 'subA',
+        kind: 'sub-workflow',
+        name: 'A',
+        position: pos,
+        config: { workflowId: 'childA' },
+      },
+      {
+        id: 'subB',
+        kind: 'sub-workflow',
+        name: 'B',
+        position: pos,
+        config: { workflowId: 'childB' },
+      },
+      end(),
+    ]);
+    const ports = makePorts({
+      loadWorkflow: (id) =>
+        id === 'childA'
+          ? childA
+          : id === 'childB'
+            ? childB
+            : (() => {
+                throw new Error('?');
+              })(),
+    });
+    const result = await new WorkflowEngine(ports).run(parent);
+
+    expect(result.status).toBe('success');
+    // Both sub-workflows contributed; the second saw the first's variable.
+    expect(result.finalVariables).toMatchObject({ a: '1', b: '12' });
+  });
+
   it('detects sub-workflow recursion and fails the node', async () => {
     const selfRef = linearWorkflow('loop', [
       start(),
