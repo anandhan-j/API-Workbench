@@ -1,0 +1,57 @@
+appId: com.apiworkbench.desktop
+productName: API Workbench
+copyright: Copyright © 2026 API Workbench
+
+# electron is hoisted to the monorepo root node_modules, so electron-builder
+# (run from apps/desktop) can't auto-detect the version — pin it explicitly.
+electronVersion: 42.5.0
+
+# electron-vite compiles main/preload/renderer into ./out; that plus the
+# production node_modules (resolved automatically by electron-builder) is the
+# packaged app. `main` in package.json points at out/main/index.js.
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+
+# better-sqlite3 is a native module: its prebuilt .node binary must live outside
+# the asar archive so it can be loaded at runtime.
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**'
+
+# Rebuild native modules (better-sqlite3) against the bundled Electron ABI.
+npmRebuild: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  # icon: build/icon.ico   # drop a 256x256 .ico here to brand the app
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: API Workbench
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+
+mac:
+  target:
+    - dmg
+  category: public.app-category.developer-tools
+
+linux:
+  target:
+    - AppImage
+  category: Development
