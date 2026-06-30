@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkflowGraph, WorkflowNode } from '@shared/workflow';
-import { producedVariableNames, upstreamVariables, variablesProducedBy } from './flow-variables';
+import {
+  producedVariableNames,
+  upstreamVariables,
+  variablesProducedBy,
+  workflowUsedVariableNames,
+} from './flow-variables';
 
 function node(
   id: string,
@@ -118,5 +123,33 @@ describe('sub-workflow variable exposure', () => {
 
   it('contributes nothing without a resolver', () => {
     expect(variablesProducedBy(node('sub', 'sub-workflow', { workflowId: 'x' }))).toEqual([]);
+  });
+});
+
+describe('workflowUsedVariableNames', () => {
+  it('collects unique sorted tokens from every node config', () => {
+    const graph: WorkflowGraph = {
+      nodes: [
+        node('s', 'start'),
+        node('r', 'request', {
+          url: '{{baseUrl}}/u',
+          headers: { Authorization: 'Bearer {{token}}' },
+        }),
+        node('c', 'condition', { expression: '{{token}} == {{expected}}' }),
+        node('e', 'end'),
+      ],
+      edges: [],
+      groups: [],
+    };
+    expect(workflowUsedVariableNames(graph)).toEqual(['baseUrl', 'expected', 'token']);
+  });
+
+  it('returns nothing when no node references a variable', () => {
+    const graph: WorkflowGraph = {
+      nodes: [node('s', 'start'), node('d', 'delay', { ms: 100 })],
+      edges: [],
+      groups: [],
+    };
+    expect(workflowUsedVariableNames(graph)).toEqual([]);
   });
 });

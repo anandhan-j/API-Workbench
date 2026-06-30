@@ -13,6 +13,7 @@ import {
   Download,
   GripHorizontal,
   ListChecks,
+  Variable as VariableIcon,
   Loader2,
   Pause,
   Play,
@@ -63,6 +64,7 @@ import { NodePalette } from './NodePalette';
 import { NodeInspector } from './NodeInspector';
 import { RunPanel, type RunningNode } from './RunPanel';
 import { WorkflowInputPrompt } from './WorkflowInputPrompt';
+import { WorkflowVariablesPanel } from './WorkflowVariablesPanel';
 import { producedVariableNames, upstreamVariables } from './flow-variables';
 import { useQueries } from '@tanstack/react-query';
 import { useVariableKeys } from '../variables/use-variable-keys';
@@ -126,6 +128,25 @@ function PanelHeader({
   );
 }
 
+/** Thin draggable divider between two stacked right-pane sections. */
+function VResizeHandle({
+  onPointerDown,
+}: {
+  onPointerDown: (e: ReactPointerEvent) => void;
+}): JSX.Element {
+  return (
+    <div
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Resize section"
+      onPointerDown={onPointerDown}
+      className="group flex h-2.5 shrink-0 cursor-row-resize items-center justify-center bg-border/30 hover:bg-accent/20"
+    >
+      <GripHorizontal size={14} className="text-muted/60 group-hover:text-accent" />
+    </div>
+  );
+}
+
 export function WorkflowsPage(): JSX.Element {
   const bridge = isBridgeAvailable();
   const active = useActiveSelection();
@@ -184,6 +205,23 @@ export function WorkflowsPage(): JSX.Element {
     'awb.workflow.resultsCollapsed',
     false,
   );
+  const [variablesCollapsed, setVariablesCollapsed] = usePersistentState(
+    'awb.workflow.variablesCollapsed',
+    false,
+  );
+  // Heights for the right-pane sections that aren't the last expanded one
+  // (the last expanded section flexes to fill); dragged via the handles.
+  const [detailsHeight, setDetailsHeight] = usePersistentState('awb.workflow.detailsHeight', 240);
+  const [variablesHeight, setVariablesHeight] = usePersistentState(
+    'awb.workflow.variablesHeight',
+    180,
+  );
+  // The last expanded right-pane section flexes; the others use a fixed height.
+  const rightSections: Array<'details' | 'variables' | 'results'> = [];
+  if (!detailsCollapsed) rightSections.push('details');
+  if (!variablesCollapsed) rightSections.push('variables');
+  if (!resultsCollapsed) rightSections.push('results');
+  const lastRightSection = rightSections[rightSections.length - 1];
 
   // Drag the divider to resize the workflow list; the palette fills the rest.
   const beginResize = useCallback(
@@ -202,6 +240,25 @@ export function WorkflowsPage(): JSX.Element {
       window.addEventListener('pointerup', onUp);
     },
     [listHeight, setListHeight],
+  );
+
+  // Drag a horizontal divider in the right pane to resize the section above it.
+  const beginVResize = useCallback(
+    (startHeight: number, setHeight: (n: number) => void) =>
+      (e: ReactPointerEvent): void => {
+        e.preventDefault();
+        const startY = e.clientY;
+        const onMove = (ev: PointerEvent): void => {
+          setHeight(Math.max(80, Math.min(600, startHeight + (ev.clientY - startY))));
+        };
+        const onUp = (): void => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      },
+    [],
   );
 
   // Variables for {{ }} autocomplete in the inspector: stored vars for the
@@ -246,6 +303,15 @@ export function WorkflowsPage(): JSX.Element {
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subVarsSignature]);
+  const subWorkflowVarsResolver = useCallback(
+    (id: string) => subWorkflowVars[id] ?? [],
+    [subWorkflowVars],
+  );
+  const liveGraph = useMemo(
+    () => graphRef.current ?? detail.data?.graph ?? null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dirtyAt, detail.data],
+  );
 
   const flowSuggestions = useMemo<VariableSuggestion[]>(() => {
     const graph = graphRef.current ?? detail.data?.graph ?? null;
@@ -916,8 +982,17 @@ export function WorkflowsPage(): JSX.Element {
         <aside className="flex w-80 shrink-0 flex-col overflow-hidden rounded-md border border-border">
           <section
             className={`flex flex-col overflow-hidden ${
-              detailsCollapsed ? 'shrink-0' : 'min-h-0 flex-1'
+              detailsCollapsed
+                ? 'shrink-0'
+                : lastRightSection === 'details'
+                  ? 'min-h-0 flex-1'
+                  : 'shrink-0'
             }`}
+            style={
+              !detailsCollapsed && lastRightSection !== 'details'
+                ? { height: detailsHeight }
+                : undefined
+            }
           >
             <PanelHeader
               title="Node Details"
@@ -959,8 +1034,46 @@ export function WorkflowsPage(): JSX.Element {
               </RuntimeValuesContext.Provider>
             )}
           </section>
+          {!detailsCollapsed && lastRightSection !== 'details' && (
+            <VResizeHandle onPointerDown={beginVResize(detailsHeight, setDetailsHeight)} />
+          )}
           <section
-            className={`flex flex-col overflow-hidden border-t-4 border-bg ${
+            className={`flex flex-col overflow-hidden ${
+              variablesCollapsed
+                ? 'shrink-0'
+                : lastRightSection === 'variables'
+                  ? 'min-h-0 flex-1'
+                  : 'shrink-0'
+            }`}
+            style={
+              !variablesCollapsed && lastRightSection !== 'variables'
+                ? { height: variablesHeight }
+                : undefined
+            }
+          >
+            <PanelHeader
+              title="Workflow Variables"
+              icon={<VariableIcon size={12} />}
+              className="bg-surface-2"
+              collapsed={variablesCollapsed}
+              onToggle={() => setVariablesCollapsed((v) => !v)}
+            />
+            {!variablesCollapsed && (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <WorkflowVariablesPanel
+                  graph={liveGraph}
+                  variableContext={variableContext ?? {}}
+                  subWorkflowVars={subWorkflowVarsResolver}
+                  runtimeValues={runtimeValues}
+                />
+              </div>
+            )}
+          </section>
+          {!variablesCollapsed && lastRightSection !== 'variables' && (
+            <VResizeHandle onPointerDown={beginVResize(variablesHeight, setVariablesHeight)} />
+          )}
+          <section
+            className={`flex flex-col overflow-hidden ${
               resultsCollapsed ? 'shrink-0' : 'min-h-0 flex-1'
             }`}
           >

@@ -130,3 +130,17 @@ export function upstreamVariables(
   }
   return result;
 }
+
+const TOKEN = /\{\{\s*([\w.-]+)\s*\}\}/g;
+
+/**
+ * Every `{{variable}}` referenced anywhere in a workflow's node configs, unique
+ * and alphabetically sorted — powers the workflow-wide "variables used" panel.
+ */
+export function workflowUsedVariableNames(graph: WorkflowGraph): string[] {
+  const seen = new Set<string>();
+  for (const node of graph.nodes) {
+    for (const m of JSON.stringify(node.config ?? {}).matchAll(TOKEN)) seen.add(m[1]);
+  }
+  return [...seen].sort((a, b) => a.localeCompare(b));
+}
