@@ -11,6 +11,7 @@ import {
 import type { HttpMethod, TreeNode } from '@shared/collection';
 import { cn } from '../../lib/cn';
 import { ContextMenu, type MenuItem } from '../../components/menu/ContextMenu';
+import { endpointLabel } from './request-label';
 
 const DRAG_TYPE = 'application/x-awb-request';
 
@@ -317,7 +318,11 @@ export function CollectionTreeView({
               >
                 {node.method}
               </span>
-              <span className="min-w-0 flex-1 truncate">{node.name}</span>
+              <span
+                className={cn('min-w-0 flex-1 truncate', !node.name.trim() && 'text-muted')}
+              >
+                {node.name.trim() || endpointLabel(node.url)}
+              </span>
             </button>
           )}
           {!isEditing && onToggleFavorite && (

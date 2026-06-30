@@ -6,6 +6,8 @@ import { isBridgeAvailable } from '../../lib/ipc';
 import { useActiveSelection, useWorkspaceDetail } from '../workspaces/use-workspaces';
 import { CollectionNode } from './CollectionNode';
 import type { OpenedRequest } from './CollectionTreeView';
+import { requestDisplayName } from './request-label';
+import { cn } from '../../lib/cn';
 import { RequestEditor } from '../runner/RequestEditor';
 import { RequestVariablesUsedPanel } from './RequestVariablesUsedPanel';
 import { detailToDraft, draftToDetails, type RequestDraft } from '../runner/build-request';
@@ -298,6 +300,7 @@ export function CollectionsPage(): JSX.Element {
                           setEditingName(false);
                         }
                       }}
+                      placeholder="Request name"
                       aria-label="Request name"
                       className="min-w-0 flex-1 rounded border border-accent bg-bg px-2 py-1 text-sm outline-none"
                     />
@@ -308,13 +311,15 @@ export function CollectionsPage(): JSX.Element {
                         setNameDraft(selectedRequest.name);
                         setEditingName(true);
                       }}
+                      title="Rename request"
                       className="group flex min-w-0 items-center gap-1.5 text-left text-sm font-medium"
                     >
-                      <span className="truncate">{selectedRequest.name}</span>
-                      <Pencil
-                        size={12}
-                        className="shrink-0 text-muted opacity-0 group-hover:opacity-100"
-                      />
+                      <span
+                        className={cn('truncate', !selectedRequest.name.trim() && 'italic text-muted')}
+                      >
+                        {requestDisplayName(selectedRequest.name, selectedRequest.url)}
+                      </span>
+                      <Pencil size={12} className="shrink-0 text-muted group-hover:text-accent" />
                     </button>
                   )}
                   <button

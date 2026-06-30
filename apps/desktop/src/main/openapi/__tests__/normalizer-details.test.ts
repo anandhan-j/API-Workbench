@@ -119,4 +119,18 @@ describe('normalizeSpec — request details', () => {
     const spec = normalizeSpec(doc, 'openapi-3');
     expect(spec.operations[0].details).toBeUndefined();
   });
+  it('falls back to operationId then "METHOD path" when the summary is empty', () => {
+    const doc = {
+      openapi: '3.0.0',
+      info: { title: 'API', version: '1.0' },
+      paths: {
+        '/origins': { post: { summary: '   ', operationId: 'createOrigin' } },
+        '/origins/list': { post: { summary: '' } },
+      },
+    };
+    const spec = normalizeSpec(doc, 'openapi-3');
+    const byPath = (p: string) => spec.operations.find((o) => o.path === p);
+    expect(byPath('/origins')?.name).toBe('createOrigin');
+    expect(byPath('/origins/list')?.name).toBe('POST /origins/list');
+  });
 });

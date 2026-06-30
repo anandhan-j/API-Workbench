@@ -45,6 +45,12 @@ function str(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+/** A string trimmed to `undefined` when empty/whitespace, so `??` falls through. */
+function nonEmpty(value: unknown): string | undefined {
+  const s = str(value)?.trim();
+  return s ? s : undefined;
+}
+
 function resolveBaseUrl(document: Record<string, unknown>, version: SpecVersion): string {
   if (version === 'openapi-3') {
     const servers = document['servers'];
@@ -322,7 +328,9 @@ export function normalizeSpec(
       if (tag && !tags.includes(tag)) tags.push(tag);
 
       const name =
-        str(operation['summary']) ?? str(operation['operationId']) ?? `${method} ${path}`;
+        nonEmpty(operation['summary']) ??
+        nonEmpty(operation['operationId']) ??
+        `${method} ${path}`;
 
       const params = collectParameters(pathItem, operation, resolve);
       const details = extractDetails(params, operation, version, resolve);
