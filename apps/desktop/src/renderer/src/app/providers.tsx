@@ -20,10 +20,20 @@ function ThemeController(): null {
   return null;
 }
 
+/** Applies the chosen font scale to the document root (scales rem-based text). */
+function FontController(): null {
+  const fontScale = useUiStore((s) => s.fontScale);
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${fontScale * 16}px`;
+  }, [fontScale]);
+  return null;
+}
+
 export function AppProviders({ children }: { children: ReactNode }): JSX.Element {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeController />
+      <FontController />
       <ConfirmProvider>{children}</ConfirmProvider>
     </QueryClientProvider>
   );
