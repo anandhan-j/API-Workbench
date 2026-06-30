@@ -40,7 +40,6 @@ export function BodyEditor({
   rawType,
   rawBody,
   formFields,
-  binaryBase64,
   binaryFileName,
   suggestions = [],
   onChange,

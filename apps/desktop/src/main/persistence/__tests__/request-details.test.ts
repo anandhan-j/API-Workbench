@@ -39,8 +39,10 @@ describe('request details persistence', () => {
         headers: [{ key: 'X-Trace', value: 'abc', enabled: true }],
         params: [{ key: 'dryRun', value: 'true', enabled: true }],
         auth: { type: 'none' },
-        body: { mode: 'raw', rawType: 'json', rawBody: '{"name":"Rex"}', formFields: [], binaryBase64: '' },
+        body: { mode: 'raw', rawType: 'json', rawBody: '{"name":"Rex"}', formFields: [], binaryBase64: '', binaryFileName: '' },
         options: { timeoutMs: 30_000, maxRetries: 0, followRedirects: true },
+        preRequestScript: '',
+        postResponseScript: '',
       },
       source: { key: 'POST /pets', method: 'POST', url: 'https://api.test/pets', name: 'Create' },
     });

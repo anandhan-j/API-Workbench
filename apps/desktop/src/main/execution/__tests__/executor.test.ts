@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ExecutionEngine, type PreparedRequest } from '../executor';
 import type { HttpTransport, TransportRequest, TransportResponse } from '../transport';
 

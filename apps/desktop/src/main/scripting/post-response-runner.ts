@@ -10,6 +10,14 @@ export interface VariableBackend {
   resolve(context: VariableContext): Map<string, { value: string }>;
 }
 
+/** The per-scope variable API (`pm.environment`, `pm.globals`, …) exposed to scripts. */
+interface ScopeApi {
+  set(key: string, value: unknown): void;
+  get(key: string): string | undefined;
+  has(key: string): boolean;
+  unset(key: string): void;
+}
+
 /** Read-only view of the outgoing request given to a pre-request script. */
 export interface ScriptRequestInfo {
   method: string;
@@ -144,7 +152,7 @@ function buildCore(variables: VariableBackend, context: VariableContext) {
     state.logs.push(args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
   };
 
-  const makeScopeApi = (scope: ScriptVarScope): Record<string, unknown> => ({
+  const makeScopeApi = (scope: ScriptVarScope): ScopeApi => ({
     set: (key: string, value: unknown): void => {
       const str = typeof value === 'string' ? value : JSON.stringify(value);
       variables.set({ ...engineScope(scope, context), key, value: str });

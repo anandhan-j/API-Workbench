@@ -89,8 +89,10 @@ const detail: RequestDetailFull = {
     headers: [{ key: 'X-Trace', value: 'abc', enabled: true }],
     params: [{ key: 'dryRun', value: 'true', enabled: false }],
     auth: { type: 'none' },
-    body: { mode: 'raw', rawType: 'json', rawBody: '{"name":"Rex"}', formFields: [], binaryBase64: '' },
+    body: { mode: 'raw', rawType: 'json', rawBody: '{"name":"Rex"}', formFields: [], binaryBase64: '', binaryFileName: '' },
     options: { timeoutMs: 30_000, maxRetries: 0, followRedirects: true },
+    preRequestScript: '',
+    postResponseScript: '',
   },
 };
 

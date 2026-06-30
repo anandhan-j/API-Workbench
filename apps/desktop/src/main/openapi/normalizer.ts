@@ -62,7 +62,7 @@ function resolveBaseUrl(document: Record<string, unknown>, version: SpecVersion)
   }
   // swagger-2: scheme://host + basePath
   const schemes = document['schemes'];
-  const scheme = Array.isArray(schemes) && schemes.length ? str(schemes[0]) ?? 'https' : 'https';
+  const scheme = Array.isArray(schemes) && schemes.length ? (str(schemes[0]) ?? 'https') : 'https';
   const host = str(document['host']);
   const basePath = str(document['basePath']) ?? '';
   return host ? `${scheme}://${host}${basePath}` : basePath;
@@ -132,10 +132,7 @@ function parameterValue(param: Record<string, unknown>, resolve: Resolver): stri
   if (param['schema'] !== undefined) return scalarString(schemaToExample(param['schema'], resolve));
   // Swagger 2 inlines type/format/enum directly on the parameter.
   return scalarString(
-    schemaToExample(
-      { type: param['type'], format: param['format'], enum: param['enum'] },
-      resolve,
-    ),
+    schemaToExample({ type: param['type'], format: param['format'], enum: param['enum'] }, resolve),
   );
 }
 
@@ -222,11 +219,19 @@ function extractBodyOas3(operation: Record<string, unknown>, resolve: Resolver):
 
   const urlencoded = asRecord(content['application/x-www-form-urlencoded']);
   if (urlencoded) {
-    return { ...NONE_BODY, mode: 'urlencoded', formFields: formFieldsFromSchema(urlencoded['schema'], resolve) };
+    return {
+      ...NONE_BODY,
+      mode: 'urlencoded',
+      formFields: formFieldsFromSchema(urlencoded['schema'], resolve),
+    };
   }
   const multipart = asRecord(content['multipart/form-data']);
   if (multipart) {
-    return { ...NONE_BODY, mode: 'formdata', formFields: formFieldsFromSchema(multipart['schema'], resolve) };
+    return {
+      ...NONE_BODY,
+      mode: 'formdata',
+      formFields: formFieldsFromSchema(multipart['schema'], resolve),
+    };
   }
   const firstType = Object.keys(content)[0];
   const firstMedia = firstType ? asRecord(content[firstType]) : null;
@@ -250,7 +255,9 @@ function extractBodySwagger2(
 
   const formParams = params.filter((p) => str(p['in']) === 'formData');
   if (formParams.length > 0) {
-    const consumes = Array.isArray(operation['consumes']) ? (operation['consumes'] as unknown[]) : [];
+    const consumes = Array.isArray(operation['consumes'])
+      ? (operation['consumes'] as unknown[])
+      : [];
     const multipart = consumes.some((c) => str(c) === 'multipart/form-data');
     return {
       ...NONE_BODY,
@@ -298,6 +305,8 @@ function extractDetails(
     auth: { type: 'none' },
     body,
     options: { timeoutMs: 30_000, maxRetries: 0, followRedirects: true },
+    preRequestScript: '',
+    postResponseScript: '',
   };
 }
 
@@ -324,13 +333,11 @@ export function normalizeSpec(
       if (!operation) continue;
 
       const opTags = Array.isArray(operation['tags']) ? (operation['tags'] as unknown[]) : [];
-      const tag = opTags.length ? str(opTags[0]) ?? null : null;
+      const tag = opTags.length ? (str(opTags[0]) ?? null) : null;
       if (tag && !tags.includes(tag)) tags.push(tag);
 
       const name =
-        nonEmpty(operation['summary']) ??
-        nonEmpty(operation['operationId']) ??
-        `${method} ${path}`;
+        nonEmpty(operation['summary']) ?? nonEmpty(operation['operationId']) ?? `${method} ${path}`;
 
       const params = collectParameters(pathItem, operation, resolve);
       const details = extractDetails(params, operation, version, resolve);

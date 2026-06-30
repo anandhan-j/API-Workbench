@@ -247,6 +247,7 @@ export class VersioningService {
           source: request.source,
           createdAt: now,
           updatedAt: now,
+          details: null,
         };
         this.persistence.db.insert(requestsTable).values(requestRow).run();
       }
