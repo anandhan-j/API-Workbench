@@ -106,4 +106,25 @@ describe('RunController', () => {
     c.step();
     expect(c.isPaused).toBe(false);
   });
+
+  it('nested checkpoints bypass stepping but still honor pause', async () => {
+    const c = new RunController();
+    c.startStepping();
+    await c.waitIfPaused(); // top-level start node consumes the initial budget
+    // A nested checkpoint (inside an inlined sub-workflow) never suspends for
+    // stepping, even with no step budget left — the sub-workflow runs straight
+    // through as a single step of its parent.
+    await expect(c.waitIfPaused(true)).resolves.toBeUndefined();
+    // ...but an explicit pause still suspends a nested checkpoint.
+    c.pause();
+    let released = false;
+    const wait = c.waitIfPaused(true).then(() => {
+      released = true;
+    });
+    await Promise.resolve();
+    expect(released).toBe(false);
+    c.resume();
+    await wait;
+    expect(released).toBe(true);
+  });
 });

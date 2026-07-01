@@ -31,7 +31,13 @@ export interface RunContext {
 /** Cooperative cancellation + pause control the engine checks between nodes. */
 export interface RunControl {
   signal: AbortSignal;
-  waitIfPaused(): Promise<void>;
+  /**
+   * Suspends between nodes for pause and, at the top level, for step mode.
+   * `nested` runs (a sub-workflow expanded inline) skip the step checkpoint so
+   * the whole sub-workflow runs to completion as a single step of its parent,
+   * while still honoring pause and cancellation.
+   */
+  waitIfPaused(nested?: boolean): Promise<void>;
 }
 
 export interface WorkflowEnginePorts {
@@ -116,6 +122,7 @@ export class WorkflowEngine {
       control,
       new Set(),
       options.workspaceId,
+      false,
     );
     return {
       workflowId: workflow.id,
@@ -134,6 +141,7 @@ export class WorkflowEngine {
     control: RunControl,
     stack: Set<string>,
     workspaceId?: string,
+    nested = false,
   ): Promise<WorkflowRunStatus> {
     if (stack.has(workflow.id))
       throw new WorkflowError(`Sub-workflow cycle detected at "${workflow.id}"`);
@@ -151,7 +159,7 @@ export class WorkflowEngine {
     let current: WorkflowNode | undefined = workflow.graph.nodes.find((n) => n.kind === 'start');
     let steps = 0;
     while (current) {
-      await control.waitIfPaused();
+      await control.waitIfPaused(nested);
       if (control.signal.aborted) return 'cancelled';
       if (steps++ > MAX_STEPS) throw new WorkflowError('Workflow exceeded the maximum step count');
 
@@ -404,6 +412,9 @@ export class WorkflowEngine {
 
         case 'sub-workflow': {
           const child = this.ports.loadWorkflow(node.config.workflowId);
+          // Nested run: step mode treats the sub-workflow as one step (it runs to
+          // completion), so pass nested=true to bypass the per-node step checkpoint
+          // while still honoring pause/cancel.
           const childStatus = await this.runInto(
             child,
             ctx.runtime,
@@ -411,6 +422,7 @@ export class WorkflowEngine {
             control,
             stack,
             ctx.workspaceId,
+            true,
           );
           return {
             result: {

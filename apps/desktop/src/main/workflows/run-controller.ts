@@ -72,11 +72,15 @@ export class RunController {
    * Resolves immediately unless the run must suspend: explicitly paused, or in
    * step mode with no remaining budget. Otherwise resolves on the next
    * resume/step (or cancel).
+   *
+   * `nested` checkpoints (nodes inside an inlined sub-workflow) never suspend for
+   * stepping — the sub-workflow runs to completion as a single step of its parent
+   * — but still suspend for an explicit pause and observe cancellation.
    */
-  waitIfPaused(): Promise<void> {
+  waitIfPaused(nested = false): Promise<void> {
     if (this.isCancelled) return Promise.resolve();
     if (this.paused) return new Promise<void>((resolve) => this.resumeWaiters.push(resolve));
-    if (this.stepping) {
+    if (this.stepping && !nested) {
       if (this.budget > 0) {
         this.budget -= 1;
         return Promise.resolve();
