@@ -151,6 +151,7 @@ export function registerIpcHandlers(context: IpcContext): void {
 
     'project.listByWorkspace': (request) => workspaces.listProjects(request.workspaceId),
     'project.create': (request) => workspaces.createProject(request),
+    'project.rename': (request) => workspaces.renameProject(request.id, request.name),
     'project.delete': (request) => {
       workspaces.deleteProject(request.id);
       return {};
@@ -334,6 +335,7 @@ export function registerIpcHandlers(context: IpcContext): void {
     'workflow.create': (request) => workflows.create(request),
     'workflow.rename': (request) => workflows.rename(request.id, request.name),
     'workflow.save': (request) => workflows.save(request),
+    'workflow.duplicate': (request) => workflows.duplicate(request.id),
     'workflow.delete': (request) => {
       workflows.delete(request.id);
       return {};

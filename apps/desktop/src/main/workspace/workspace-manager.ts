@@ -64,6 +64,9 @@ export class WorkspaceManager {
   deleteWorkspace(id: string): void {
     this.persistence.workspaces.get(id); // throws NotFoundError if absent
     this.persistence.transaction(() => {
+      // Purge scoped variables/credentials BEFORE the cascade removes the
+      // descendants they are enumerated from (they have no FK to cascade through).
+      this.persistence.scopedData.workspace(id);
       this.persistence.workspaces.delete(id); // cascades projects
       if (this.persistence.preferences.get(PREF_ACTIVE_WORKSPACE) === id) {
         this.persistence.preferences.delete(PREF_ACTIVE_WORKSPACE);
@@ -81,6 +84,10 @@ export class WorkspaceManager {
     return this.persistence.projects.create(input);
   }
 
+  renameProject(id: string, name: string): Project {
+    return this.persistence.projects.rename(id, name);
+  }
+
   listProjects(workspaceId: string): Project[] {
     return this.persistence.projects.listByWorkspace(workspaceId);
   }
@@ -88,6 +95,7 @@ export class WorkspaceManager {
   deleteProject(id: string): void {
     this.persistence.projects.get(id);
     this.persistence.transaction(() => {
+      this.persistence.scopedData.project(id); // purge scoped data before cascade
       this.persistence.projects.delete(id);
       if (this.persistence.preferences.get(PREF_ACTIVE_PROJECT) === id) {
         this.persistence.preferences.delete(PREF_ACTIVE_PROJECT);

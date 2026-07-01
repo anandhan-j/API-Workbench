@@ -10,6 +10,7 @@ import {
 import {
   ChevronDown,
   ChevronRight,
+  Copy,
   Download,
   GripHorizontal,
   ListChecks,
@@ -50,6 +51,7 @@ import {
 } from '../../lib/ipc';
 import { usePersistentState } from '../../lib/use-persistent-state';
 import { useConfirm } from '../../components/confirm/ConfirmProvider';
+import { useToast } from '../../components/toast/ToastProvider';
 import { ContextMenu, type MenuItem } from '../../components/menu/ContextMenu';
 import { useActiveSelection, useWorkspaceDetail } from '../workspaces/use-workspaces';
 import {
@@ -164,6 +166,7 @@ export function WorkflowsPage(): JSX.Element {
   const projectRequests = useProjectRequests(projectId);
   const [paused, setPaused] = useState(false);
   const confirm = useConfirm();
+  const toast = useToast();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
@@ -435,9 +438,14 @@ export function WorkflowsPage(): JSX.Element {
     return q ? list.filter((w) => w.name.toLowerCase().includes(q)) : list;
   }, [workflows.data, search]);
 
+  // Manual save (Save button): persist, then confirm with a toast. Autosave uses
+  // `save` directly (below) and intentionally shows no toast.
   const handleSave = (): void => {
     if (selectedId && graphRef.current) {
-      mutations.save.mutate({ id: selectedId, graph: graphRef.current });
+      mutations.save
+        .mutateAsync({ id: selectedId, graph: graphRef.current })
+        .then(() => toast('Workflow saved'))
+        .catch(() => toast('Failed to save workflow', { type: 'error' }));
     }
   };
 
@@ -475,6 +483,18 @@ export function WorkflowsPage(): JSX.Element {
     ) {
       mutations.remove.mutate(id);
       if (selectedId === id) setSelectedId(null);
+    }
+  };
+
+  const handleDuplicate = async (id: string, name: string): Promise<void> => {
+    try {
+      const wf = await mutations.duplicate.mutateAsync(id);
+      setSelectedId(wf.id);
+      logDispatch('info', `Duplicated workflow "${name}" as "${wf.name}"`, { workflowId: wf.id });
+    } catch (error) {
+      logDispatch('error', `Failed to duplicate "${name}": ${errorMessage(error)}`, {
+        workflowId: id,
+      });
     }
   };
 
@@ -805,7 +825,9 @@ export function WorkflowsPage(): JSX.Element {
                           className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
                         >
                           <WorkflowIcon size={14} className="shrink-0 text-muted" />
-                          <span className="truncate">{w.name}</span>
+                          <span className="truncate" title={w.name}>
+                            {w.name}
+                          </span>
                           <span className="ml-auto shrink-0 text-[11px] text-muted">
                             {w.nodeCount}
                           </span>
@@ -850,6 +872,11 @@ export function WorkflowsPage(): JSX.Element {
                       label: 'Rename',
                       icon: <Pencil size={13} />,
                       onSelect: () => beginRename(rowMenu.id, rowMenu.name),
+                    },
+                    {
+                      label: 'Duplicate',
+                      icon: <Copy size={13} />,
+                      onSelect: () => void handleDuplicate(rowMenu.id, rowMenu.name),
                     },
                     {
                       label: 'Export',

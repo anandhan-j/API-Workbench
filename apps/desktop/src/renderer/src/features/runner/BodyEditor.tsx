@@ -1,8 +1,10 @@
-import { Paperclip, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Paperclip, Wand2, X } from 'lucide-react';
 import type { ResolvedKey } from '@shared/variable';
 import { KeyValueEditor } from './KeyValueEditor';
 import { FormDataEditor } from './FormDataEditor';
 import type { BodyMode, KeyValue, RawType } from './build-request';
+import { formatRawBody } from './format-body';
 import { VariableField } from '../variables/VariableField';
 import { pickFile, formatBytes } from '../../lib/pick-file';
 
@@ -44,6 +46,20 @@ export function BodyEditor({
   suggestions = [],
   onChange,
 }: BodyEditorProps): JSX.Element {
+  const [formatError, setFormatError] = useState<string | null>(null);
+  // Clear any stale "invalid" message once the body or type changes.
+  useEffect(() => setFormatError(null), [rawBody, rawType, mode]);
+
+  const canFormat = rawType === 'json' || rawType === 'xml';
+  const formatBody = (): void => {
+    const result = formatRawBody(rawBody, rawType);
+    if (result.ok) {
+      if (result.value !== rawBody) onChange({ rawBody: result.value });
+    } else {
+      setFormatError(result.error);
+    }
+  };
+
   const chooseBinary = async (): Promise<void> => {
     const file = await pickFile();
     if (file) onChange({ binaryBase64: file.base64, binaryFileName: `${file.name} (${formatBytes(file.size)})` });
@@ -63,18 +79,37 @@ export function BodyEditor({
           </label>
         ))}
         {mode === 'raw' && (
-          <select
-            aria-label="Raw type"
-            value={rawType}
-            onChange={(e) => onChange({ rawType: e.target.value as RawType })}
-            className="ml-auto rounded-md border border-border bg-surface px-2 py-1 text-xs"
-          >
-            <option value="json">JSON</option>
-            <option value="text">Text</option>
-            <option value="xml">XML</option>
-          </select>
+          <div className="ml-auto flex items-center gap-2">
+            {canFormat && (
+              <button
+                type="button"
+                onClick={formatBody}
+                disabled={!rawBody.trim()}
+                title={`Format ${rawType.toUpperCase()}`}
+                className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-2 disabled:opacity-50"
+              >
+                <Wand2 size={13} /> Format
+              </button>
+            )}
+            <select
+              aria-label="Raw type"
+              value={rawType}
+              onChange={(e) => onChange({ rawType: e.target.value as RawType })}
+              className="rounded-md border border-border bg-surface px-2 py-1 text-xs"
+            >
+              <option value="json">JSON</option>
+              <option value="text">Text</option>
+              <option value="xml">XML</option>
+            </select>
+          </div>
         )}
       </div>
+
+      {mode === 'raw' && formatError && (
+        <p className="text-xs text-danger" role="alert">
+          Couldn’t format: {formatError}
+        </p>
+      )}
 
       {mode === 'none' && <p className="text-sm text-muted">This request has no body.</p>}
 

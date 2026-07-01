@@ -8,6 +8,7 @@ import type {
   WorkflowNode,
 } from '@shared/workflow';
 import { WorkflowEngine, type WorkflowEnginePorts, type RunContext } from '../workflow-engine';
+import { RunController } from '../run-controller';
 
 const pos = { x: 0, y: 0 };
 
@@ -338,6 +339,67 @@ describe('WorkflowEngine', () => {
     const sub = result.nodeResults.find((n) => n.nodeId === 'sub');
     expect(sub?.status).toBe('failed');
     expect(sub?.message).toMatch(/cycle/i);
+  });
+
+  it('step mode runs a sub-workflow to completion as a single step', async () => {
+    const child = linearWorkflow('child', [
+      { id: 'cs', kind: 'start', name: 'Start', position: pos, config: {} },
+      setVar('c1', 'c1', '1'),
+      setVar('c2', 'c2', '2'),
+      { id: 'ce', kind: 'end', name: 'End', position: pos, config: {} },
+    ]);
+    const parent = linearWorkflow('parent', [
+      start(),
+      {
+        id: 'sub',
+        kind: 'sub-workflow',
+        name: 'call child',
+        position: pos,
+        config: { workflowId: 'child' },
+      },
+      setVar('af', 'after', '3'),
+      end(),
+    ]);
+    const done = new Set<string>();
+    const ports = makePorts({
+      loadWorkflow: (id) =>
+        id === 'child'
+          ? child
+          : (() => {
+              throw new Error('?');
+            })(),
+      onNodeProgress: (e) => {
+        if (e.phase === 'done') done.add(e.nodeId);
+      },
+    });
+    // Lets all pending microtasks/promise chains settle (sleep is mocked).
+    const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+    const control = new RunController();
+    control.startStepping();
+    const p = new WorkflowEngine(ports).run(parent, { control });
+
+    // The start node runs on the initial budget, then the run suspends before
+    // the sub-workflow node.
+    await flush();
+    expect(done.has('start')).toBe(true);
+    expect(done.has('sub')).toBe(false);
+
+    // A single step advances past the sub-workflow node, which runs the whole
+    // child (both inner set-variable nodes) to completion — the inner nodes did
+    // NOT each require their own step — then suspends before the next top-level
+    // node.
+    control.step();
+    await flush();
+    expect(done.has('c1')).toBe(true);
+    expect(done.has('c2')).toBe(true);
+    expect(done.has('sub')).toBe(true);
+    expect(done.has('af')).toBe(false);
+
+    control.resume();
+    const result = await p;
+    expect(result.status).toBe('success');
+    expect(result.finalVariables).toMatchObject({ c1: '1', c2: '2', after: '3' });
   });
 
   it('returns cancelled when the signal is already aborted', async () => {

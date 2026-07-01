@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Copy,
   Folder as FolderIcon,
+  FolderPlus,
   MoreHorizontal,
   Pencil,
   Star,
@@ -14,6 +15,54 @@ import { ContextMenu, type MenuItem } from '../../components/menu/ContextMenu';
 import { endpointLabel } from './request-label';
 
 const DRAG_TYPE = 'application/x-awb-request';
+
+/**
+ * Filter a flat tree to the nodes matching `query`, keeping each match's ancestor
+ * folders (so the folder structure is visible) and, for a matched folder, all of
+ * its descendants (so you can see what it contains). Requests match on name or
+ * URL, folders on name. Returns the input order-preserved; empty query returns all.
+ */
+export function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return nodes;
+
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const childrenOf = new Map<string | null, TreeNode[]>();
+  for (const n of nodes) {
+    const list = childrenOf.get(n.parentId) ?? [];
+    list.push(n);
+    childrenOf.set(n.parentId, list);
+  }
+
+  const keep = new Set<string>();
+  const addAncestors = (node: TreeNode): void => {
+    let pid = node.parentId;
+    while (pid && !keep.has(pid)) {
+      keep.add(pid);
+      pid = byId.get(pid)?.parentId ?? null;
+    }
+  };
+  const addDescendants = (id: string): void => {
+    for (const child of childrenOf.get(id) ?? []) {
+      if (keep.has(child.id)) continue;
+      keep.add(child.id);
+      if (child.type === 'folder') addDescendants(child.id);
+    }
+  };
+
+  for (const node of nodes) {
+    const hit =
+      node.type === 'request'
+        ? node.name.toLowerCase().includes(q) || node.url.toLowerCase().includes(q)
+        : node.name.toLowerCase().includes(q);
+    if (!hit) continue;
+    keep.add(node.id);
+    addAncestors(node);
+    if (node.type === 'folder') addDescendants(node.id);
+  }
+
+  return nodes.filter((n) => keep.has(n.id));
+}
 
 /** The minimal request info passed up when a request is opened. */
 export interface OpenedRequest {
@@ -36,6 +85,8 @@ const METHOD_COLOR: Record<string, string> = {
 export interface CollectionTreeViewProps {
   nodes: TreeNode[];
   expandedFolders: Set<string>;
+  /** When true, every folder renders expanded regardless of `expandedFolders` (used while searching). */
+  forceExpand?: boolean;
   selectedId?: string | null;
   baseDepth?: number;
   onToggleFolder: (id: string) => void;
@@ -48,6 +99,8 @@ export interface CollectionTreeViewProps {
   onDuplicateRequest?: (id: string) => void;
   /** Move a request into a folder (or to the collection root when null). */
   onMoveRequest?: (id: string, folderId: string | null) => void;
+  /** Create a subfolder under `parentId` (a folder in this collection). */
+  onAddFolder?: (parentId: string) => void;
 }
 
 const ICON = 13;
@@ -61,6 +114,7 @@ const ICON = 13;
 export function CollectionTreeView({
   nodes,
   expandedFolders,
+  forceExpand = false,
   selectedId,
   baseDepth = 1,
   onToggleFolder,
@@ -72,6 +126,7 @@ export function CollectionTreeView({
   onRenameRequest,
   onDuplicateRequest,
   onMoveRequest,
+  onAddFolder,
 }: CollectionTreeViewProps): JSX.Element {
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | 'root' | null>(null);
@@ -119,6 +174,15 @@ export function CollectionTreeView({
   );
 
   const folderMenu = (node: Extract<TreeNode, { type: 'folder' }>): MenuItem[] => [
+    ...(onAddFolder
+      ? [
+          {
+            label: 'New subfolder',
+            icon: <FolderPlus size={ICON} />,
+            onSelect: () => onAddFolder(node.id),
+          },
+        ]
+      : []),
     ...(onRenameFolder
       ? [
           {
@@ -200,7 +264,7 @@ export function CollectionTreeView({
       const isEditing = editing?.id === node.id;
 
       if (node.type === 'folder') {
-        const open = expandedFolders.has(node.id);
+        const open = forceExpand || expandedFolders.has(node.id);
         const items = folderMenu(node);
         return [
           <div

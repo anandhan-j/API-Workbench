@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ChevronDown, ExternalLink, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ExternalLink, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import type { ExecutionResponse } from '@shared/execution';
 import type {
@@ -288,19 +288,9 @@ export function NodeInspector({
             />
           </Field>
           <Field label="Cases (comma-separated)" id="node-cases">
-            <input
-              id="node-cases"
-              value={((config.cases as string[]) ?? []).join(', ')}
-              onChange={(e) =>
-                set({
-                  cases: e.target.value
-                    .split(',')
-                    .map((c) => c.trim())
-                    .filter(Boolean),
-                })
-              }
-              placeholder="free, pro, enterprise"
-              className={fieldClass}
+            <CasesField
+              cases={(config.cases as string[]) ?? []}
+              onChange={(cases) => set({ cases })}
             />
           </Field>
           <p className="text-[11px] text-muted">
@@ -722,6 +712,49 @@ function ReliabilitySection({
   );
 }
 
+/** Splits the raw "a, b, c" text into trimmed, non-empty case labels. */
+function parseCases(text: string): string[] {
+  return text
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Comma-separated case editor for the switch node. It keeps the raw text in
+ * local state so an in-progress comma or trailing space survives editing —
+ * parsing the array directly on every keystroke (and re-joining it back into
+ * `value`) would strip the comma the moment it's typed. The parsed array is
+ * pushed up on change; local text resyncs only when the cases change from
+ * outside (e.g. selecting a different node), not from our own edits.
+ */
+function CasesField({
+  cases,
+  onChange,
+}: {
+  cases: string[];
+  onChange: (cases: string[]) => void;
+}): JSX.Element {
+  const [text, setText] = useState(cases.join(', '));
+  useEffect(() => {
+    if (JSON.stringify(parseCases(text)) !== JSON.stringify(cases)) {
+      setText(cases.join(', '));
+    }
+  }, [cases, text]);
+  return (
+    <input
+      id="node-cases"
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(parseCases(e.target.value));
+      }}
+      placeholder="free, pro, enterprise"
+      className={fieldClass}
+    />
+  );
+}
+
 function CollectionLink({
   requestId,
   requests,
@@ -734,9 +767,27 @@ function CollectionLink({
   onUnlink: () => void;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  // Start each open with a clean query.
+  useEffect(() => {
+    if (!open) setSearch('');
+  }, [open]);
   const linked = requestId ? requests.find((r) => r.id === requestId) : undefined;
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return requests;
+    return requests.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.url.toLowerCase().includes(q) ||
+        r.method.toLowerCase().includes(q) ||
+        r.collectionName.toLowerCase().includes(q),
+    );
+  }, [requests, search]);
+
   const groups = new Map<string, ProjectRequestRef[]>();
-  for (const r of requests) {
+  for (const r of filtered) {
     const list = groups.get(r.collectionName) ?? [];
     list.push(r);
     groups.set(r.collectionName, list);
@@ -758,11 +809,31 @@ function CollectionLink({
         {open && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-            <div className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border border-border bg-surface shadow-lg">
-              {requests.length === 0 && (
-                <p className="px-2.5 py-2 text-xs text-muted">No collection requests.</p>
-              )}
-              {[...groups.entries()].map(([collection, reqs]) => (
+            <div className="absolute left-0 right-0 z-20 mt-1 flex max-h-64 flex-col rounded-md border border-border bg-surface shadow-lg">
+              <div className="sticky top-0 border-b border-border bg-surface p-1.5">
+                <div className="relative">
+                  <Search
+                    size={13}
+                    className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted"
+                  />
+                  <input
+                    autoFocus
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search requests…"
+                    aria-label="Search collection requests"
+                    className="w-full rounded border border-border bg-bg py-1 pl-7 pr-2 text-xs"
+                  />
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto">
+                {requests.length === 0 && (
+                  <p className="px-2.5 py-2 text-xs text-muted">No collection requests.</p>
+                )}
+                {requests.length > 0 && filtered.length === 0 && (
+                  <p className="px-2.5 py-2 text-xs text-muted">No requests match “{search.trim()}”.</p>
+                )}
+                {[...groups.entries()].map(([collection, reqs]) => (
                 <div key={collection}>
                   <div className="sticky top-0 bg-surface-2 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
                     {collection}
@@ -789,7 +860,8 @@ function CollectionLink({
                     </button>
                   ))}
                 </div>
-              ))}
+                ))}
+              </div>
             </div>
           </>
         )}

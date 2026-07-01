@@ -79,6 +79,10 @@ export function useWorkspaceMutations() {
       mutationFn: (input: CreateProjectInput) => invoke('project.create', input),
       onSuccess: invalidateAll,
     }),
+    renameProject: useMutation({
+      mutationFn: (input: { id: string; name: string }) => invoke('project.rename', input),
+      onSuccess: invalidateAll,
+    }),
     openProject: useMutation({
       mutationFn: (id: string) => invoke('project.open', { id }),
       onSuccess: invalidateAll,

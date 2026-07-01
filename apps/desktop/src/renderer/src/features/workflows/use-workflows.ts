@@ -45,6 +45,10 @@ export function useWorkflowMutations(projectId: string | null | undefined) {
         void qc.invalidateQueries({ queryKey: ['workflow', wf.id] });
       },
     }),
+    duplicate: useMutation({
+      mutationFn: (id: string) => invoke('workflow.duplicate', { id }),
+      onSuccess: invalidateList,
+    }),
     remove: useMutation({
       mutationFn: (id: string) => invoke('workflow.delete', { id }),
       onSuccess: invalidateList,

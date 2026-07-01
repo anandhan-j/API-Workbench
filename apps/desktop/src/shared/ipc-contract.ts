@@ -109,6 +109,10 @@ export const IpcChannels = {
     response: z.array(Project),
   },
   'project.create': { request: CreateProjectInput, response: Project },
+  'project.rename': {
+    request: z.object({ id: z.string(), name: z.string().min(1) }),
+    response: Project,
+  },
   'project.delete': { request: IdOnly, response: Empty },
   'project.open': { request: IdOnly, response: Empty },
   'project.close': { request: Empty, response: Empty },
@@ -272,6 +276,7 @@ export const IpcChannels = {
     response: Workflow,
   },
   'workflow.save': { request: SaveWorkflowInput, response: WorkflowDetail },
+  'workflow.duplicate': { request: IdOnly, response: WorkflowDetail },
   'workflow.delete': { request: IdOnly, response: Empty },
   'workflow.export': { request: IdOnly, response: WorkflowExport },
   'workflow.import': { request: ImportWorkflowInput, response: WorkflowDetail },

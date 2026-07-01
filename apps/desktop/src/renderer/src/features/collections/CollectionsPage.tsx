@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { Download, History, Loader2, Pencil, Plus, RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Download, History, Loader2, Pencil, Plus, RefreshCw, Search } from 'lucide-react';
 import { usePersistentState } from '../../lib/use-persistent-state';
 import type { VersionDiff } from '@shared/version';
 import { isBridgeAvailable } from '../../lib/ipc';
 import { useActiveSelection, useWorkspaceDetail } from '../workspaces/use-workspaces';
 import { CollectionNode } from './CollectionNode';
-import type { OpenedRequest } from './CollectionTreeView';
+import { filterTree, type OpenedRequest } from './CollectionTreeView';
 import { requestDisplayName } from './request-label';
 import { cn } from '../../lib/cn';
 import { RequestEditor } from '../runner/RequestEditor';
@@ -16,6 +16,7 @@ import { ImportPanel } from './ImportPanel';
 import { SyncPanel } from './SyncPanel';
 import { VersionsPanel } from './VersionsPanel';
 import { useConfirm } from '../../components/confirm/ConfirmProvider';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useImport } from './use-import';
 import { useSync } from './use-sync';
 import { useVersions, useVersionMutations } from './use-versions';
@@ -24,6 +25,7 @@ import {
   useCollectionMutations,
   useRequestDetail,
   useCollectionSource,
+  useTrees,
 } from './use-collections';
 
 export function CollectionsPage(): JSX.Element {
@@ -38,9 +40,11 @@ export function CollectionsPage(): JSX.Element {
   const importer = useImport(projectId);
   const syncer = useSync(projectId);
   const confirm = useConfirm();
+  const toast = useToast();
 
   const [collectionId, setCollectionId] = useState<string | null>(null);
   const [newCollection, setNewCollection] = useState('');
+  const [search, setSearch] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [showSync, setShowSync] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
@@ -77,6 +81,13 @@ export function CollectionsPage(): JSX.Element {
     window.addEventListener('mouseup', up);
   };
 
+  // Close the import dialog and clear the mutation result/error so a stale
+  // "imported …" banner doesn't linger the next time it's opened.
+  const closeImport = (): void => {
+    setShowImport(false);
+    importer.reset();
+  };
+
   const commitName = (): void => {
     const next = nameDraft.trim();
     if (next && selectedRequest && next !== selectedRequest.name) {
@@ -85,6 +96,33 @@ export function CollectionsPage(): JSX.Element {
     }
     setEditingName(false);
   };
+
+  // Search across collection names, folder names, and request names/URLs. While a
+  // query is active, every collection's tree is loaded so matches (and their
+  // ancestor folders) can be shown; otherwise trees stay lazily loaded on expand.
+  const q = search.trim().toLowerCase();
+  const searching = q.length > 0;
+  const allCollections = useMemo(() => collections.data ?? [], [collections.data]);
+  const trees = useTrees(
+    allCollections.map((c) => c.id),
+    searching,
+  );
+  // `trees` is a new array each render; derive a stable signature from when each
+  // tree's data last changed so the memo below only recomputes on real updates.
+  const treesSignature = trees.map((t) => t.dataUpdatedAt).join(',');
+  const searchResults = useMemo(() => {
+    if (!searching) return null;
+    return allCollections
+      .map((c, i) => {
+        const nodes = trees[i]?.data ?? [];
+        const nameMatch = c.name.toLowerCase().includes(q);
+        // A name match shows the whole tree; otherwise only the matching subtree.
+        const shownNodes = nameMatch ? nodes : filterTree(nodes, q);
+        return { collection: c, nodes: shownNodes, show: nameMatch || shownNodes.length > 0 };
+      })
+      .filter((r) => r.show);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searching, q, allCollections, treesSignature]);
 
   const versions = useVersions(collectionId);
   const versionMutations = useVersionMutations(collectionId);
@@ -153,7 +191,7 @@ export function CollectionsPage(): JSX.Element {
         <h1 className="text-xl font-semibold">Collections</h1>
         <button
           type="button"
-          onClick={() => setShowImport((v) => !v)}
+          onClick={() => (showImport ? closeImport() : setShowImport(true))}
           className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
         >
           <Download size={15} /> Import OpenAPI
@@ -161,7 +199,7 @@ export function CollectionsPage(): JSX.Element {
       </div>
 
       {showImport && (
-        <Modal title="Import OpenAPI" onClose={() => setShowImport(false)}>
+        <Modal title="Import OpenAPI" onClose={closeImport}>
           <ImportPanel
             bare
             busy={importer.isPending}
@@ -203,11 +241,29 @@ export function CollectionsPage(): JSX.Element {
             </button>
           </form>
 
+          <div className="relative mt-2">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted"
+            />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search collections, folders, requests"
+              aria-label="Search collections, folders, and requests"
+              className="w-full rounded-md border border-border bg-surface py-1.5 pl-8 pr-3 text-sm"
+            />
+          </div>
+
           <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-md border border-border">
-            {collections.data?.map((c) => (
+            {(searching
+              ? (searchResults ?? []).map((r) => ({ collection: r.collection, searchNodes: r.nodes }))
+              : allCollections.map((c) => ({ collection: c, searchNodes: undefined }))
+            ).map(({ collection: c, searchNodes }) => (
               <CollectionNode
                 key={c.id}
                 collection={c}
+                searchNodes={searchNodes}
                 selectedRequestId={selectedRequest?.id ?? null}
                 onOpenRequest={(req, colId) => {
                   setCollectionId(colId);
@@ -219,6 +275,14 @@ export function CollectionsPage(): JSX.Element {
                 onAddRequest={(colId) =>
                   mutations.createRequest.mutate({ collectionId: colId, name: 'New request' })
                 }
+                onAddFolder={(colId, parentId) =>
+                  mutations.createFolder.mutate({
+                    collectionId: colId,
+                    parentId,
+                    name: 'New folder',
+                  })
+                }
+                onRenameCollection={(id, name) => mutations.renameCollection.mutate({ id, name })}
                 onDelete={async (id) => {
                   if (
                     await confirm({
@@ -267,6 +331,9 @@ export function CollectionsPage(): JSX.Element {
             ))}
             {collections.data?.length === 0 && (
               <p className="px-3 py-2 text-sm text-muted">No collections yet.</p>
+            )}
+            {searching && searchResults?.length === 0 && (
+              <p className="px-3 py-2 text-sm text-muted">Nothing matches “{search.trim()}”.</p>
             )}
           </div>
         </section>
@@ -342,13 +409,16 @@ export function CollectionsPage(): JSX.Element {
                     saved={mutations.saveRequest.isSuccess}
                     onDraftChange={setLiveDraft}
                     onSave={(draft) =>
-                      mutations.saveRequest.mutate({
-                        id: selectedRequest.id,
-                        name: selectedRequest.name,
-                        method: draft.method,
-                        url: draft.url,
-                        details: draftToDetails(draft),
-                      })
+                      mutations.saveRequest
+                        .mutateAsync({
+                          id: selectedRequest.id,
+                          name: selectedRequest.name,
+                          method: draft.method,
+                          url: draft.url,
+                          details: draftToDetails(draft),
+                        })
+                        .then(() => toast('Request saved'))
+                        .catch(() => toast('Failed to save request', { type: 'error' }))
                     }
                   />
                 ) : (

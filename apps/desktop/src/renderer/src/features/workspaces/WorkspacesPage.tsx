@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Download, FolderOpen, Loader2, Plus, Trash2, Upload } from 'lucide-react';
+import { Check, Download, FolderOpen, Loader2, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import type { WorkspaceExport } from '@shared/workspace';
 import { cn } from '../../lib/cn';
 import { isBridgeAvailable } from '../../lib/ipc';
+import { useConfirm } from '../../components/confirm/ConfirmProvider';
 import {
   useActiveSelection,
   useRecentProjects,
@@ -18,6 +19,33 @@ export function WorkspacesPage(): JSX.Element {
   const active = useActiveSelection();
   const recents = useRecentProjects();
   const mutations = useWorkspaceMutations();
+  const confirm = useConfirm();
+
+  const confirmDeleteWorkspace = async (id: string, name: string): Promise<void> => {
+    if (
+      await confirm({
+        title: 'Delete workspace',
+        message: `Delete workspace "${name}"? Every project inside it — along with all their collections, requests, workflows, and variables — will be permanently deleted. This cannot be undone.`,
+        confirmLabel: 'Delete',
+        danger: true,
+      })
+    ) {
+      mutations.deleteWorkspace.mutate(id);
+    }
+  };
+
+  const confirmDeleteProject = async (id: string, name: string): Promise<void> => {
+    if (
+      await confirm({
+        title: 'Delete project',
+        message: `Delete project "${name}"? All of its collections, requests, workflows, and variables will be permanently deleted. This cannot be undone.`,
+        confirmLabel: 'Delete',
+        danger: true,
+      })
+    ) {
+      mutations.deleteProject.mutate(id);
+    }
+  };
 
   const activeWorkspaceId = active.data?.workspaceId ?? null;
   const detail = useWorkspaceDetail(activeWorkspaceId);
@@ -35,6 +63,42 @@ export function WorkspacesPage(): JSX.Element {
   const [newWorkspace, setNewWorkspace] = useState('');
   const [newProject, setNewProject] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+
+  /** Inline rename state: which entity (by kind + id) is being edited and its draft name. */
+  const [editing, setEditing] = useState<{
+    kind: 'workspace' | 'project';
+    id: string;
+    name: string;
+  } | null>(null);
+
+  const startEditing = (kind: 'workspace' | 'project', id: string, name: string): void =>
+    setEditing({ kind, id, name });
+
+  const commitEditing = (originalName: string): void => {
+    if (!editing) return;
+    const name = editing.name.trim();
+    if (name && name !== originalName) {
+      const mutation =
+        editing.kind === 'workspace' ? mutations.renameWorkspace : mutations.renameProject;
+      mutation.mutate({ id: editing.id, name });
+    }
+    setEditing(null);
+  };
+
+  const renameInput = (originalName: string): JSX.Element => (
+    <input
+      autoFocus
+      value={editing?.name ?? ''}
+      aria-label={`Rename ${originalName}`}
+      onChange={(e) => setEditing((prev) => (prev ? { ...prev, name: e.target.value } : prev))}
+      onBlur={() => commitEditing(originalName)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commitEditing(originalName);
+        else if (e.key === 'Escape') setEditing(null);
+      }}
+      className="min-w-0 flex-1 rounded-sm border border-accent bg-bg px-1 py-0.5 text-sm"
+    />
+  );
 
   if (!bridge) {
     return (
@@ -104,26 +168,44 @@ export function WorkspacesPage(): JSX.Element {
                 ws.id === activeWorkspaceId && 'border-border bg-surface-2',
               )}
             >
-              <button
-                type="button"
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                onClick={() => mutations.setActiveWorkspace.mutate(ws.id)}
-              >
-                {ws.id === activeWorkspaceId ? (
-                  <Check size={15} className="shrink-0 text-success" />
-                ) : (
+              {editing?.kind === 'workspace' && editing.id === ws.id ? (
+                <>
                   <span className="w-[15px]" />
-                )}
-                <span className="truncate">{ws.name}</span>
-              </button>
-              <button
-                type="button"
-                aria-label={`Delete ${ws.name}`}
-                className="opacity-0 group-hover:opacity-100"
-                onClick={() => mutations.deleteWorkspace.mutate(ws.id)}
-              >
-                <Trash2 size={15} className="text-muted hover:text-danger" />
-              </button>
+                  {renameInput(ws.name)}
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  onClick={() => mutations.setActiveWorkspace.mutate(ws.id)}
+                  onDoubleClick={() => startEditing('workspace', ws.id, ws.name)}
+                >
+                  {ws.id === activeWorkspaceId ? (
+                    <Check size={15} className="shrink-0 text-success" />
+                  ) : (
+                    <span className="w-[15px]" />
+                  )}
+                  <span className="truncate">{ws.name}</span>
+                </button>
+              )}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  aria-label={`Rename ${ws.name}`}
+                  className="opacity-0 group-hover:opacity-100"
+                  onClick={() => startEditing('workspace', ws.id, ws.name)}
+                >
+                  <Pencil size={14} className="text-muted hover:text-accent" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete ${ws.name}`}
+                  className="opacity-0 group-hover:opacity-100"
+                  onClick={() => void confirmDeleteWorkspace(ws.id, ws.name)}
+                >
+                  <Trash2 size={15} className="text-muted hover:text-danger" />
+                </button>
+              </div>
             </li>
           ))}
           {workspaces.data?.length === 0 && (
@@ -200,19 +282,27 @@ export function WorkspacesPage(): JSX.Element {
                     project.id === active.data?.projectId && 'border-border bg-surface-2',
                   )}
                 >
-                  <button
-                    type="button"
-                    aria-label={`Select ${project.name}`}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    onClick={() => mutations.openProject.mutate(project.id)}
-                  >
-                    {project.id === active.data?.projectId ? (
-                      <Check size={15} className="shrink-0 text-success" />
-                    ) : (
+                  {editing?.kind === 'project' && editing.id === project.id ? (
+                    <>
                       <span className="w-[15px]" />
-                    )}
-                    <span className="truncate">{project.name}</span>
-                  </button>
+                      {renameInput(project.name)}
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-label={`Select ${project.name}`}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      onClick={() => mutations.openProject.mutate(project.id)}
+                      onDoubleClick={() => startEditing('project', project.id, project.name)}
+                    >
+                      {project.id === active.data?.projectId ? (
+                        <Check size={15} className="shrink-0 text-success" />
+                      ) : (
+                        <span className="w-[15px]" />
+                      )}
+                      <span className="truncate">{project.name}</span>
+                    </button>
+                  )}
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -224,9 +314,17 @@ export function WorkspacesPage(): JSX.Element {
                     </button>
                     <button
                       type="button"
+                      aria-label={`Rename ${project.name}`}
+                      className="opacity-0 group-hover:opacity-100"
+                      onClick={() => startEditing('project', project.id, project.name)}
+                    >
+                      <Pencil size={14} className="text-muted hover:text-accent" />
+                    </button>
+                    <button
+                      type="button"
                       aria-label={`Delete ${project.name}`}
                       className="opacity-0 group-hover:opacity-100"
-                      onClick={() => mutations.deleteProject.mutate(project.id)}
+                      onClick={() => void confirmDeleteProject(project.id, project.name)}
                     >
                       <Trash2 size={14} className="text-muted hover:text-danger" />
                     </button>
