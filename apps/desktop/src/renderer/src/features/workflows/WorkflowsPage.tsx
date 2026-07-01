@@ -10,6 +10,7 @@ import {
 import {
   ChevronDown,
   ChevronRight,
+  Copy,
   Download,
   GripHorizontal,
   ListChecks,
@@ -478,6 +479,18 @@ export function WorkflowsPage(): JSX.Element {
     }
   };
 
+  const handleDuplicate = async (id: string, name: string): Promise<void> => {
+    try {
+      const wf = await mutations.duplicate.mutateAsync(id);
+      setSelectedId(wf.id);
+      logDispatch('info', `Duplicated workflow "${name}" as "${wf.name}"`, { workflowId: wf.id });
+    } catch (error) {
+      logDispatch('error', `Failed to duplicate "${name}": ${errorMessage(error)}`, {
+        workflowId: id,
+      });
+    }
+  };
+
   const handleRun = (): void => {
     if (!selectedId || !graphRef.current) return;
     const id = selectedId;
@@ -805,7 +818,9 @@ export function WorkflowsPage(): JSX.Element {
                           className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
                         >
                           <WorkflowIcon size={14} className="shrink-0 text-muted" />
-                          <span className="truncate">{w.name}</span>
+                          <span className="truncate" title={w.name}>
+                            {w.name}
+                          </span>
                           <span className="ml-auto shrink-0 text-[11px] text-muted">
                             {w.nodeCount}
                           </span>
@@ -850,6 +865,11 @@ export function WorkflowsPage(): JSX.Element {
                       label: 'Rename',
                       icon: <Pencil size={13} />,
                       onSelect: () => beginRename(rowMenu.id, rowMenu.name),
+                    },
+                    {
+                      label: 'Duplicate',
+                      icon: <Copy size={13} />,
+                      onSelect: () => void handleDuplicate(rowMenu.id, rowMenu.name),
                     },
                     {
                       label: 'Export',

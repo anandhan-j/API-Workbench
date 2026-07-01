@@ -111,6 +111,73 @@ describe('WorkflowService', () => {
     expect(service.list(projectId)).toHaveLength(0);
   });
 
+  it('duplicates a workflow, appending "(duplicate)" and deep-copying the graph', () => {
+    const original = service.create({ projectId, name: 'Signup', description: 'desc' });
+    const startId = original.graph.nodes[0].id;
+    service.save({
+      id: original.id,
+      graph: {
+        nodes: [
+          original.graph.nodes[0],
+          { id: 'end', kind: 'end', name: 'End', position: pos, config: {} },
+        ],
+        edges: [{ id: 'e1', source: startId, target: 'end' }],
+        groups: [],
+      },
+    });
+
+    const copy = service.duplicate(original.id);
+    expect(copy.id).not.toBe(original.id);
+    expect(copy.name).toBe('Signup (duplicate)');
+    expect(copy.description).toBe('desc');
+    expect(copy.projectId).toBe(projectId);
+    // Graph is copied verbatim, not shared.
+    expect(copy.graph.nodes).toHaveLength(2);
+    expect(copy.graph.edges).toHaveLength(1);
+    expect(copy.graph).not.toBe(original.graph);
+
+    // Editing the copy does not affect the original.
+    service.rename(copy.id, 'Changed');
+    expect(service.get(original.id).name).toBe('Signup');
+  });
+
+  it('numbers repeated duplicates so names stay distinct', () => {
+    const original = service.create({ projectId, name: 'Flow' });
+    const first = service.duplicate(original.id);
+    const second = service.duplicate(original.id);
+    const third = service.duplicate(original.id);
+    expect(first.name).toBe('Flow (duplicate)');
+    expect(second.name).toBe('Flow (duplicate 2)');
+    expect(third.name).toBe('Flow (duplicate 3)');
+  });
+
+  it('keeps sub-workflow references pointing at the existing sub-workflow (not a clone)', () => {
+    const child = service.create({ projectId, name: 'Child' });
+    const parent = service.create({ projectId, name: 'Parent' });
+    service.save({
+      id: parent.id,
+      graph: {
+        nodes: [
+          parent.graph.nodes[0],
+          { id: 'sub', kind: 'sub-workflow', name: 'child', position: pos, config: { workflowId: child.id } },
+        ],
+        edges: [{ id: 'e1', source: parent.graph.nodes[0].id, target: 'sub' }],
+        groups: [],
+      },
+    });
+
+    const before = service.list(projectId).length;
+    const copy = service.duplicate(parent.id);
+    // Only one new workflow — the sub-workflow is referenced, not duplicated.
+    expect(service.list(projectId).length).toBe(before + 1);
+    const subNode = copy.graph.nodes.find((n) => n.kind === 'sub-workflow');
+    expect((subNode?.config as { workflowId: string }).workflowId).toBe(child.id);
+  });
+
+  it('throws when duplicating an unknown workflow', () => {
+    expect(() => service.duplicate('nope')).toThrow();
+  });
+
   it('runs a persisted workflow end-to-end through the engine', async () => {
     const created = service.create({ projectId, name: 'Run me' });
     const startId = created.graph.nodes[0].id;

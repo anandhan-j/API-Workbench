@@ -272,6 +272,7 @@ export const IpcChannels = {
     response: Workflow,
   },
   'workflow.save': { request: SaveWorkflowInput, response: WorkflowDetail },
+  'workflow.duplicate': { request: IdOnly, response: WorkflowDetail },
   'workflow.delete': { request: IdOnly, response: Empty },
   'workflow.export': { request: IdOnly, response: WorkflowExport },
   'workflow.import': { request: ImportWorkflowInput, response: WorkflowDetail },

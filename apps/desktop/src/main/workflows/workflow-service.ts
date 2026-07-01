@@ -149,6 +149,40 @@ export class WorkflowService {
     this.persistence.workflows.delete(id);
   }
 
+  /**
+   * Duplicates a workflow within the same project under a fresh id, named
+   * `"<name> (duplicate)"`. The graph is deep-copied verbatim; sub-workflow node
+   * references are left pointing at the existing sub-workflows (they are *not*
+   * cloned — that is what {@link exportWorkflow}/{@link importWorkflow} do). If
+   * the `(duplicate)` name is already taken in the project the copy is numbered
+   * (`"(duplicate 2)"`, `"(duplicate 3)"`, …) so names stay distinct.
+   */
+  duplicate(id: string): WorkflowDetail {
+    const source = this.persistence.workflows.get(id); // validates existence
+    const now = Date.now();
+    const row = this.persistence.workflows.create({
+      id: randomUUID(),
+      projectId: source.projectId,
+      name: this.uniqueDuplicateName(source.projectId, source.name),
+      description: source.description,
+      graph: structuredClone(source.graph),
+      createdAt: now,
+      updatedAt: now,
+    });
+    return this.toDetail(row);
+  }
+
+  /** Picks a `"<base> (duplicate)"` name that no other workflow in the project uses. */
+  private uniqueDuplicateName(projectId: string, base: string): string {
+    const taken = new Set(this.persistence.workflows.listByProject(projectId).map((w) => w.name));
+    const first = `${base} (duplicate)`;
+    if (!taken.has(first)) return first;
+    for (let n = 2; ; n++) {
+      const candidate = `${base} (duplicate ${n})`;
+      if (!taken.has(candidate)) return candidate;
+    }
+  }
+
   // --- Export / import ---
 
   /**
