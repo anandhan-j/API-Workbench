@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Copy,
   Folder as FolderIcon,
+  FolderPlus,
   MoreHorizontal,
   Pencil,
   Star,
@@ -98,6 +99,8 @@ export interface CollectionTreeViewProps {
   onDuplicateRequest?: (id: string) => void;
   /** Move a request into a folder (or to the collection root when null). */
   onMoveRequest?: (id: string, folderId: string | null) => void;
+  /** Create a subfolder under `parentId` (a folder in this collection). */
+  onAddFolder?: (parentId: string) => void;
 }
 
 const ICON = 13;
@@ -123,6 +126,7 @@ export function CollectionTreeView({
   onRenameRequest,
   onDuplicateRequest,
   onMoveRequest,
+  onAddFolder,
 }: CollectionTreeViewProps): JSX.Element {
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | 'root' | null>(null);
@@ -170,6 +174,15 @@ export function CollectionTreeView({
   );
 
   const folderMenu = (node: Extract<TreeNode, { type: 'folder' }>): MenuItem[] => [
+    ...(onAddFolder
+      ? [
+          {
+            label: 'New subfolder',
+            icon: <FolderPlus size={ICON} />,
+            onSelect: () => onAddFolder(node.id),
+          },
+        ]
+      : []),
     ...(onRenameFolder
       ? [
           {

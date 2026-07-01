@@ -81,6 +81,10 @@ export class WorkspaceManager {
     return this.persistence.projects.create(input);
   }
 
+  renameProject(id: string, name: string): Project {
+    return this.persistence.projects.rename(id, name);
+  }
+
   listProjects(workspaceId: string): Project[] {
     return this.persistence.projects.listByWorkspace(workspaceId);
   }

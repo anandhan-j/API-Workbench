@@ -109,6 +109,10 @@ export const IpcChannels = {
     response: z.array(Project),
   },
   'project.create': { request: CreateProjectInput, response: Project },
+  'project.rename': {
+    request: z.object({ id: z.string(), name: z.string().min(1) }),
+    response: Project,
+  },
   'project.delete': { request: IdOnly, response: Empty },
   'project.open': { request: IdOnly, response: Empty },
   'project.close': { request: Empty, response: Empty },

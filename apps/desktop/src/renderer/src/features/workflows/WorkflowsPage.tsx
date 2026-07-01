@@ -51,6 +51,7 @@ import {
 } from '../../lib/ipc';
 import { usePersistentState } from '../../lib/use-persistent-state';
 import { useConfirm } from '../../components/confirm/ConfirmProvider';
+import { useToast } from '../../components/toast/ToastProvider';
 import { ContextMenu, type MenuItem } from '../../components/menu/ContextMenu';
 import { useActiveSelection, useWorkspaceDetail } from '../workspaces/use-workspaces';
 import {
@@ -165,6 +166,7 @@ export function WorkflowsPage(): JSX.Element {
   const projectRequests = useProjectRequests(projectId);
   const [paused, setPaused] = useState(false);
   const confirm = useConfirm();
+  const toast = useToast();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
@@ -436,9 +438,14 @@ export function WorkflowsPage(): JSX.Element {
     return q ? list.filter((w) => w.name.toLowerCase().includes(q)) : list;
   }, [workflows.data, search]);
 
+  // Manual save (Save button): persist, then confirm with a toast. Autosave uses
+  // `save` directly (below) and intentionally shows no toast.
   const handleSave = (): void => {
     if (selectedId && graphRef.current) {
-      mutations.save.mutate({ id: selectedId, graph: graphRef.current });
+      mutations.save
+        .mutateAsync({ id: selectedId, graph: graphRef.current })
+        .then(() => toast('Workflow saved'))
+        .catch(() => toast('Failed to save workflow', { type: 'error' }));
     }
   };
 

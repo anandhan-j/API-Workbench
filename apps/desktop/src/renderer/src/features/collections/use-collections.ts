@@ -94,6 +94,10 @@ export function useCollectionMutations(projectId: string | null | undefined) {
       mutationFn: (input: CreateCollectionInput) => invoke('collection.create', input),
       onSuccess: invalidate,
     }),
+    renameCollection: useMutation({
+      mutationFn: (input: { id: string; name: string }) => invoke('collection.rename', input),
+      onSuccess: invalidate,
+    }),
     deleteCollection: useMutation({
       mutationFn: (id: string) => invoke('collection.delete', { id }),
       onSuccess: invalidate,

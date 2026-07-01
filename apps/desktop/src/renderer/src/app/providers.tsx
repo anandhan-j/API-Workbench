@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useUiStore } from '../stores/ui-store';
 import { ConfirmProvider } from '../components/confirm/ConfirmProvider';
+import { ToastProvider } from '../components/toast/ToastProvider';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,7 +35,9 @@ export function AppProviders({ children }: { children: ReactNode }): JSX.Element
     <QueryClientProvider client={queryClient}>
       <ThemeController />
       <FontController />
-      <ConfirmProvider>{children}</ConfirmProvider>
+      <ToastProvider>
+        <ConfirmProvider>{children}</ConfirmProvider>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

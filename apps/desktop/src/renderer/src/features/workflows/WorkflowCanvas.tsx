@@ -135,18 +135,23 @@ function Canvas({
     onSelect(null);
   }, [initial]);
 
-  // Overlay run statuses onto node cards whenever a run completes.
+  // Overlay run statuses onto node cards whenever a run completes. Bail out
+  // untouched when no node's status actually changed: `.map` would otherwise
+  // return a fresh nodes array on every progress tick, churning `nodes` →
+  // `displayNodes` → React Flow's selection and feeding an onSelectionChange
+  // → setSelectedIds → sync-effect update loop.
   useEffect(() => {
-    setHistory((h) =>
-      replaceHistory(h, {
-        ...h.present,
-        nodes: h.present.nodes.map((n) =>
-          isElementNode(n) && statuses[n.id] !== n.data.status
-            ? { ...n, data: { ...n.data, status: statuses[n.id] } }
-            : n,
-        ),
-      }),
-    );
+    setHistory((h) => {
+      let changed = false;
+      const nodes = h.present.nodes.map((n) => {
+        if (isElementNode(n) && statuses[n.id] !== n.data.status) {
+          changed = true;
+          return { ...n, data: { ...n.data, status: statuses[n.id] } };
+        }
+        return n;
+      });
+      return changed ? replaceHistory(h, { ...h.present, nodes }) : h;
+    });
   }, [statuses]);
 
   // Debounced report of the current graph upward (keeps drag frames cheap).
@@ -488,7 +493,13 @@ function Canvas({
         }}
         onNodeMouseLeave={() => setHoverResult(null)}
         onSelectionChange={({ nodes: sel }: { nodes: Node[]; edges: Edge[] }) => {
-          setSelectedIds(new Set(sel.map((n: Node) => n.id)));
+          const ids = sel.map((n: Node) => n.id);
+          // Skip the update when the selection is unchanged: React Flow re-emits
+          // this on internal re-renders, and allocating a fresh Set each time
+          // would re-render for nothing (and can drive an update-depth loop).
+          setSelectedIds((prev) =>
+            prev.size === ids.length && ids.every((id) => prev.has(id)) ? prev : new Set(ids),
+          );
         }}
         onDrop={onDrop}
         onDragOver={(e: React.DragEvent) => {

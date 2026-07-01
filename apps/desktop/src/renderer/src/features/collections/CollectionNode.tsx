@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Boxes, ChevronRight, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { Boxes, ChevronRight, FolderPlus, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { Collection, TreeNode } from '@shared/collection';
 import { cn } from '../../lib/cn';
 import { usePersistentState } from '../../lib/use-persistent-state';
@@ -19,6 +19,9 @@ export interface CollectionNodeProps {
   onOpenRequest: (request: OpenedRequest, collectionId: string) => void;
   onToggleFavorite: (id: string) => void;
   onAddRequest: (collectionId: string) => void;
+  /** Create a folder in this collection; `parentId` is null for a root folder. */
+  onAddFolder: (collectionId: string, parentId: string | null) => void;
+  onRenameCollection: (id: string, name: string) => void;
   onDelete: (id: string) => void;
   onDeleteFolder: (id: string, name: string) => void;
   onDeleteRequest: (id: string, name: string) => void;
@@ -39,6 +42,8 @@ export function CollectionNode({
   onOpenRequest,
   onToggleFavorite,
   onAddRequest,
+  onAddFolder,
+  onRenameCollection,
   onDelete,
   onDeleteFolder,
   onDeleteRequest,
@@ -60,12 +65,38 @@ export function CollectionNode({
   const treeNodes = searchNodes ?? tree.data ?? [];
   const showTree = searching || open;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // Inline rename: holds the draft name while editing, or null when not editing.
+  const [renameDraft, setRenameDraft] = useState<string | null>(null);
+
+  const commitRename = (): void => {
+    if (renameDraft !== null) {
+      const next = renameDraft.trim();
+      if (next && next !== collection.name) onRenameCollection(collection.id, next);
+    }
+    setRenameDraft(null);
+  };
 
   const toggleFolder = (id: string): void =>
     setExpandedList((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
+  const expandFolder = (id: string): void =>
+    setExpandedList((prev) => (prev.includes(id) ? prev : [...prev, id]));
+
   const menuItems: MenuItem[] = [
     { label: 'Add request', icon: <Plus size={13} />, onSelect: () => onAddRequest(collection.id) },
+    {
+      label: 'Add folder',
+      icon: <FolderPlus size={13} />,
+      onSelect: () => {
+        onAddFolder(collection.id, null);
+        if (!open) setOpen(true);
+      },
+    },
+    {
+      label: 'Rename',
+      icon: <Pencil size={13} />,
+      onSelect: () => setRenameDraft(collection.name),
+    },
     { label: 'Delete', icon: <Trash2 size={13} />, danger: true, onSelect: () => onDelete(collection.id) },
   ];
 
@@ -78,18 +109,58 @@ export function CollectionNode({
           setMenu({ x: e.clientX, y: e.clientY });
         }}
       >
+        {renameDraft !== null ? (
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-2 text-sm font-medium">
+            <ChevronRight
+              size={14}
+              className={cn('shrink-0 text-muted transition-transform', showTree && 'rotate-90')}
+            />
+            <Boxes size={15} className="shrink-0 text-accent" />
+            <input
+              autoFocus
+              value={renameDraft}
+              aria-label={`Rename ${collection.name}`}
+              onChange={(e) => setRenameDraft(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitRename();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setRenameDraft(null);
+                }
+              }}
+              className="min-w-0 flex-1 rounded border border-accent bg-bg px-1 py-0.5 text-sm outline-none"
+            />
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            onDoubleClick={() => setRenameDraft(collection.name)}
+            disabled={searching}
+            className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-2 text-left text-sm font-medium disabled:cursor-default"
+          >
+            <ChevronRight
+              size={14}
+              className={cn('shrink-0 text-muted transition-transform', showTree && 'rotate-90')}
+            />
+            <Boxes size={15} className="shrink-0 text-accent" />
+            <span className="truncate">{collection.name}</span>
+          </button>
+        )}
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
-          disabled={searching}
-          className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-2 text-left text-sm font-medium disabled:cursor-default"
+          aria-label={`Add folder to ${collection.name}`}
+          className="px-1 opacity-0 group-hover:opacity-100"
+          onClick={() => {
+            onAddFolder(collection.id, null);
+            if (!open) setOpen(true);
+          }}
         >
-          <ChevronRight
-            size={14}
-            className={cn('shrink-0 text-muted transition-transform', showTree && 'rotate-90')}
-          />
-          <Boxes size={15} className="shrink-0 text-accent" />
-          <span className="truncate">{collection.name}</span>
+          <FolderPlus size={14} className="text-muted hover:text-fg" />
         </button>
         <button
           type="button"
@@ -124,6 +195,10 @@ export function CollectionNode({
           onToggleFolder={toggleFolder}
           onOpenRequest={(req) => onOpenRequest(req, collection.id)}
           onToggleFavorite={onToggleFavorite}
+          onAddFolder={(parentId) => {
+            onAddFolder(collection.id, parentId);
+            if (parentId) expandFolder(parentId);
+          }}
           onDeleteFolder={onDeleteFolder}
           onDeleteRequest={onDeleteRequest}
           onRenameFolder={onRenameFolder}

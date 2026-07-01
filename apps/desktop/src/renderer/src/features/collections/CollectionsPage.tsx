@@ -16,6 +16,7 @@ import { ImportPanel } from './ImportPanel';
 import { SyncPanel } from './SyncPanel';
 import { VersionsPanel } from './VersionsPanel';
 import { useConfirm } from '../../components/confirm/ConfirmProvider';
+import { useToast } from '../../components/toast/ToastProvider';
 import { useImport } from './use-import';
 import { useSync } from './use-sync';
 import { useVersions, useVersionMutations } from './use-versions';
@@ -39,6 +40,7 @@ export function CollectionsPage(): JSX.Element {
   const importer = useImport(projectId);
   const syncer = useSync(projectId);
   const confirm = useConfirm();
+  const toast = useToast();
 
   const [collectionId, setCollectionId] = useState<string | null>(null);
   const [newCollection, setNewCollection] = useState('');
@@ -77,6 +79,13 @@ export function CollectionsPage(): JSX.Element {
     document.body.style.userSelect = 'none';
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
+  };
+
+  // Close the import dialog and clear the mutation result/error so a stale
+  // "imported …" banner doesn't linger the next time it's opened.
+  const closeImport = (): void => {
+    setShowImport(false);
+    importer.reset();
   };
 
   const commitName = (): void => {
@@ -182,7 +191,7 @@ export function CollectionsPage(): JSX.Element {
         <h1 className="text-xl font-semibold">Collections</h1>
         <button
           type="button"
-          onClick={() => setShowImport((v) => !v)}
+          onClick={() => (showImport ? closeImport() : setShowImport(true))}
           className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
         >
           <Download size={15} /> Import OpenAPI
@@ -190,7 +199,7 @@ export function CollectionsPage(): JSX.Element {
       </div>
 
       {showImport && (
-        <Modal title="Import OpenAPI" onClose={() => setShowImport(false)}>
+        <Modal title="Import OpenAPI" onClose={closeImport}>
           <ImportPanel
             bare
             busy={importer.isPending}
@@ -266,6 +275,14 @@ export function CollectionsPage(): JSX.Element {
                 onAddRequest={(colId) =>
                   mutations.createRequest.mutate({ collectionId: colId, name: 'New request' })
                 }
+                onAddFolder={(colId, parentId) =>
+                  mutations.createFolder.mutate({
+                    collectionId: colId,
+                    parentId,
+                    name: 'New folder',
+                  })
+                }
+                onRenameCollection={(id, name) => mutations.renameCollection.mutate({ id, name })}
                 onDelete={async (id) => {
                   if (
                     await confirm({
@@ -392,13 +409,16 @@ export function CollectionsPage(): JSX.Element {
                     saved={mutations.saveRequest.isSuccess}
                     onDraftChange={setLiveDraft}
                     onSave={(draft) =>
-                      mutations.saveRequest.mutate({
-                        id: selectedRequest.id,
-                        name: selectedRequest.name,
-                        method: draft.method,
-                        url: draft.url,
-                        details: draftToDetails(draft),
-                      })
+                      mutations.saveRequest
+                        .mutateAsync({
+                          id: selectedRequest.id,
+                          name: selectedRequest.name,
+                          method: draft.method,
+                          url: draft.url,
+                          details: draftToDetails(draft),
+                        })
+                        .then(() => toast('Request saved'))
+                        .catch(() => toast('Failed to save request', { type: 'error' }))
                     }
                   />
                 ) : (

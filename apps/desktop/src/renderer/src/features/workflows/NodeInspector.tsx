@@ -288,19 +288,9 @@ export function NodeInspector({
             />
           </Field>
           <Field label="Cases (comma-separated)" id="node-cases">
-            <input
-              id="node-cases"
-              value={((config.cases as string[]) ?? []).join(', ')}
-              onChange={(e) =>
-                set({
-                  cases: e.target.value
-                    .split(',')
-                    .map((c) => c.trim())
-                    .filter(Boolean),
-                })
-              }
-              placeholder="free, pro, enterprise"
-              className={fieldClass}
+            <CasesField
+              cases={(config.cases as string[]) ?? []}
+              onChange={(cases) => set({ cases })}
             />
           </Field>
           <p className="text-[11px] text-muted">
@@ -719,6 +709,49 @@ function ReliabilitySection({
         </Field>
       </div>
     </details>
+  );
+}
+
+/** Splits the raw "a, b, c" text into trimmed, non-empty case labels. */
+function parseCases(text: string): string[] {
+  return text
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Comma-separated case editor for the switch node. It keeps the raw text in
+ * local state so an in-progress comma or trailing space survives editing —
+ * parsing the array directly on every keystroke (and re-joining it back into
+ * `value`) would strip the comma the moment it's typed. The parsed array is
+ * pushed up on change; local text resyncs only when the cases change from
+ * outside (e.g. selecting a different node), not from our own edits.
+ */
+function CasesField({
+  cases,
+  onChange,
+}: {
+  cases: string[];
+  onChange: (cases: string[]) => void;
+}): JSX.Element {
+  const [text, setText] = useState(cases.join(', '));
+  useEffect(() => {
+    if (JSON.stringify(parseCases(text)) !== JSON.stringify(cases)) {
+      setText(cases.join(', '));
+    }
+  }, [cases, text]);
+  return (
+    <input
+      id="node-cases"
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(parseCases(e.target.value));
+      }}
+      placeholder="free, pro, enterprise"
+      className={fieldClass}
+    />
   );
 }
 
