@@ -40,7 +40,7 @@ interface UiState {
   closeTab: (id: string) => void;
 }
 
-const DEFAULT_TABS: TabItem[] = [{ id: 'home', title: 'Home', path: '/', closable: false }];
+const DEFAULT_TABS: TabItem[] = [];
 
 /**
  * Global UI store. User preferences (theme, font scale, dispatch-monitor
@@ -55,7 +55,7 @@ export const useUiStore = create<UiState>()(
       sidebarCollapsed: true,
       monitorOpen: false,
       tabs: DEFAULT_TABS,
-      activeTabId: 'home',
+      activeTabId: '',
 
       toggleTheme: () => set((s) => ({ theme: s.theme === 'dark' ? 'light' : 'dark' })),
       setTheme: (theme) => set({ theme }),
@@ -84,7 +84,7 @@ export const useUiStore = create<UiState>()(
           if (!target || !target.closable) return s;
           const remaining = s.tabs.filter((t) => t.id !== id);
           const activeTabId =
-            s.activeTabId === id ? (remaining[remaining.length - 1]?.id ?? 'home') : s.activeTabId;
+            s.activeTabId === id ? (remaining[remaining.length - 1]?.id ?? '') : s.activeTabId;
           return { tabs: remaining, activeTabId };
         }),
     }),

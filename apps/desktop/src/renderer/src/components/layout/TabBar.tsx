@@ -18,6 +18,9 @@ export function TabBar(): JSX.Element {
     if (match && match.id !== activeTabId) setActiveTab(match.id);
   }, [location.pathname, tabs, activeTabId, setActiveTab]);
 
+  // No open tabs: render nothing rather than an empty bar.
+  if (tabs.length === 0) return <></>;
+
   return (
     <div className="flex h-10 items-stretch gap-1 border-b border-border bg-bg px-2">
       {tabs.map((tab) => (
