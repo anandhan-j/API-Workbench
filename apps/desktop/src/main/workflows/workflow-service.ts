@@ -146,7 +146,10 @@ export class WorkflowService {
   }
 
   delete(id: string): void {
-    this.persistence.workflows.delete(id);
+    this.persistence.transaction(() => {
+      this.persistence.scopedData.workflow(id); // purge scoped variables/credentials
+      this.persistence.workflows.delete(id);
+    });
   }
 
   /**

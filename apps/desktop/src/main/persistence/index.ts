@@ -11,6 +11,7 @@ export { applyMigrations, rollbackTo, currentVersion, type MigrationLogger } fro
 export { MIGRATIONS, type Migration } from './migrations';
 export { withTransaction } from './transaction';
 export { BackupService, type BackupContext } from './backup-service';
+export { ScopedDataCleaner } from './scoped-data-cleaner';
 export type { DatabaseConnection } from './connection';
 export type { DatabaseSnapshotSource } from './snapshot';
 export type { AppDatabase } from './types';

@@ -40,7 +40,12 @@ export class CollectionExplorer {
   }
 
   deleteCollection(id: string): void {
-    this.persistence.collections.delete(id); // cascades folders + requests
+    this.persistence.transaction(() => {
+      // Purge scoped variables/credentials before the cascade removes the
+      // folders/requests they are enumerated from (no FK to cascade through).
+      this.persistence.scopedData.collection(id);
+      this.persistence.collections.delete(id); // cascades folders + requests
+    });
   }
 
   /** The spec source (incl. import URL) a collection was last imported/synced from. */
@@ -94,7 +99,10 @@ export class CollectionExplorer {
   }
 
   deleteFolder(id: string): void {
-    this.persistence.folders.delete(id); // cascades child folders + requests
+    this.persistence.transaction(() => {
+      this.persistence.scopedData.folder(id); // purge scoped data before cascade
+      this.persistence.folders.delete(id); // cascades child folders + requests
+    });
   }
 
   private descendantFolderIds(collectionId: string, folderId: string): Set<string> {
@@ -170,7 +178,10 @@ export class CollectionExplorer {
   }
 
   deleteRequest(id: string): void {
-    this.persistence.requests.delete(id);
+    this.persistence.transaction(() => {
+      this.persistence.scopedData.request(id); // purge scoped data
+      this.persistence.requests.delete(id);
+    });
   }
 
   toggleFavorite(id: string): RequestSummary {

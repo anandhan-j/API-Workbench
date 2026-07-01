@@ -18,6 +18,7 @@ import { CollectionVersionRepository } from './repositories/collection-version-r
 import { VariableRepository } from './repositories/variable-repository';
 import { AuthConfigRepository } from './repositories/auth-config-repository';
 import { WorkflowRepository } from './repositories/workflow-repository';
+import { ScopedDataCleaner } from './scoped-data-cleaner';
 
 export interface PersistenceOptions {
   backupDir: string;
@@ -43,6 +44,8 @@ export class PersistenceService {
   variables!: VariableRepository;
   authConfigs!: AuthConfigRepository;
   workflows!: WorkflowRepository;
+  /** Purges an entity's scoped variables/credentials on delete (see class docs). */
+  scopedData!: ScopedDataCleaner;
 
   private readonly backupService: BackupService;
 
@@ -70,6 +73,7 @@ export class PersistenceService {
     this.variables = new VariableRepository(db);
     this.authConfigs = new AuthConfigRepository(db);
     this.workflows = new WorkflowRepository(db);
+    this.scopedData = new ScopedDataCleaner(this);
   }
 
   get db(): AppDatabase {

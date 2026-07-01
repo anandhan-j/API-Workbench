@@ -73,4 +73,12 @@ export class AuthConfigRepository {
   delete(id: string): void {
     this.db.delete(authConfigs).where(eq(authConfigs.id, id)).run();
   }
+
+  /** Removes every credential in a scope (used to purge an entity's scoped data on delete). */
+  deleteScope(scope: string, scopeId: string): void {
+    this.db
+      .delete(authConfigs)
+      .where(and(eq(authConfigs.scope, scope), eq(authConfigs.scopeId, scopeId)))
+      .run();
+  }
 }

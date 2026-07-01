@@ -185,6 +185,7 @@ export class SyncService {
         record.url !== record.source.url ||
         record.method !== record.source.method;
       if (mode === 'replace' || !edited) {
+        this.persistence.scopedData.request(record.id); // drop the request's scoped variables/credentials
         this.persistence.requests.delete(record.id);
         removed += 1;
         changes.push({ type: 'removed', key, name: record.name });
