@@ -109,6 +109,22 @@ export class PersistenceService {
     });
   }
 
+  /**
+   * Sets every folder and request in a collection to inherit their auth, so the
+   * whole collection cascades from the collection-level config. Runs in a single
+   * transaction; returns how many of each were updated.
+   */
+  applyCollectionAuthToChildren(collectionId: string): { folders: number; requests: number } {
+    const inherit: WireAuthConfig = { type: 'inherit' };
+    return this.transaction(() => {
+      const folderList = this.folders.listByCollection(collectionId);
+      for (const f of folderList) this.folders.updateAuth(f.id, inherit);
+      const requestList = this.requests.listByCollection(collectionId);
+      for (const r of requestList) this.requests.setAuth(r.id, inherit);
+      return { folders: folderList.length, requests: requestList.length };
+    });
+  }
+
   schemaVersion(): number {
     return currentVersion(this.connection.db);
   }

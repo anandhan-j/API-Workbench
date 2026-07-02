@@ -17,6 +17,7 @@ import { ImportPanel } from './ImportPanel';
 import { SyncPanel } from './SyncPanel';
 import { VersionsPanel } from './VersionsPanel';
 import { FolderAuthPanel } from './FolderAuthPanel';
+import { CollectionAuthPanel } from './CollectionAuthPanel';
 import { useConfirm } from '../../components/confirm/ConfirmProvider';
 import { useToast } from '../../components/toast/ToastProvider';
 import { qualifiedContributionId } from '@shared/plugins';
@@ -60,8 +61,15 @@ export function CollectionsPage(): JSX.Element {
   const [selectedRequest, setSelectedRequest] = useState<
     (OpenedRequest & { collectionId: string }) | null
   >(null);
-  // A selected folder opens its authorization panel (mutually exclusive with a request).
+  // A selected folder or collection opens its authorization panel (mutually
+  // exclusive with a request and with each other).
   const [selectedFolder, setSelectedFolder] = useState<{ id: string; name: string } | null>(null);
+  const [selectedCollection, setSelectedCollection] = useState<{ id: string; name: string } | null>(
+    null,
+  );
+  // Bumped after an auth cascade to force the open request editor to re-seed from
+  // the freshly-refetched request (its local draft otherwise keeps stale auth).
+  const [reloadToken, setReloadToken] = useState(0);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [diff, setDiff] = useState<{ versionId: string; data: VersionDiff } | null>(null);
@@ -278,9 +286,11 @@ export function CollectionsPage(): JSX.Element {
                 searchNodes={searchNodes}
                 selectedRequestId={selectedRequest?.id ?? null}
                 selectedFolderId={selectedFolder?.id ?? null}
+                selectedCollectionId={selectedCollection?.id ?? null}
                 onOpenRequest={(req, colId) => {
                   setCollectionId(colId);
                   setSelectedFolder(null);
+                  setSelectedCollection(null);
                   setSelectedRequest({ ...req, collectionId: colId });
                   setEditingName(false);
                   mutations.openRequest.mutate(req.id);
@@ -288,7 +298,14 @@ export function CollectionsPage(): JSX.Element {
                 onOpenFolder={(id, name) => {
                   setCollectionId(c.id);
                   setSelectedRequest(null);
+                  setSelectedCollection(null);
                   setSelectedFolder({ id, name });
+                }}
+                onOpenCollection={(id, name) => {
+                  setCollectionId(id);
+                  setSelectedRequest(null);
+                  setSelectedFolder(null);
+                  setSelectedCollection({ id, name });
                 }}
                 onToggleFavorite={(id) => mutations.toggleFavorite.mutate(id)}
                 onAddRequest={(colId) =>
@@ -312,6 +329,7 @@ export function CollectionsPage(): JSX.Element {
                     })
                   ) {
                     mutations.deleteCollection.mutate(id);
+                    if (selectedCollection?.id === id) setSelectedCollection(null);
                   }
                 }}
                 onDeleteFolder={async (id, name) => {
@@ -419,7 +437,7 @@ export function CollectionsPage(): JSX.Element {
                 </div>
                 {requestDetail.data ? (
                   <RequestEditor
-                    key={selectedRequest.id}
+                    key={`${selectedRequest.id}:${reloadToken}`}
                     initial={detailToDraft(requestDetail.data)}
                     scriptContext={{
                       collectionId: selectedRequest.collectionId,
@@ -464,7 +482,16 @@ export function CollectionsPage(): JSX.Element {
               key={selectedFolder.id}
               folderId={selectedFolder.id}
               name={selectedFolder.name}
+              onApplied={() => setReloadToken((t) => t + 1)}
               onClose={() => setSelectedFolder(null)}
+            />
+          ) : selectedCollection ? (
+            <CollectionAuthPanel
+              key={selectedCollection.id}
+              collectionId={selectedCollection.id}
+              name={selectedCollection.name}
+              onApplied={() => setReloadToken((t) => t + 1)}
+              onClose={() => setSelectedCollection(null)}
             />
           ) : collectionId ? (
             <>

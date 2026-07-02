@@ -132,9 +132,20 @@ export const IpcChannels = {
     response: z.array(Collection),
   },
   'collection.create': { request: CreateCollectionInput, response: Collection },
+  'collection.get': { request: IdOnly, response: Collection },
   'collection.rename': {
     request: z.object({ id: z.string(), name: z.string().min(1) }),
     response: Collection,
+  },
+  /** Sets a collection's own authorization (top of the inheritance chain; null = no auth). */
+  'collection.updateAuth': {
+    request: z.object({ id: z.string(), auth: WireAuthConfig.nullable() }),
+    response: Collection,
+  },
+  /** Sets every folder and request in the collection to "inherit from parent". */
+  'collection.applyAuthToChildren': {
+    request: IdOnly,
+    response: z.object({ folders: z.number(), requests: z.number() }),
   },
   'collection.delete': { request: IdOnly, response: Empty },
   'collection.tree': {

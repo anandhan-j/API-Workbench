@@ -14,23 +14,9 @@ export const migration0012: Migration = {
   up: `
     ALTER TABLE folders ADD COLUMN auth TEXT;
   `,
-  // SQLite cannot drop a column on older engines; rebuild the table without it.
+  // Plain DROP COLUMN (SQLite 3.35+): avoids a table rebuild, whose implicit
+  // DROP-TABLE delete would cascade to child folders/requests via the FKs.
   down: `
-    CREATE TABLE folders_no_auth (
-      id            TEXT PRIMARY KEY,
-      collection_id TEXT NOT NULL,
-      parent_id     TEXT,
-      name          TEXT NOT NULL,
-      position      INTEGER NOT NULL,
-      created_at    INTEGER NOT NULL,
-      updated_at    INTEGER NOT NULL
-    );
-    INSERT INTO folders_no_auth
-      SELECT id, collection_id, parent_id, name, position, created_at, updated_at
-      FROM folders;
-    DROP TABLE folders;
-    ALTER TABLE folders_no_auth RENAME TO folders;
-    CREATE INDEX idx_folders_collection ON folders(collection_id);
-    CREATE INDEX idx_folders_parent ON folders(parent_id);
+    ALTER TABLE folders DROP COLUMN auth;
   `,
 };
