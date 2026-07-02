@@ -23,7 +23,12 @@ export default defineConfig({
     // dependencies here — everything the preload imports (e.g. the IPC contract and
     // its `zod` schemas) is bundled into the preload output. Only `electron` itself
     // stays external, since the sandbox provides it.
+    //
+    // electron-vite v5 enables `externalizeDeps` by default for main *and* preload,
+    // which would emit `require("zod")` and fail to load in the sandbox — so we must
+    // explicitly turn it off here.
     build: {
+      externalizeDeps: false,
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/preload/index.ts') },
         external: ['electron'],
