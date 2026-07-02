@@ -1,6 +1,5 @@
-import type { ExecutionResponse } from '@shared/execution';
+import type { ProtocolResponse } from '@shared/protocol';
 import type {
-  LoopNodeConfig,
   NodeRunResult,
   RequestNodeConfig,
   WorkflowDetail,
@@ -11,10 +10,11 @@ import type {
   WorkflowRunResult,
   WorkflowRunStatus,
 } from '@shared/workflow';
-import { applyTransform, extractAll } from '@shared/extract';
 import { evaluateCondition } from '@shared/condition';
 import { WorkflowError } from './errors';
 import { resolveTarget, validateGraph } from './workflow-graph';
+import { BUILTIN_NODE_EXECUTORS, type NodeExecutionEnv, type NodeOutcome } from './node-executors';
+import { NodeExecutorRegistry } from '../plugins/registries/node-executor-registry';
 
 /**
  * Execution context threaded through a run. `runtime` is the mutable variable
@@ -45,7 +45,7 @@ export interface WorkflowEnginePorts {
     config: RequestNodeConfig,
     ctx: RunContext,
     signal?: AbortSignal,
-  ): Promise<ExecutionResponse>;
+  ): Promise<ProtocolResponse>;
   evaluate(template: string, ctx: RunContext): string;
   loadWorkflow(workflowId: string): WorkflowDetail;
   /**
@@ -80,12 +80,6 @@ const NO_PAUSE: RunControl = {
   waitIfPaused: () => Promise.resolve(),
 };
 
-/** Internal: the result of running a node plus the branch handle it selected. */
-interface NodeOutcome {
-  result: NodeRunResult;
-  handle: string | null;
-}
-
 /**
  * The deterministic, headless workflow runtime (Phases 12–14).
  *
@@ -100,10 +94,15 @@ interface NodeOutcome {
 export class WorkflowEngine {
   private readonly now: () => number;
   private readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+  private readonly registry: NodeExecutorRegistry;
 
-  constructor(private readonly ports: WorkflowEnginePorts) {
+  constructor(
+    private readonly ports: WorkflowEnginePorts,
+    registry?: NodeExecutorRegistry,
+  ) {
     this.now = ports.now ?? (() => Date.now());
     this.sleep = ports.sleep ?? defaultSleep;
+    this.registry = registry ?? new NodeExecutorRegistry(BUILTIN_NODE_EXECUTORS);
   }
 
   async run(workflow: WorkflowDetail, options: RunOptions = {}): Promise<WorkflowRunResult> {
@@ -288,209 +287,25 @@ export class WorkflowEngine {
   ): Promise<NodeOutcome> {
     const base = { nodeId: node.id, kind: node.kind, name: node.name, startedAt };
     const done = (): number => this.now() - startedAt;
+    const env: NodeExecutionEnv = {
+      ctx,
+      control,
+      ports: this.ports,
+      base,
+      done,
+      sleep: this.sleep,
+      truthy: (expression) => this.truthy(expression, ctx),
+      // Nested run: step mode treats the sub-workflow as one step (it runs to
+      // completion), so pass nested=true to bypass the per-node step checkpoint
+      // while still honoring pause/cancel.
+      runSubWorkflow: (child) =>
+        this.runInto(child, ctx.runtime, results, control, stack, ctx.workspaceId, true),
+      loopCounters,
+    };
     try {
-      switch (node.kind) {
-        case 'start':
-          return { result: { ...base, status: 'success', durationMs: done() }, handle: null };
-
-        case 'set-variable': {
-          const value = this.ports.evaluate(node.config.value, ctx);
-          const scope = node.config.scope ?? 'runtime';
-          // Persist to the durable store for workspace/global; always set it in the
-          // run's runtime too so later steps in this run can read it immediately.
-          if (scope !== 'runtime') this.ports.setVariable?.(scope, node.config.key, value, ctx);
-          return {
-            result: {
-              ...base,
-              status: 'success',
-              durationMs: done(),
-              variablesSet: { [node.config.key]: value },
-              message:
-                scope === 'runtime'
-                  ? `${node.config.key} = ${value}`
-                  : `${node.config.key} = ${value} (${scope})`,
-            },
-            handle: null,
-          };
-        }
-
-        case 'delay': {
-          await this.sleep(node.config.ms, control.signal);
-          return {
-            result: {
-              ...base,
-              status: 'success',
-              durationMs: done(),
-              message: `Waited ${node.config.ms} ms`,
-            },
-            handle: null,
-          };
-        }
-
-        case 'request': {
-          const response = await this.ports.executeRequest(node.config, ctx, control.signal);
-          const failed = Boolean(response.error);
-          const extracted = failed ? {} : extractAll(response, node.config.extract ?? []);
-          return {
-            result: {
-              ...base,
-              status: failed ? 'failed' : 'success',
-              durationMs: done(),
-              response,
-              ...(Object.keys(extracted).length ? { variablesSet: extracted } : {}),
-              message: failed ? response.error : `${response.status} ${response.statusText}`,
-            },
-            handle: null,
-          };
-        }
-
-        case 'transform': {
-          const value = applyTransform(node.config, (t) => this.ports.evaluate(t, ctx));
-          return {
-            result: {
-              ...base,
-              status: 'success',
-              durationMs: done(),
-              variablesSet: { [node.config.variable]: value },
-              message: `${node.config.variable} = ${value}`,
-            },
-            handle: null,
-          };
-        }
-
-        case 'user-input': {
-          // Resolve each field's default template so the prompt is pre-filled.
-          const fields = node.config.fields.map((f) => ({
-            label: f.label,
-            variable: f.variable,
-            default: this.ports.evaluate(f.default, ctx),
-            secret: f.secret,
-          }));
-          // Headless fallback: no input port → accept the evaluated defaults.
-          if (!this.ports.requestInput) {
-            const values = Object.fromEntries(fields.map((f) => [f.variable, f.default]));
-            return {
-              result: {
-                ...base,
-                status: 'success',
-                durationMs: done(),
-                ...(Object.keys(values).length ? { variablesSet: values } : {}),
-                message: 'Auto-filled defaults (no input port)',
-              },
-              handle: null,
-            };
-          }
-          const { values, cancelled } = await this.ports.requestInput(
-            {
-              workflowId: ctx.workflowId,
-              nodeId: node.id,
-              name: node.name,
-              message: node.config.message,
-              fields,
-            },
-            ctx,
-          );
-          if (cancelled) {
-            return {
-              result: { ...base, status: 'failed', durationMs: done(), message: 'Input cancelled' },
-              handle: null,
-            };
-          }
-          return {
-            result: {
-              ...base,
-              status: 'success',
-              durationMs: done(),
-              ...(Object.keys(values).length ? { variablesSet: values } : {}),
-              message: Object.keys(values).length
-                ? `Collected ${Object.keys(values).length} value(s)`
-                : 'Continued',
-            },
-            handle: null,
-          };
-        }
-
-        case 'sub-workflow': {
-          const child = this.ports.loadWorkflow(node.config.workflowId);
-          // Nested run: step mode treats the sub-workflow as one step (it runs to
-          // completion), so pass nested=true to bypass the per-node step checkpoint
-          // while still honoring pause/cancel.
-          const childStatus = await this.runInto(
-            child,
-            ctx.runtime,
-            results,
-            control,
-            stack,
-            ctx.workspaceId,
-            true,
-          );
-          return {
-            result: {
-              ...base,
-              status: childStatus === 'success' ? 'success' : 'failed',
-              durationMs: done(),
-              message: `Sub-workflow "${child.name}" ${childStatus}`,
-            },
-            handle: null,
-          };
-        }
-
-        case 'condition': {
-          const handle = this.truthy(node.config.expression, ctx) ? 'true' : 'false';
-          return {
-            result: { ...base, status: 'success', durationMs: done(), message: `→ ${handle}` },
-            handle,
-          };
-        }
-
-        case 'switch': {
-          const value = this.ports.evaluate(node.config.value, ctx).trim();
-          const handle = node.config.cases.includes(value) ? value : 'default';
-          return {
-            result: {
-              ...base,
-              status: 'success',
-              durationMs: done(),
-              message: `${value} → ${handle}`,
-            },
-            handle,
-          };
-        }
-
-        case 'loop': {
-          const count = loopCounters.get(node.id) ?? 0;
-          const cont = this.shouldLoop(node.config, count, ctx);
-          if (cont) {
-            loopCounters.set(node.id, count + 1);
-            return {
-              result: {
-                ...base,
-                status: 'success',
-                durationMs: done(),
-                message: `iteration ${count + 1}`,
-              },
-              handle: 'body',
-            };
-          }
-          return {
-            result: {
-              ...base,
-              status: 'success',
-              durationMs: done(),
-              message: `done after ${count}`,
-            },
-            handle: 'done',
-          };
-        }
-
-        case 'end':
-          return { result: { ...base, status: 'success', durationMs: done() }, handle: null };
-
-        default: {
-          const _never: never = node;
-          throw new WorkflowError(`Unsupported node kind: ${JSON.stringify(_never)}`);
-        }
-      }
+      const executor = this.registry.resolve(node.kind);
+      if (!executor) throw new WorkflowError(`Unsupported node kind: ${node.kind}`);
+      return await executor(node, env);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { result: { ...base, status: 'failed', durationMs: done(), message }, handle: null };
@@ -512,11 +327,6 @@ export class WorkflowEngine {
 
   private truthy(expression: string, ctx: RunContext): boolean {
     return evaluateCondition(expression, (template) => this.ports.evaluate(template, ctx));
-  }
-
-  private shouldLoop(config: LoopNodeConfig, count: number, ctx: RunContext): boolean {
-    if (config.mode === 'times') return count < config.times;
-    return count < config.maxIterations && this.truthy(config.condition, ctx);
   }
 
   /** A zero-work node result (start/end and failure sentinels). */

@@ -8,6 +8,8 @@ import { migration0006 } from './0006-auth';
 import { migration0007 } from './0007-request-details';
 import { migration0008 } from './0008-collection-source-url';
 import { migration0009 } from './0009-workflows';
+import { migration0010 } from './0010-request-type';
+import { migration0011 } from './0011-plugins';
 
 export type { Migration } from './types';
 
@@ -25,4 +27,6 @@ export const MIGRATIONS: readonly Migration[] = [
   migration0007,
   migration0008,
   migration0009,
+  migration0010,
+  migration0011,
 ];

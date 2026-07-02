@@ -5,6 +5,7 @@ import {
   type IpcChannelName,
   type IpcRequest,
   type IpcResponse,
+  type PluginsChangedEvent,
   type WorkbenchApi,
 } from '@shared/ipc-contract';
 import type { WorkflowInputRequest, WorkflowProgressEvent } from '@shared/workflow';
@@ -46,6 +47,12 @@ const api: WorkbenchApi = {
     const handler = (_event: IpcRendererEvent, payload: WorkflowProgressEvent): void => listener(payload);
     ipcRenderer.on('workflow.nodeProgress', handler);
     return () => ipcRenderer.off('workflow.nodeProgress', handler);
+  },
+
+  onPluginsChanged(listener: (event: PluginsChangedEvent) => void): () => void {
+    const handler = (_event: IpcRendererEvent, payload: PluginsChangedEvent): void => listener(payload);
+    ipcRenderer.on('plugins.changed', handler);
+    return () => ipcRenderer.off('plugins.changed', handler);
   },
 };
 

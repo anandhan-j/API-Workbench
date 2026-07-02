@@ -15,6 +15,7 @@ import type { AuthService } from '../auth';
 import type { ExecutionService } from '../execution';
 import type { TestRunner } from '../testing';
 import { type WorkflowService, RunController } from '../workflows';
+import type { PluginService } from '../plugins';
 import { runPostResponseScript, runPreRequestScript } from '../scripting';
 
 /**
@@ -37,6 +38,7 @@ export interface IpcContext {
   execution: ExecutionService;
   testRunner: TestRunner;
   workflows: WorkflowService;
+  plugins: PluginService;
 }
 
 /** Extra, non-service dependencies the IPC layer needs. */
@@ -60,6 +62,11 @@ const pendingInputs = new Map<string, (result: WorkflowInputResult) => void>();
 function sendToRenderer(channel: string, payload: unknown): void {
   const window = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
   window?.webContents.send(channel, payload);
+}
+
+/** Pushes a `plugins.changed` event so renderer queries refetch (Phase 16). */
+export function notifyPluginsChanged(reason: string): void {
+  sendToRenderer('plugins.changed', { reason });
 }
 
 /**
@@ -106,6 +113,7 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     execution,
     testRunner,
     workflows,
+    plugins,
   } = context;
   const { logFilePath } = options;
 
@@ -279,10 +287,9 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     },
 
     'request.execute': async (payload) => {
-      let req = payload.request;
-      if (req.credentialId && !req.auth) {
-        req = { ...req, auth: auth.getConfig(req.credentialId) };
-      }
+      // Stored credentials are resolved inside the execution dispatcher via the
+      // AuthService port (ADR-0009), so the envelope passes through as-is.
+      const req = payload.request;
       const id = req.id;
       const controller = id ? new AbortController() : undefined;
       if (id && controller) inflightExecutions.set(id, controller);
@@ -406,6 +413,30 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
       return {};
     },
     'preferences.list': () => persistence.preferences.list(),
+
+    'plugins.list': () => ({ plugins: plugins.list() }),
+    'plugins.inspect': (request) => plugins.inspect(request.path),
+    'plugins.install': async (request) => {
+      const installed = await plugins.install(request.path, request.grantedCapabilities);
+      notifyPluginsChanged('installed');
+      return installed;
+    },
+    'plugins.installDev': async (request) => {
+      const installed = await plugins.installDev(request.path, request.grantedCapabilities);
+      notifyPluginsChanged('installed');
+      return installed;
+    },
+    'plugins.uninstall': async (request) => {
+      await plugins.uninstall(request.id);
+      notifyPluginsChanged('uninstalled');
+      return {};
+    },
+    'plugins.setEnabled': async (request) => {
+      const updated = await plugins.setEnabled(request.id, request.enabled);
+      notifyPluginsChanged(request.enabled ? 'enabled' : 'disabled');
+      return updated;
+    },
+    'plugins.contributions': () => plugins.contributions(),
 
     'backup.create': () => persistence.createBackup(),
     'backup.list': () => persistence.listBackups(),

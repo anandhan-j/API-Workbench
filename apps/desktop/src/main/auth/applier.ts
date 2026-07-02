@@ -57,6 +57,9 @@ export function applyAuth(config: AuthConfig, ctx: ApplyContext): AuthArtifacts 
       return out;
 
     case 'digest': {
+      if (!ctx.method) {
+        throw new AuthError('Digest authentication requires an HTTP request context');
+      }
       if (!ctx.digestChallenge) {
         throw new AuthError('Digest authentication requires a challenge from a prior 401 response');
       }
@@ -72,6 +75,9 @@ export function applyAuth(config: AuthConfig, ctx: ApplyContext): AuthArtifacts 
     }
 
     case 'awsSigv4': {
+      if (!ctx.method) {
+        throw new AuthError('AWS SigV4 signing requires an HTTP request context');
+      }
       const signed = signSigV4({
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,

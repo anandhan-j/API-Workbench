@@ -4,6 +4,7 @@ import {
   FormInput,
   GitBranch,
   Hourglass,
+  Puzzle,
   Repeat,
   Send,
   Split,
@@ -11,7 +12,11 @@ import {
   Wand2,
   Workflow,
 } from 'lucide-react';
+import { HTTP_REQUEST_TYPE } from '@shared/protocol';
+import { formDefaults } from '@shared/forms';
+import { qualifiedContributionId, type PluginContributionIndex } from '@shared/plugins';
 import type { WorkflowNode, WorkflowNodeKind } from '@shared/workflow';
+import { pluginIconFor } from '../../components/plugin-icon';
 
 /**
  * Presentation + default-construction metadata for each node kind. Keeping this
@@ -19,7 +24,8 @@ import type { WorkflowNode, WorkflowNodeKind } from '@shared/workflow';
  * agree on labels, icons, and the shape of a freshly-dropped node's config.
  */
 export interface NodeKindMeta {
-  kind: WorkflowNodeKind;
+  /** A built-in {@link WorkflowNodeKind} or a plugin kind (`plugin:...`). */
+  kind: string;
   label: string;
   description: string;
   icon: typeof Send;
@@ -49,11 +55,9 @@ export const NODE_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     accent: 'bg-sky-500/15 text-sky-400',
     addable: true,
     defaultConfig: () => ({
-      method: 'GET',
-      url: '',
-      headers: {},
-      query: {},
-      body: { type: 'none' },
+      type: HTTP_REQUEST_TYPE,
+      payload: { method: 'GET', url: '', headers: {}, query: {}, body: { type: 'none' } },
+      extract: [],
     }),
   },
   condition: {
@@ -138,6 +142,62 @@ export const NODE_META: Record<WorkflowNodeKind, NodeKindMeta> = {
     defaultConfig: () => ({}),
   },
 };
+
+/** A plugin node contribution as delivered by the contribution index. */
+export type PluginNodeContribution = PluginContributionIndex['nodes'][number];
+
+/**
+ * Module-level registry of plugin node contributions, keyed by qualified kind
+ * (`plugin:<pluginId>/<kind>`). The workflows page keeps it in sync with the
+ * live contribution index so the palette, canvas drop handler, node renderer,
+ * and inspector all see plugin nodes through the same {@link getNodeMeta}
+ * lookup that serves built-ins — no plugin state store needed.
+ */
+const pluginNodes = new Map<string, PluginNodeContribution>();
+
+export function setPluginNodeMeta(contributions: PluginNodeContribution[]): void {
+  pluginNodes.clear();
+  for (const c of contributions) {
+    pluginNodes.set(qualifiedContributionId(c.pluginId, c.kind), c);
+  }
+}
+
+/** The contribution behind a qualified plugin node kind, if currently present. */
+export function getPluginNodeContribution(kind: string): PluginNodeContribution | undefined {
+  return pluginNodes.get(kind);
+}
+
+/**
+ * Meta for any node kind, including plugin kinds (`plugin:...`). Registered
+ * plugin contributions get their declared label/icon and a config seeded from
+ * their form schema's defaults; anything else falls back to a neutral,
+ * non-addable meta so indexing by a plain string `kind` is always safe.
+ */
+export function getNodeMeta(kind: string): NodeKindMeta {
+  const meta = (NODE_META as Record<string, NodeKindMeta | undefined>)[kind];
+  if (meta) return meta;
+  const contribution = pluginNodes.get(kind);
+  if (contribution) {
+    return {
+      kind,
+      label: contribution.label,
+      description: contribution.description ?? `From ${contribution.pluginName}`,
+      icon: pluginIconFor(contribution.icon),
+      accent: 'bg-slate-500/15 text-slate-300',
+      addable: true,
+      defaultConfig: () => formDefaults(contribution.configSchema) as WorkflowNode['config'],
+    };
+  }
+  return {
+    kind,
+    label: kind,
+    description: '',
+    icon: Puzzle,
+    accent: 'bg-slate-500/15 text-slate-300',
+    addable: false,
+    defaultConfig: () => ({}),
+  };
+}
 
 /** Node kinds offered in the palette, in display order. */
 export const PALETTE_KINDS: WorkflowNodeKind[] = [

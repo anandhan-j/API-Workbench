@@ -1,7 +1,8 @@
-import { sqliteTable, text, integer, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex, primaryKey, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { RequestSource } from '@shared/sync';
 import type { RequestDetails } from '@shared/request-details';
 import type { WorkflowGraph } from '@shared/workflow';
+import type { PluginManifest } from '@shared/plugins';
 
 /**
  * Drizzle schema — the typed source of truth for all persisted tables.
@@ -93,6 +94,9 @@ export const requests = sqliteTable(
     name: text('name').notNull(),
     method: text('method').notNull(),
     url: text('url').notNull(),
+    /** Request type (ADR-0009): 'http' or `plugin:<pluginId>/<type>`. For
+     *  non-HTTP requests, `method`/`url` hold the provider's badge/target. */
+    type: text('type').notNull().default('http'),
     favorite: integer('favorite', { mode: 'boolean' }).notNull(),
     position: integer('position').notNull(),
     /** Spec-imported baseline for sync; null for hand-created requests. */
@@ -214,6 +218,40 @@ export const workflows = sqliteTable(
   (table) => ({ projectIdx: index('idx_workflows_project').on(table.projectId) }),
 );
 
+/**
+ * Installed plugins (Phase 16, ADR-0007). `manifest` snapshots the validated
+ * manifest JSON so listing/contributions need no file reads;
+ * `grantedCapabilities` is the user-confirmed subset of what the manifest
+ * requested. `plugin_storage` is the quota-enforced per-plugin KV store — the
+ * only persistence plugin code can reach.
+ */
+export const plugins = sqliteTable('plugins', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  version: text('version').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  grantedCapabilities: text('granted_capabilities', { mode: 'json' })
+    .$type<string[]>()
+    .notNull()
+    .default([]),
+  installPath: text('install_path').notNull(),
+  devMode: integer('dev_mode', { mode: 'boolean' }).notNull().default(false),
+  manifest: text('manifest', { mode: 'json' }).$type<PluginManifest>().notNull(),
+  installedAt: integer('installed_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export const pluginStorage = sqliteTable(
+  'plugin_storage',
+  {
+    pluginId: text('plugin_id').notNull().references(() => plugins.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    value: text('value').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => ({ pk: primaryKey({ columns: [table.pluginId, table.key] }) }),
+);
+
 export type WorkspaceRow = typeof workspaces.$inferSelect;
 export type WorkspaceInsert = typeof workspaces.$inferInsert;
 export type ProjectRow = typeof projects.$inferSelect;
@@ -233,3 +271,6 @@ export type AuthConfigRow = typeof authConfigs.$inferSelect;
 export type AuthConfigInsert = typeof authConfigs.$inferInsert;
 export type WorkflowRow = typeof workflows.$inferSelect;
 export type WorkflowInsert = typeof workflows.$inferInsert;
+export type PluginRow = typeof plugins.$inferSelect;
+export type PluginInsert = typeof plugins.$inferInsert;
+export type PluginStorageRow = typeof pluginStorage.$inferSelect;

@@ -43,6 +43,9 @@ export const RequestSummary = z.object({
   // May be empty for operations imported with no `summary`; the UI falls back to
   // the endpoint path. Creating a request still requires a name (CreateRequestInput).
   name: z.string(),
+  /** Request type (ADR-0009): 'http' or `plugin:<pluginId>/<type>`. For
+   *  non-HTTP types, `method`/`url` carry the provider's badge/target. */
+  type: z.string().default('http'),
   method: HttpMethod,
   url: z.string(),
   favorite: z.boolean(),

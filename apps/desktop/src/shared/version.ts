@@ -23,6 +23,8 @@ export const VersionRequest = z.object({
   id: z.string(),
   folderId: z.string().nullable(),
   name: z.string(),
+  /** Request type (ADR-0009); snapshots from before Phase 16 default to 'http'. */
+  type: z.string().default('http'),
   method: HttpMethod,
   url: z.string(),
   favorite: z.boolean(),

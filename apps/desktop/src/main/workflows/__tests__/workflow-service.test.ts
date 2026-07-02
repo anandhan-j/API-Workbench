@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ExecutionResponse } from '@shared/execution';
+import { toProtocolResponse, type ProtocolResponse } from '@shared/protocol';
 import type { WorkflowGraph, WorkflowNode } from '@shared/workflow';
 import { PersistenceService } from '../../persistence/persistence-service';
 import { createSqlJsConnection } from '../../persistence/__tests__/sqljs-connection';
@@ -11,8 +11,8 @@ import { WorkflowService, type WorkflowServiceDeps } from '../workflow-service';
 
 const pos = { x: 0, y: 0 };
 
-function okResponse(): ExecutionResponse {
-  return {
+function okResponse(): ProtocolResponse {
+  return toProtocolResponse({
     ok: true,
     status: 200,
     statusText: 'OK',
@@ -24,7 +24,7 @@ function okResponse(): ExecutionResponse {
     timings: { startedAt: 0, totalMs: 1 },
     redirects: [],
     retries: 0,
-  };
+  });
 }
 
 describe('WorkflowService', () => {
@@ -189,7 +189,7 @@ describe('WorkflowService', () => {
         kind: 'request',
         name: 'call',
         position: pos,
-        config: { method: 'GET', url: 'https://x/{{base}}', headers: {}, query: {}, body: { type: 'none' }, extract: [] },
+        config: { type: 'http', payload: { method: 'GET', url: 'https://x/{{base}}', headers: {}, query: {}, body: { type: 'none' } }, extract: [] },
       },
       { id: 'end', kind: 'end', name: 'End', position: pos, config: {} },
     ];
@@ -234,7 +234,7 @@ describe('WorkflowService', () => {
             kind: 'request',
             name: 'call',
             position: pos,
-            config: { method: 'POST', url: 'https://x', headers: { 'X-A': '1' }, query: {}, body: { type: 'none' }, extract: [] },
+            config: { type: 'http', payload: { method: 'POST', url: 'https://x', headers: { 'X-A': '1' }, query: {}, body: { type: 'none' } }, extract: [] },
           },
           { id: 'sub', kind: 'sub-workflow', name: 'child', position: pos, config: { workflowId: child.id } },
           { id: 'end', kind: 'end', name: 'End', position: pos, config: {} },
@@ -256,7 +256,10 @@ describe('WorkflowService', () => {
     // The full request config travels with the bundle, not a reference.
     const root = bundle.workflows.find((w) => w.id === parent.id);
     const reqNode = root?.graph.nodes.find((n) => n.id === 'req');
-    expect(reqNode?.config).toMatchObject({ method: 'POST', url: 'https://x', headers: { 'X-A': '1' } });
+    expect(reqNode?.config).toMatchObject({
+      type: 'http',
+      payload: { method: 'POST', url: 'https://x', headers: { 'X-A': '1' } },
+    });
   });
 
   it('imports a bundle with fresh ids, remapping sub-workflow references', () => {

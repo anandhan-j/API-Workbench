@@ -1,0 +1,41 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.uuid-node",
+  "name": "UUID Node",
+  "version": "1.0.0",
+  "description": "Adds a workflow node that writes a random UUID into a runtime variable.",
+  "publisher": "API Workbench examples",
+  "license": "MIT",
+  "main": "dist/index.cjs",
+  "engines": { "sdk": "^1.0.0" },
+  "capabilities": [],
+  "contributes": {
+    "nodes": [
+      {
+        "kind": "uuid",
+        "label": "Generate UUID",
+        "description": "Writes a random UUID into a runtime variable.",
+        "icon": "hash",
+        "configSchema": {
+          "fields": [
+            {
+              "kind": "string",
+              "key": "variable",
+              "label": "Variable name",
+              "description": "Runtime variable that receives the UUID.",
+              "required": true,
+              "default": "uuid"
+            },
+            {
+              "kind": "boolean",
+              "key": "uppercase",
+              "label": "Uppercase",
+              "default": false
+            }
+          ]
+        },
+        "producesVariables": [{ "source": "config", "key": "variable" }]
+      }
+    ]
+  }
+}

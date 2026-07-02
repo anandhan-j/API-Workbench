@@ -1,19 +1,29 @@
 import { join } from 'node:path';
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import appIcon from '../../resources/icon.png?asset';
-import { registerIpcHandlers, attachDispatchStream } from './ipc';
+import { registerIpcHandlers, attachDispatchStream, notifyPluginsChanged } from './ipc';
 import { logger } from './services/logger';
 import { FileLogSink } from './services/file-log-sink';
 import { createBetterSqliteConnection, PersistenceService } from './persistence';
 import { WorkspaceManager } from './workspace';
 import { CollectionExplorer } from './collections';
-import { ImportService, SyncService } from './openapi';
+import { ImportService, SyncService, builtinOpenApiImporters, DEFAULT_IMPORTER_ID } from './openapi';
 import { VersioningService } from './versioning';
 import { VariableService, SafeStorageEncryptor } from './variables';
 import { AuthService } from './auth';
-import { ExecutionService, FetchTransport } from './execution';
+import { ExecutionService, FetchTransport, createHttpProvider } from './execution';
 import { TestRunner } from './testing';
-import { WorkflowService } from './workflows';
+import { WorkflowService, BUILTIN_NODE_EXECUTORS } from './workflows';
+import {
+  AuthProviderRegistry,
+  CapabilityBroker,
+  ImporterRegistry,
+  NodeExecutorRegistry,
+  PluginHostManager,
+  PluginService,
+  RequestTypeRegistry,
+} from './plugins';
+import { createUtilityProcessTransport } from './plugins/host-transport-electron';
 
 /**
  * Main process entry point.
@@ -28,6 +38,7 @@ const isDev = !app.isPackaged;
 const RENDERER_DEV_URL = process.env['ELECTRON_RENDERER_URL'];
 
 let persistence: PersistenceService | undefined;
+let pluginHostRef: PluginHostManager | undefined;
 
 interface Services {
   persistence: PersistenceService;
@@ -41,6 +52,8 @@ interface Services {
   execution: ExecutionService;
   testRunner: TestRunner;
   workflows: WorkflowService;
+  plugins: PluginService;
+  pluginHost: PluginHostManager;
 }
 
 function initServices(): Services {
@@ -60,22 +73,32 @@ function initServices(): Services {
   });
   const collections = new CollectionExplorer(service);
   const variables = new VariableService(service, new SafeStorageEncryptor());
-  const auth = new AuthService(service, new SafeStorageEncryptor());
-  const execution = new ExecutionService(new FetchTransport(), {
+  const workspaces = new WorkspaceManager(service, { appVersion: app.getVersion() });
+
+  // Phase 16 (ADR-0007/0009): the four extension registries. Built-ins seed
+  // them here; the plugin host manager adds RPC-backed entries per plugin.
+  const nodeExecutors = new NodeExecutorRegistry(BUILTIN_NODE_EXECUTORS);
+  const authProviders = new AuthProviderRegistry();
+  const importers = new ImporterRegistry(builtinOpenApiImporters(), DEFAULT_IMPORTER_ID);
+  const transport = new FetchTransport();
+  const requestTypes = new RequestTypeRegistry([createHttpProvider(transport)]);
+
+  const auth = new AuthService(service, new SafeStorageEncryptor(), authProviders);
+  const execution = new ExecutionService(transport, {
     evaluate: (template, context) => variables.evaluate({ template, context }),
+    // Stored-credential decryption and plugin auth providers live in AuthService;
+    // the dispatcher hands it the envelope's auth source per request (ADR-0009).
+    resolveArtifacts: (source, ctx, evaluate) => auth.resolveArtifacts(source, ctx, evaluate),
+    requestTypes,
   });
   // Workflow nodes reuse the execution and variable engines: request nodes run
   // through the same execution path (with stored-credential resolution), and
   // set-variable nodes evaluate templates against the run's variable context.
   const workflows = new WorkflowService(service, {
-    executeRequest: (config, ctx, signal) => {
-      const cfg =
-        config.credentialId && !config.auth
-          ? { ...config, auth: auth.getConfig(config.credentialId) }
-          : config;
-      return execution.run(
+    executeRequest: (config, ctx, signal) =>
+      execution.run(
         {
-          ...cfg,
+          ...config,
           variableContext: {
             ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
             workflowId: ctx.workflowId,
@@ -83,8 +106,7 @@ function initServices(): Services {
           },
         },
         signal,
-      );
-    },
+      ),
     evaluate: (template, ctx) =>
       variables.evaluate({
         template,
@@ -102,12 +124,48 @@ function initServices(): Services {
         value,
       }),
     appVersion: app.getVersion(),
+    nodeExecutors,
   });
+
+  // Plugin host wiring (ADR-0010): the broker enforces capability grants on
+  // every host→main call; the manager owns the utility process and registers
+  // each activated plugin's contributions into the registries above.
+  const pluginLog = (level: 'info' | 'warn' | 'error', message: string, context?: object): void => {
+    logger.log(level, 'plugins', message, context as Record<string, unknown> | undefined);
+  };
+  const broker = new CapabilityBroker({
+    persistence: service,
+    evaluate: (template) => variables.evaluate({ template, context: {} }),
+    setVariable: (scope, key, value) => {
+      const active = workspaces.getActiveSelection();
+      variables.set({
+        scope,
+        ...(scope === 'workspace' && active.workspaceId ? { scopeId: active.workspaceId } : {}),
+        key,
+        value,
+      });
+    },
+    log: pluginLog,
+  });
+  const pluginHost = new PluginHostManager({
+    spawn: () => createUtilityProcessTransport(join(__dirname, 'plugin-host.js')),
+    broker,
+    registries: { nodes: nodeExecutors, auth: authProviders, importers, requestTypes },
+    log: pluginLog,
+    onChanged: (reason) => notifyPluginsChanged(reason),
+  });
+  const plugins = new PluginService(service, {
+    installRoot: join(userData, 'plugins'),
+    host: pluginHost,
+    log: pluginLog,
+  });
+  pluginHostRef = pluginHost;
+
   return {
     persistence: service,
-    workspaces: new WorkspaceManager(service, { appVersion: app.getVersion() }),
+    workspaces,
     collections,
-    imports: new ImportService(service),
+    imports: new ImportService(service, { importers }),
     sync: new SyncService(service),
     versioning: new VersioningService(service),
     variables,
@@ -115,6 +173,8 @@ function initServices(): Services {
     execution,
     testRunner: new TestRunner(),
     workflows,
+    plugins,
+    pluginHost,
   };
 }
 
@@ -193,6 +253,9 @@ app.whenReady().then(() => {
 
     const services = initServices();
     registerIpcHandlers(services, { logFilePath: () => sink.filePath });
+    // Activate installed plugins in the background; per-plugin failures are
+    // logged and surfaced on the Plugins page rather than blocking startup.
+    void services.plugins.activateInstalled();
     logger.info('app', 'Application ready', {
       version: app.getVersion(),
       platform: process.platform,
@@ -212,6 +275,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  pluginHostRef?.dispose();
   persistence?.close();
 });
 

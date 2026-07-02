@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { HttpMethod } from './collection';
-import { AuthConfig } from './auth';
-import { RequestBody, ExecutionOptions, ExecutionResponse } from './execution';
+import { WireAuthConfig } from './auth';
+import { ExecutionOptions } from './execution';
+import { HTTP_REQUEST_TYPE, ProtocolResponse, RequestTypeId } from './protocol';
 
 /**
  * Transport DTOs for the Workflow Engine (Phases 12–14).
@@ -35,7 +35,7 @@ export const WorkflowNodeKind = z.enum([
 export type WorkflowNodeKind = z.infer<typeof WorkflowNodeKind>;
 
 /** Node kinds that may have multiple labelled outgoing edges. */
-export const BRANCH_KINDS: WorkflowNodeKind[] = ['condition', 'switch', 'loop'];
+export const BRANCH_KINDS: readonly string[] = ['condition', 'switch', 'loop'];
 
 // --- Reliability policy (Phase 14) ---
 
@@ -89,20 +89,44 @@ export const ExtractRule = z.object({
 });
 export type ExtractRule = z.infer<typeof ExtractRule>;
 
-export const RequestNodeConfig = z.object({
-  method: HttpMethod,
-  url: z.string(),
-  headers: z.record(z.string()).default({}),
-  query: z.record(z.string()).default({}),
-  body: RequestBody.default({ type: 'none' }),
-  auth: AuthConfig.optional(),
-  credentialId: z.string().optional(),
-  options: ExecutionOptions.partial().optional(),
-  /** Response → variable mappings applied after the request succeeds. */
-  extract: z.array(ExtractRule).default([]),
-  /** The collection request this node was imported from (for display / re-sync). */
-  requestId: z.string().optional(),
-});
+/**
+ * Lifts a legacy flat HTTP request-node config (`{method, url, ...}` at the top
+ * level) into the envelope shape, so workflow graphs persisted before the
+ * protocol abstraction (ADR-0009) keep parsing without a data migration.
+ */
+function liftLegacyRequestNodeConfig(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null) return value;
+  const record = value as Record<string, unknown>;
+  if ('payload' in record || 'type' in record) return value;
+  if (!('method' in record) || !('url' in record)) return value;
+  const { auth, credentialId, options, extract, requestId, ...payload } = record;
+  return {
+    type: HTTP_REQUEST_TYPE,
+    payload,
+    ...(auth !== undefined ? { auth } : {}),
+    ...(credentialId !== undefined ? { credentialId } : {}),
+    ...(options !== undefined ? { options } : {}),
+    ...(extract !== undefined ? { extract } : {}),
+    ...(requestId !== undefined ? { requestId } : {}),
+  };
+}
+
+export const RequestNodeConfig = z.preprocess(
+  liftLegacyRequestNodeConfig,
+  z.object({
+    /** Request type: `'http'` or a plugin-contributed type (ADR-0009). */
+    type: RequestTypeId.default(HTTP_REQUEST_TYPE),
+    /** Type-specific request fields; validated by the resolved provider. */
+    payload: z.unknown(),
+    auth: WireAuthConfig.optional(),
+    credentialId: z.string().optional(),
+    options: ExecutionOptions.partial().optional(),
+    /** Response → variable mappings applied after the request succeeds. */
+    extract: z.array(ExtractRule).default([]),
+    /** The collection request this node was imported from (for display / re-sync). */
+    requestId: z.string().optional(),
+  }),
+);
 export type RequestNodeConfig = z.infer<typeof RequestNodeConfig>;
 
 /**
@@ -217,8 +241,8 @@ const nodeBase = {
   policy: NodePolicy.optional(),
 };
 
-/** A workflow node: a discriminated union over {@link WorkflowNodeKind}. */
-export const WorkflowNode = z.discriminatedUnion('kind', [
+/** A built-in workflow node: a discriminated union over {@link WorkflowNodeKind}. */
+export const BuiltinWorkflowNode = z.discriminatedUnion('kind', [
   z.object({ ...nodeBase, kind: z.literal('start'), config: StartNodeConfig }),
   z.object({ ...nodeBase, kind: z.literal('request'), config: RequestNodeConfig }),
   z.object({ ...nodeBase, kind: z.literal('set-variable'), config: SetVariableNodeConfig }),
@@ -231,7 +255,38 @@ export const WorkflowNode = z.discriminatedUnion('kind', [
   z.object({ ...nodeBase, kind: z.literal('user-input'), config: UserInputNodeConfig }),
   z.object({ ...nodeBase, kind: z.literal('end'), config: EndNodeConfig }),
 ]);
+export type BuiltinWorkflowNode = z.infer<typeof BuiltinWorkflowNode>;
+
+/** Matches fully-qualified plugin node kinds: `plugin:<pluginId>/<kind>`. */
+export const PLUGIN_NODE_KIND_PATTERN = /^plugin:[a-z0-9][a-z0-9.-]*\/[a-z][a-z0-9-]*$/;
+
+/**
+ * A plugin-contributed node (Phase 16, ADR-0007). The config is opaque here;
+ * it is validated against the contribution's declared form schema before
+ * dispatch, and executed by the plugin's registered executor.
+ */
+export const PluginWorkflowNode = z.object({
+  ...nodeBase,
+  kind: z.string().regex(PLUGIN_NODE_KIND_PATTERN),
+  config: z.record(z.unknown()),
+});
+export type PluginWorkflowNode = z.infer<typeof PluginWorkflowNode>;
+
+/** A workflow node: one of the built-in kinds, or a plugin-contributed node. */
+export const WorkflowNode = z.union([BuiltinWorkflowNode, PluginWorkflowNode]);
 export type WorkflowNode = z.infer<typeof WorkflowNode>;
+
+/**
+ * Narrows a node to a specific built-in kind. Needed because the plugin node
+ * variant's `kind: string` keeps a plain `===` comparison from discriminating
+ * the union.
+ */
+export function isNodeKind<K extends WorkflowNodeKind>(
+  node: WorkflowNode,
+  kind: K,
+): node is Extract<BuiltinWorkflowNode, { kind: K }> {
+  return node.kind === kind;
+}
 
 /** A directed connection; `sourceHandle` names the branch for branch nodes. */
 export const WorkflowEdge = z.object({
@@ -348,7 +403,8 @@ export type WorkflowRunStatus = z.infer<typeof WorkflowRunStatus>;
 /** The outcome of executing a single node. */
 export const NodeRunResult = z.object({
   nodeId: z.string(),
-  kind: WorkflowNodeKind,
+  /** Built-in {@link WorkflowNodeKind} or a plugin kind (`plugin:...`). */
+  kind: z.string(),
   name: z.string(),
   status: NodeRunStatus,
   startedAt: z.number(),
@@ -359,8 +415,8 @@ export const NodeRunResult = z.object({
   message: z.string().optional(),
   /** Variables this node contributed to the runtime context. */
   variablesSet: z.record(z.string()).optional(),
-  /** The HTTP response for request nodes. */
-  response: ExecutionResponse.optional(),
+  /** The protocol response for request nodes. */
+  response: ProtocolResponse.optional(),
 });
 export type NodeRunResult = z.infer<typeof NodeRunResult>;
 
@@ -398,7 +454,8 @@ export const WorkflowProgressEvent = z.object({
   workflowId: z.string(),
   phase: z.enum(['running', 'done']),
   nodeId: z.string(),
-  kind: WorkflowNodeKind,
+  /** Built-in {@link WorkflowNodeKind} or a plugin kind (`plugin:...`). */
+  kind: z.string(),
   name: z.string(),
   /** Present only when `phase === 'done'`. */
   result: NodeRunResult.optional(),

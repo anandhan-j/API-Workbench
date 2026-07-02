@@ -74,6 +74,28 @@ export const AuthConfig = z.discriminatedUnion('type', [
 ]);
 export type AuthConfig = z.infer<typeof AuthConfig>;
 
+/**
+ * A plugin auth provider's config (Phase 16, ADR-0007): its fully-qualified type
+ * (`plugin:<pluginId>/<type>`) plus the arbitrary values captured by the
+ * provider's declarative form schema. The values are validated semantically
+ * against the contribution's compiled `FormSchema` before the provider runs;
+ * here they pass through so the config survives the IPC/persistence boundary.
+ */
+export const PluginAuthConfig = z
+  .object({ type: z.string().regex(/^plugin:/, 'must be a qualified plugin auth type') })
+  .catchall(z.unknown());
+export type PluginAuthConfig = z.infer<typeof PluginAuthConfig>;
+
+/**
+ * Auth config as accepted at IPC and persistence boundaries: a built-in scheme
+ * or a plugin provider config. Built-in code keeps narrowing on the closed
+ * {@link AuthConfig} union; `WireAuthConfig` is the open superset the wire and
+ * stored request definitions carry, so plugin auth types survive validation
+ * instead of being rejected before they reach the provider registry (ADR-0009).
+ */
+export const WireAuthConfig = z.union([AuthConfig, PluginAuthConfig]);
+export type WireAuthConfig = z.infer<typeof WireAuthConfig>;
+
 /** Concrete material the execution engine applies to an outgoing request. */
 export const AuthArtifacts = z.object({
   headers: z.record(z.string()),
@@ -105,9 +127,13 @@ export const SaveCredentialInput = z.object({
 });
 export type SaveCredentialInput = z.infer<typeof SaveCredentialInput>;
 
-/** Context the applier needs (notably for SigV4 signing and digest). */
+/**
+ * Context the applier needs (notably for SigV4 signing and digest). `method`
+ * and `body` are absent for non-HTTP request types (ADR-0009); appliers that
+ * sign the HTTP request shape raise a typed error without them.
+ */
 export const ApplyContext = z.object({
-  method: z.string(),
+  method: z.string().optional(),
   url: z.string(),
   headers: z.record(z.string()).optional(),
   body: z.string().optional(),

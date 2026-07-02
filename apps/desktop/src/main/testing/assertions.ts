@@ -1,4 +1,4 @@
-import type { ExecutionResponse } from '@shared/execution';
+import type { HttpView } from '@shared/protocol';
 import type { Assertion, AssertionResult, Comparator } from '@shared/testing';
 
 /** JSONPath-lite: resolves `$.a.b[0].c` against a parsed value. */
@@ -55,7 +55,7 @@ function result(name: string, type: string, passed: boolean, message: string): A
 /** Evaluates the non-schema, non-script assertions (status/header/body/time). */
 export function evaluateSimple(
   assertion: Extract<Assertion, { type: 'status' | 'header' | 'body' | 'responseTime' }>,
-  response: ExecutionResponse,
+  response: HttpView,
 ): AssertionResult {
   switch (assertion.type) {
     case 'status': {

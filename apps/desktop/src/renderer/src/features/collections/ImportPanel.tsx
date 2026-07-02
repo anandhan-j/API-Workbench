@@ -9,7 +9,9 @@ export interface ImportPanelProps {
   error?: string | null;
   /** When true, drops the outer card styling (for use inside a modal). */
   bare?: boolean;
-  onImport: (payload: { name?: string; source: ImportSource }) => void;
+  /** Plugin importers (qualified id + label); empty/absent hides the format select. */
+  importers?: { id: string; label: string }[];
+  onImport: (payload: { name?: string; source: ImportSource; importerId?: string }) => void;
 }
 
 /**
@@ -17,16 +19,29 @@ export interface ImportPanelProps {
  * optionally name the collection, and import. Stateless about the request itself
  * — it calls `onImport` and renders whatever result/error it is given.
  */
-export function ImportPanel({ busy, result, error, bare, onImport }: ImportPanelProps): JSX.Element {
+export function ImportPanel({
+  busy,
+  result,
+  error,
+  bare,
+  importers = [],
+  onImport,
+}: ImportPanelProps): JSX.Element {
   const [mode, setMode] = useState<'text' | 'url'>('text');
   const [text, setText] = useState('');
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
+  // '' = auto-detect (built-ins first); otherwise a qualified plugin importer id.
+  const [importerId, setImporterId] = useState('');
 
   const submit = (): void => {
     const source: ImportSource =
       mode === 'text' ? { type: 'text', content: text } : { type: 'url', url };
-    onImport({ ...(name.trim() ? { name: name.trim() } : {}), source });
+    onImport({
+      ...(name.trim() ? { name: name.trim() } : {}),
+      source,
+      ...(importerId ? { importerId } : {}),
+    });
   };
 
   return (
@@ -64,6 +79,27 @@ export function ImportPanel({ busy, result, error, bare, onImport }: ImportPanel
           placeholder="https://example.com/openapi.json"
           className="mt-3 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm"
         />
+      )}
+
+      {importers.length > 0 && (
+        <div className="mt-3 flex items-center gap-2">
+          <label htmlFor="import-format" className="shrink-0 text-xs text-muted">
+            Format
+          </label>
+          <select
+            id="import-format"
+            value={importerId}
+            onChange={(e) => setImporterId(e.target.value)}
+            className="min-w-0 flex-1 rounded-md border border-border bg-bg px-3 py-1.5 text-sm"
+          >
+            <option value="">Auto-detect (OpenAPI / Swagger)</option>
+            {importers.map((imp) => (
+              <option key={imp.id} value={imp.id}>
+                {imp.label}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
 
       <div className="mt-3 flex items-center gap-2">

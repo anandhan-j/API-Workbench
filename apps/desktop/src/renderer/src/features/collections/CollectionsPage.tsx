@@ -11,12 +11,15 @@ import { cn } from '../../lib/cn';
 import { RequestEditor } from '../runner/RequestEditor';
 import { RequestVariablesUsedPanel } from './RequestVariablesUsedPanel';
 import { detailToDraft, draftToDetails, type RequestDraft } from '../runner/build-request';
+import { HTTP_REQUEST_TYPE } from '@shared/protocol';
 import { Modal } from '../../components/menu/Modal';
 import { ImportPanel } from './ImportPanel';
 import { SyncPanel } from './SyncPanel';
 import { VersionsPanel } from './VersionsPanel';
 import { useConfirm } from '../../components/confirm/ConfirmProvider';
 import { useToast } from '../../components/toast/ToastProvider';
+import { qualifiedContributionId } from '@shared/plugins';
+import { usePluginContributions } from '../plugins/use-plugins';
 import { useImport } from './use-import';
 import { useSync } from './use-sync';
 import { useVersions, useVersionMutations } from './use-versions';
@@ -39,6 +42,11 @@ export function CollectionsPage(): JSX.Element {
   const mutations = useCollectionMutations(projectId);
   const importer = useImport(projectId);
   const syncer = useSync(projectId);
+  // Plugin importers for the import dialog's format select (empty → hidden).
+  const pluginImporters = usePluginContributions().importers.map((imp) => ({
+    id: qualifiedContributionId(imp.pluginId, imp.id),
+    label: imp.label,
+  }));
   const confirm = useConfirm();
   const toast = useToast();
 
@@ -205,6 +213,7 @@ export function CollectionsPage(): JSX.Element {
             busy={importer.isPending}
             result={importer.data ?? null}
             error={importer.error instanceof Error ? importer.error.message : null}
+            importers={pluginImporters}
             onImport={(payload) => importer.mutate({ projectId, ...payload })}
           />
         </Modal>
@@ -413,6 +422,7 @@ export function CollectionsPage(): JSX.Element {
                         .mutateAsync({
                           id: selectedRequest.id,
                           name: selectedRequest.name,
+                          type: draft.requestType ?? HTTP_REQUEST_TYPE,
                           method: draft.method,
                           url: draft.url,
                           details: draftToDetails(draft),

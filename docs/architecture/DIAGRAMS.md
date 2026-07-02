@@ -184,6 +184,35 @@ stateDiagram-v2
   Completed --> [*]
 ```
 
+## Sequence — Plugin contribution execution (Phase 16)
+
+How a plugin-contributed request type executes: the envelope dispatches through the registry to an RPC-backed provider running in the isolated plugin host (ADR-0009/0010). Node executors, auth providers, and importers follow the same shape.
+
+```mermaid
+sequenceDiagram
+  participant R as Renderer
+  participant IPC as IPC layer (Zod)
+  participant EX as ExecutionService
+  participant REG as RequestTypeRegistry
+  participant HM as PluginHostManager (RPC)
+  participant PH as Plugin host (utility process)
+  participant P as Plugin code
+
+  R->>IPC: request.execute { RequestEnvelope, type: plugin:id/t }
+  IPC->>EX: run(envelope)
+  EX->>REG: resolve('plugin:id/t')
+  REG-->>EX: provider (validates payload vs FormSchema, substitutes vars)
+  EX->>HM: provider.execute(payload, artifacts, signal)
+  HM->>PH: req request.execute (correlation id, timeout)
+  PH->>P: provider.execute({payload, artifacts, options, signal})
+  P-->>PH: ProtocolResult
+  PH-->>HM: res (Zod-validated in main)
+  HM-->>EX: ProtocolResponse
+  EX-->>IPC: ProtocolResponse (response schema validated)
+  IPC-->>R: rendered by the generic response viewer
+  Note over PH,P: Capability calls (storage/variables/fetch) flow<br/>back over the same wire via the CapabilityBroker,<br/>which re-checks persisted grants per call
+```
+
 ## Maintaining these diagrams
 
 When a structural change is made, update the affected diagram in the same change set, and if the change reflects a decision, record it as an [ADR](../adr/). Module-specific diagrams live in that module's `Architecture.md`; this file holds system-wide views.

@@ -1,11 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import type { ExecutionResponse } from '@shared/execution';
+import { toProtocolResponse, type ProtocolResponse } from '@shared/protocol';
 import type { Assertion } from '@shared/testing';
 import { TestRunner } from '../test-runner';
 
-function res(over: Partial<ExecutionResponse> = {}): ExecutionResponse {
-  return {
+function res(over: Partial<ExecutionResponse> = {}): ProtocolResponse {
+  return toProtocolResponse({
     ok: true,
     status: 200,
     statusText: 'OK',
@@ -18,7 +19,7 @@ function res(over: Partial<ExecutionResponse> = {}): ExecutionResponse {
     redirects: [],
     retries: 0,
     ...over,
-  };
+  });
 }
 
 const runner = new TestRunner();

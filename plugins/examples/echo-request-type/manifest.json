@@ -1,0 +1,46 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.echo",
+  "name": "Echo Request Type",
+  "version": "1.0.0",
+  "description": "A loopback request type: echoes its payload back as the response.",
+  "publisher": "API Workbench examples",
+  "license": "MIT",
+  "main": "dist/index.cjs",
+  "engines": { "sdk": "^1.0.0" },
+  "capabilities": [],
+  "contributes": {
+    "requestTypes": [
+      {
+        "type": "echo",
+        "label": "Echo",
+        "icon": "message-square",
+        "payloadSchema": {
+          "fields": [
+            {
+              "kind": "string",
+              "key": "target",
+              "label": "Target",
+              "description": "Logical destination, shown where HTTP shows the URL.",
+              "required": true
+            },
+            {
+              "kind": "textarea",
+              "key": "message",
+              "label": "Message",
+              "language": "json",
+              "default": "{}"
+            },
+            {
+              "kind": "boolean",
+              "key": "fail",
+              "label": "Simulate failure",
+              "default": false
+            }
+          ]
+        },
+        "summary": { "badge": "ECHO", "targetKey": "target" }
+      }
+    ]
+  }
+}

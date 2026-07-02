@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ExternalLink, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import type { ExecutionResponse } from '@shared/execution';
+import type { HttpPayload, ProtocolResponse } from '@shared/protocol';
 import type {
   ExtractRule,
   NodePolicy,
@@ -11,10 +11,13 @@ import type {
   WorkflowNode,
 } from '@shared/workflow';
 import { extractFromResponse } from '@shared/extract';
+import { qualifiedContributionId } from '@shared/plugins';
 import { Modal } from '../../components/menu/Modal';
+import { SchemaForm } from '../../components/forms/SchemaForm';
+import { usePluginContributions } from '../plugins/use-plugins';
 import { RequestEditor } from '../runner/RequestEditor';
 import type { FlowNode } from './graph-mapping';
-import { NODE_META } from './node-meta';
+import { getNodeMeta } from './node-meta';
 import type { ProjectRequestRef } from './use-project-requests';
 import { draftToNodeConfig, nodeConfigToDraft } from './request-node-draft';
 import type { VariableContext } from '@shared/variable';
@@ -40,7 +43,7 @@ interface NodeInspectorProps {
   node: FlowNode | null;
   workflows: Workflow[];
   /** The selected node's response from the last run, used for live preview. */
-  lastResponse?: ExecutionResponse;
+  lastResponse?: ProtocolResponse;
   /** Requests across the project's collections, for the request-node picker. */
   projectRequests?: ProjectRequestRef[];
   /** Imports a collection request's definition into the selected request node. */
@@ -75,6 +78,7 @@ export function NodeInspector({
   onDelete,
 }: NodeInspectorProps): JSX.Element {
   const [editorOpen, setEditorOpen] = useState(false);
+  const contributions = usePluginContributions();
   if (!node) {
     return (
       <div className="p-4 text-sm text-muted">
@@ -83,11 +87,15 @@ export function NodeInspector({
     );
   }
   const kind = node.data.kind;
-  const meta = NODE_META[kind];
+  const meta = getNodeMeta(kind);
   const Icon = meta.icon;
   const config = node.data.config as Record<string, unknown>;
   const set = (patch: Record<string, unknown>): void =>
     onConfig({ ...config, ...patch } as WorkflowNode['config']);
+  // A plugin node's editor is its contributed form schema (ADR-0007).
+  const pluginNode = kind.startsWith('plugin:')
+    ? contributions.nodes.find((c) => qualifiedContributionId(c.pluginId, c.kind) === kind)
+    : undefined;
 
   return (
     <div className="flex h-full flex-col gap-3 p-4">
@@ -107,6 +115,17 @@ export function NodeInspector({
             className={fieldClass}
           />
         </Field>
+      )}
+
+      {pluginNode && (
+        <>
+          <SchemaForm
+            schema={pluginNode.configSchema}
+            value={config}
+            onChange={(next) => onConfig(next as WorkflowNode['config'])}
+          />
+          <p className="text-[11px] text-muted">From plugin: {pluginNode.pluginName}</p>
+        </>
       )}
 
       {kind === 'request' && onImportRequest && (
@@ -129,10 +148,10 @@ export function NodeInspector({
             >
               <span className="flex min-w-0 items-center gap-2">
                 <span className="font-mono text-xs font-semibold text-accent">
-                  {(config.method as string) ?? 'GET'}
+                  {(config.payload as Partial<HttpPayload> | undefined)?.method ?? 'GET'}
                 </span>
                 <span className="truncate text-muted">
-                  {(config.url as string) || 'Configure…'}
+                  {(config.payload as Partial<HttpPayload> | undefined)?.url || 'Configure…'}
                 </span>
               </span>
               <SlidersHorizontal size={14} className="shrink-0 text-muted" />
@@ -481,7 +500,7 @@ function ExtractEditor({
   onChange,
 }: {
   rules: ExtractRule[];
-  response?: ExecutionResponse;
+  response?: ProtocolResponse;
   onChange: (rules: ExtractRule[]) => void;
 }): JSX.Element {
   const update = (i: number, patch: Partial<ExtractRule>): void =>

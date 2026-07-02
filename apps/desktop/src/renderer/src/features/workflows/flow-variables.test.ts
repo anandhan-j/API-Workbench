@@ -6,6 +6,8 @@ import {
   variablesProducedBy,
   workflowUsedVariableNames,
 } from './flow-variables';
+import { setPluginNodeMeta } from './node-meta';
+import type { PluginNodeContribution } from './node-meta';
 
 function node(
   id: string,
@@ -53,6 +55,63 @@ describe('variablesProducedBy', () => {
 
   it('ignores blank variable names', () => {
     expect(variablesProducedBy(node('x', 'set-variable', { key: '   ' }))).toEqual([]);
+  });
+
+  it('surfaces a plugin node’s declared input fields as produced variables', () => {
+    const kind = 'plugin:com.example.user-input-node/user-input';
+    setPluginNodeMeta([
+      {
+        pluginId: 'com.example.user-input-node',
+        pluginName: 'User Input Node',
+        kind: 'user-input',
+        label: 'User Input',
+        configSchema: { fields: [] },
+        branching: false,
+        producesVariables: [],
+        input: {
+          message: '',
+          fields: [
+            { variable: 'userName', label: '', default: '', secret: false },
+            { variable: '  ', label: '', default: '', secret: false },
+          ],
+        },
+      } as PluginNodeContribution,
+    ]);
+    try {
+      expect(variablesProducedBy(node('p', kind))).toEqual([{ key: 'userName', field: 'input' }]);
+    } finally {
+      setPluginNodeMeta([]);
+    }
+  });
+
+  it('surfaces a plugin node’s producesVariables (config-named and literal)', () => {
+    const kind = 'plugin:com.example.uuid-node/uuid';
+    setPluginNodeMeta([
+      {
+        pluginId: 'com.example.uuid-node',
+        pluginName: 'UUID Node',
+        kind: 'uuid',
+        label: 'Generate UUID',
+        configSchema: { fields: [] },
+        branching: false,
+        producesVariables: [
+          { source: 'config', key: 'variable' },
+          { source: 'literal', name: 'requestId' },
+        ],
+      } as PluginNodeContribution,
+    ]);
+    try {
+      expect(variablesProducedBy(node('p', kind, { variable: 'token' }))).toEqual([
+        { key: 'token', field: 'output' },
+        { key: 'requestId', field: 'output' },
+      ]);
+      // Blank config value contributes nothing.
+      expect(variablesProducedBy(node('p', kind, { variable: '  ' }))).toEqual([
+        { key: 'requestId', field: 'output' },
+      ]);
+    } finally {
+      setPluginNodeMeta([]);
+    }
   });
 });
 

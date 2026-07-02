@@ -3,6 +3,7 @@ import type {
   IpcChannelName,
   IpcRequest,
   IpcResponse,
+  PluginsChangedEvent,
   WorkbenchApi,
 } from '@shared/ipc-contract';
 import type { WorkflowInputRequest, WorkflowProgressEvent } from '@shared/workflow';
@@ -24,6 +25,9 @@ const fallback: WorkbenchApi = {
     return () => undefined;
   },
   onWorkflowNodeProgress(_listener: (event: WorkflowProgressEvent) => void): () => void {
+    return () => undefined;
+  },
+  onPluginsChanged(_listener: (event: PluginsChangedEvent) => void): () => void {
     return () => undefined;
   },
 };
@@ -57,4 +61,8 @@ export function onWorkflowNodeProgress(
   listener: (event: WorkflowProgressEvent) => void,
 ): () => void {
   return getBridge().onWorkflowNodeProgress(listener);
+}
+
+export function onPluginsChanged(listener: (event: PluginsChangedEvent) => void): () => void {
+  return getBridge().onPluginsChanged(listener);
 }

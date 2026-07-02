@@ -14,6 +14,7 @@ function toDto(row: RequestRow): RequestSummary {
     collectionId: row.collectionId,
     folderId: row.folderId,
     name: row.name,
+    type: row.type,
     method: row.method as HttpMethod,
     url: row.url,
     favorite: row.favorite,
@@ -29,6 +30,7 @@ function toFull(row: RequestRow): RequestDetailFull {
     collectionId: row.collectionId,
     folderId: row.folderId,
     name: row.name,
+    type: row.type,
     method: row.method as HttpMethod,
     url: row.url,
     favorite: row.favorite,
@@ -40,6 +42,8 @@ export interface CreateRequestRow {
   collectionId: string;
   folderId?: string | null;
   name: string;
+  /** Request type (ADR-0009); defaults to 'http'. */
+  type?: string;
   method?: HttpMethod;
   url?: string;
   details?: RequestDetails | null;
@@ -87,6 +91,7 @@ export class RequestRepository {
       collectionId: input.collectionId,
       folderId: input.folderId ?? null,
       name: input.name,
+      type: input.type ?? 'http',
       method: input.method ?? 'GET',
       url: input.url ?? '',
       favorite: false,
@@ -121,10 +126,11 @@ export class RequestRepository {
   /** Persists an edited request: identity patch plus the full definition. */
   save(
     id: string,
-    input: { name?: string; method?: HttpMethod; url?: string; details: RequestDetails },
+    input: { name?: string; type?: string; method?: HttpMethod; url?: string; details: RequestDetails },
   ): RequestSummary {
     return this.patch(id, {
       ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.type !== undefined ? { type: input.type } : {}),
       ...(input.method !== undefined ? { method: input.method } : {}),
       ...(input.url !== undefined ? { url: input.url } : {}),
       details: input.details,
@@ -213,7 +219,7 @@ export class RequestRepository {
   private patch(
     id: string,
     patch: Partial<
-      Pick<RequestRow, 'name' | 'method' | 'url' | 'folderId' | 'favorite' | 'source' | 'details'>
+      Pick<RequestRow, 'name' | 'type' | 'method' | 'url' | 'folderId' | 'favorite' | 'source' | 'details'>
     >,
   ): RequestSummary {
     const row = this.db.select().from(requests).where(eq(requests.id, id)).get();
@@ -232,6 +238,7 @@ export class RequestRepository {
       collectionId: row.collectionId,
       folderId: targetFolderId === undefined ? row.folderId : targetFolderId,
       name: `${row.name} (copy)`,
+      type: row.type,
       method: row.method,
       url: row.url,
       favorite: false,

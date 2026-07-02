@@ -23,7 +23,8 @@
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "build:example-plugins": "node ../../plugins/examples/build.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.51.1",
@@ -40,8 +41,10 @@
     "react-router-dom": "^6.25.1",
     "react-window": "^1.8.10",
     "reactflow": "^11.11.4",
+    "semver": "^7.8.5",
     "tailwind-merge": "^2.4.0",
     "yaml": "^2.4.5",
+    "yauzl": "^3.4.0",
     "zod": "^3.23.8",
     "zustand": "^4.5.4"
   },
@@ -55,7 +58,10 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/react-window": "^1.8.8",
+    "@types/semver": "^7.7.1",
     "@types/sql.js": "^1.4.9",
+    "@types/yauzl": "^3.4.0",
+    "@types/yazl": "^3.3.1",
     "@typescript-eslint/eslint-plugin": "^7.16.0",
     "@typescript-eslint/parser": "^7.16.0",
     "@vitejs/plugin-react": "^4.7.0",
@@ -73,6 +79,7 @@
     "tailwindcss": "^3.4.6",
     "typescript": "^5.5.3",
     "vite": "^7.0.0",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "yazl": "^3.3.1"
   }
 }

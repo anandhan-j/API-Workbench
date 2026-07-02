@@ -1,4 +1,5 @@
-import type { ExecutionRequest, RequestBody } from '@shared/execution';
+import type { RequestBody } from '@shared/execution';
+import { HTTP_REQUEST_TYPE, type HttpPayload, type RequestEnvelope } from '@shared/protocol';
 import type { AuthConfig } from '@shared/auth';
 import type { HttpMethod } from '@shared/collection';
 import type { VariableContext } from '@shared/variable';
@@ -19,13 +20,29 @@ export interface KeyValue {
 export type BodyMode = 'none' | 'raw' | 'urlencoded' | 'formdata' | 'binary';
 export type RawType = 'json' | 'text' | 'xml';
 
+/**
+ * A plugin auth provider's config (ADR-0007): its fully-qualified type
+ * (`plugin:<pluginId>/<type>`) plus the values captured by its form schema.
+ */
+export type PluginAuthConfig = { type: string } & Record<string, unknown>;
+
+/** What the auth editor edits: a built-in scheme or a plugin provider config. */
+export type EditorAuthConfig = AuthConfig | PluginAuthConfig;
+
 /** Full editor state for one request. */
 export interface RequestDraft {
   method: HttpMethod;
   url: string;
   params: KeyValue[];
   headers: KeyValue[];
-  auth: AuthConfig;
+  auth: EditorAuthConfig;
+  /**
+   * Request type (ADR-0009): a qualified plugin type (`plugin:<pluginId>/<type>`)
+   * switches the editor to the contribution's payload form; absent = HTTP.
+   */
+  requestType?: string;
+  /** Values captured by a plugin request type's payload form. */
+  pluginPayload?: Record<string, unknown>;
   bodyMode: BodyMode;
   rawType: RawType;
   rawBody: string;
@@ -142,6 +159,8 @@ export function detailToDraft(detail: RequestDetailFull): RequestDraft {
     params: toRows(d.params),
     headers: toRows(d.headers),
     auth: d.auth,
+    ...(detail.type && detail.type !== HTTP_REQUEST_TYPE ? { requestType: detail.type } : {}),
+    ...(d.pluginPayload ? { pluginPayload: d.pluginPayload } : {}),
     bodyMode: d.body.mode,
     rawType: d.body.rawType,
     rawBody: d.body.rawBody,
@@ -159,7 +178,8 @@ export function draftToDetails(draft: RequestDraft): RequestDetails {
   return {
     headers: fromRows(draft.headers),
     params: fromRows(draft.params),
-    auth: draft.auth,
+    auth: draft.auth as AuthConfig,
+    ...(isPluginDraft(draft) ? { pluginPayload: draft.pluginPayload ?? {} } : {}),
     body: {
       mode: draft.bodyMode,
       rawType: draft.rawType,
@@ -213,21 +233,35 @@ export function applyParamsToUrl(url: string, params: KeyValue[]): string {
   return (pairs.length > 0 ? `${base}?${pairs.join('&')}` : base) + fragment;
 }
 
-/** Converts editor state into the {@link ExecutionRequest} the engine runs. */
-export function buildExecutionRequest(
-  draft: RequestDraft,
-  id?: string,
-  context?: VariableContext,
-): ExecutionRequest {
-  const hasContext = context && Object.keys(context).length > 0;
+/** Converts editor state into the HTTP payload carried by a {@link RequestEnvelope}. */
+export function buildHttpPayload(draft: RequestDraft): HttpPayload {
   return {
-    ...(id ? { id } : {}),
     method: draft.method,
     url: draft.url,
     query: activePairs(draft.params),
     headers: activePairs(draft.headers),
     body: buildBody(draft),
-    ...(draft.auth.type !== 'none' ? { auth: draft.auth } : {}),
+  };
+}
+
+/** Whether the draft edits a plugin request type rather than plain HTTP. */
+export function isPluginDraft(draft: RequestDraft): boolean {
+  return Boolean(draft.requestType && draft.requestType !== HTTP_REQUEST_TYPE);
+}
+
+/** Converts editor state into the {@link RequestEnvelope} the engine runs. */
+export function buildRequestEnvelope(
+  draft: RequestDraft,
+  id?: string,
+  context?: VariableContext,
+): RequestEnvelope {
+  const hasContext = context && Object.keys(context).length > 0;
+  const plugin = isPluginDraft(draft);
+  return {
+    ...(id ? { id } : {}),
+    type: plugin ? (draft.requestType as string) : HTTP_REQUEST_TYPE,
+    payload: plugin ? (draft.pluginPayload ?? {}) : buildHttpPayload(draft),
+    ...(draft.auth.type !== 'none' ? { auth: draft.auth as AuthConfig } : {}),
     ...(hasContext ? { variableContext: context } : {}),
     options: draft.options,
   };
