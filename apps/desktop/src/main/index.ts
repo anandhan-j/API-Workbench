@@ -24,6 +24,7 @@ import {
   RequestTypeRegistry,
 } from './plugins';
 import { createUtilityProcessTransport } from './plugins/host-transport-electron';
+import { PREF_VERIFY_SSL } from '@shared/persistence';
 
 /**
  * Main process entry point.
@@ -80,7 +81,12 @@ function initServices(): Services {
   const nodeExecutors = new NodeExecutorRegistry(BUILTIN_NODE_EXECUTORS);
   const authProviders = new AuthProviderRegistry();
   const importers = new ImporterRegistry(builtinOpenApiImporters(), DEFAULT_IMPORTER_ID);
-  const transport = new FetchTransport();
+  // The transport reads the "verify TLS certificates" preference per request, so
+  // toggling it in Settings takes effect immediately for both the runner and
+  // workflow request nodes (which share this transport).
+  const transport = new FetchTransport(() =>
+    service.preferences.getOrDefault<boolean>(PREF_VERIFY_SSL, true),
+  );
   const requestTypes = new RequestTypeRegistry([createHttpProvider(transport)]);
 
   const auth = new AuthService(service, new SafeStorageEncryptor(), authProviders);

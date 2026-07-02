@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { ShieldAlert } from 'lucide-react';
+import { PREF_VERIFY_SSL } from '@shared/persistence';
 import type { ThemeMode } from '../stores/ui-store';
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, useUiStore } from '../stores/ui-store';
 import { invoke, isBridgeAvailable } from '../lib/ipc';
@@ -22,6 +24,24 @@ export function SettingsPage(): JSX.Element {
       .then((r) => setLogPath(r.path))
       .catch(() => undefined);
   }, []);
+
+  // Verify-TLS preference (default on). Persisted in the main process so both
+  // the request runner and workflow requests honour it.
+  const [verifySsl, setVerifySsl] = useState(true);
+  useEffect(() => {
+    if (!isBridgeAvailable()) return;
+    void invoke('preferences.get', { key: PREF_VERIFY_SSL })
+      .then((r) => setVerifySsl(r.value !== false))
+      .catch(() => undefined);
+  }, []);
+
+  const toggleVerifySsl = (next: boolean): void => {
+    setVerifySsl(next);
+    void invoke('preferences.set', { key: PREF_VERIFY_SSL, value: next }).catch(() => {
+      // Revert the optimistic toggle if the write fails.
+      setVerifySsl(!next);
+    });
+  };
 
   return (
     <div className="w-full p-8">
@@ -100,6 +120,32 @@ export function SettingsPage(): JSX.Element {
           <input type="checkbox" checked={monitorOpen} onChange={toggleMonitor} />
           Show dispatch monitor
         </label>
+      </section>
+
+      <section className="mt-4 rounded-lg border border-border bg-surface p-5">
+        <h2 className="text-sm font-semibold">Network security</h2>
+        <p className="mt-1 text-sm text-muted">
+          Validate TLS/SSL certificates when sending requests. Applies to the request runner and
+          workflow requests.
+        </p>
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={verifySsl}
+            onChange={(e) => toggleVerifySsl(e.target.checked)}
+          />
+          Verify SSL certificates
+        </label>
+        {!verifySsl && (
+          <p className="mt-3 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+            <ShieldAlert size={14} className="mt-0.5 shrink-0" />
+            <span>
+              Certificate verification is off. Requests will accept self-signed or invalid
+              certificates, which exposes them to man-in-the-middle attacks. Only use this on trusted
+              networks.
+            </span>
+          </p>
+        )}
       </section>
 
       <section className="mt-4 rounded-lg border border-border bg-surface p-5">
