@@ -1,6 +1,6 @@
 import { JSONPath } from 'jsonpath-plus';
 import { search as jmesSearch } from 'jmespath';
-import type { ExecutionResponse } from './execution';
+import { statusOf, type ProtocolResponse } from './protocol';
 import type { ExtractEngine, ExtractRule, TransformNodeConfig } from './workflow';
 
 /**
@@ -55,13 +55,18 @@ function headerValue(headers: Record<string, string>, name: string): string {
   return '';
 }
 
-/** Reads a single {@link ExtractRule} value out of an execution response. */
-export function extractFromResponse(response: ExecutionResponse, rule: ExtractRule): string {
+/**
+ * Reads a single {@link ExtractRule} value out of a protocol response.
+ * Protocol-agnostic sources: `status` reads the numeric status (HTTP status,
+ * or the summary code for other types), `header` reads the metadata map
+ * (HTTP: response headers), `body` applies the engine to the body text.
+ */
+export function extractFromResponse(response: ProtocolResponse, rule: ExtractRule): string {
   switch (rule.source) {
     case 'status':
-      return String(response.status);
+      return String(statusOf(response));
     case 'header':
-      return headerValue(response.headers, rule.expression);
+      return headerValue(response.metadata, rule.expression);
     case 'body':
       return applyEngine(rule.engine, response.body, rule.expression);
     default:
@@ -70,7 +75,7 @@ export function extractFromResponse(response: ExecutionResponse, rule: ExtractRu
 }
 
 /** Applies every rule, returning a variable map (last rule wins on key clash). */
-export function extractAll(response: ExecutionResponse, rules: ExtractRule[]): Record<string, string> {
+export function extractAll(response: ProtocolResponse, rules: ExtractRule[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (const rule of rules) out[rule.variable] = extractFromResponse(response, rule);
   return out;

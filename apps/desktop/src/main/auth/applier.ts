@@ -23,7 +23,10 @@ function empty(): AuthArtifacts {
 export function applyAuth(config: AuthConfig, ctx: ApplyContext): AuthArtifacts {
   const out = empty();
   switch (config.type) {
+    // `inherit` is resolved away before execution (see auth/inheritance.ts); if a
+    // stray one reaches here (e.g. a workflow node), treat it as no auth like `none`.
     case 'none':
+    case 'inherit':
       return out;
 
     case 'bearer':
@@ -57,6 +60,9 @@ export function applyAuth(config: AuthConfig, ctx: ApplyContext): AuthArtifacts 
       return out;
 
     case 'digest': {
+      if (!ctx.method) {
+        throw new AuthError('Digest authentication requires an HTTP request context');
+      }
       if (!ctx.digestChallenge) {
         throw new AuthError('Digest authentication requires a challenge from a prior 401 response');
       }
@@ -72,6 +78,9 @@ export function applyAuth(config: AuthConfig, ctx: ApplyContext): AuthArtifacts 
     }
 
     case 'awsSigv4': {
+      if (!ctx.method) {
+        throw new AuthError('AWS SigV4 signing requires an HTTP request context');
+      }
       const signed = signSigV4({
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,

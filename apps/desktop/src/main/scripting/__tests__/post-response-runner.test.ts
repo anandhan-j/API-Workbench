@@ -1,11 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import type { ExecutionResponse } from '@shared/execution';
+import { toProtocolResponse, type ProtocolResponse } from '@shared/protocol';
 import type { VariableContext, VariableScope } from '@shared/variable';
 import { runPostResponseScript, runPreRequestScript, type VariableBackend } from '../post-response-runner';
 
-function makeResponse(body: string, status = 200): ExecutionResponse {
-  return {
+function makeResponse(body: string, status = 200): ProtocolResponse {
+  return toProtocolResponse({
     ok: status < 400,
     status,
     statusText: 'OK',
@@ -17,7 +17,7 @@ function makeResponse(body: string, status = 200): ExecutionResponse {
     timings: { startedAt: 0, totalMs: 42 },
     redirects: [],
     retries: 0,
-  };
+  });
 }
 
 function makeBackend(seed: Record<string, string> = {}): VariableBackend & {

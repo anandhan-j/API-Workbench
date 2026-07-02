@@ -8,6 +8,12 @@ export {
 } from './workflow-engine';
 export { RunController } from './run-controller';
 export {
+  BUILTIN_NODE_EXECUTORS,
+  type BuiltinNodeExecutors,
+  type NodeExecutionEnv,
+  type NodeOutcome,
+} from './node-executors';
+export {
   validateGraph,
   indexGraph,
   findStart,

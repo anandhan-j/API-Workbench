@@ -7,7 +7,12 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/main/index.ts') },
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          // The plugin host runs as a utility process (ADR-0010): its own
+          // entry bundle, forked by the main process at runtime.
+          'plugin-host': resolve(__dirname, 'src/plugin-host/index.ts'),
+        },
       },
     },
     resolve: {

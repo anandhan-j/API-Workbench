@@ -1,19 +1,14 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import type { ExecutionResponse } from '@shared/execution';
-import type {
-  RequestNodeConfig,
-  WorkflowDetail,
-  WorkflowGraph,
-  WorkflowNode,
-} from '@shared/workflow';
+import { toProtocolResponse, type HttpPayload, type ProtocolResponse } from '@shared/protocol';
+import type { WorkflowDetail, WorkflowGraph, WorkflowNode } from '@shared/workflow';
 import { WorkflowEngine, type WorkflowEnginePorts, type RunContext } from '../workflow-engine';
 import { RunController } from '../run-controller';
 
 const pos = { x: 0, y: 0 };
 
-function okResponse(status = 200): ExecutionResponse {
-  return {
+function okResponse(status = 200): ProtocolResponse {
+  return toProtocolResponse({
     ok: status < 400,
     status,
     statusText: 'OK',
@@ -25,7 +20,7 @@ function okResponse(status = 200): ExecutionResponse {
     timings: { startedAt: 0, totalMs: 1 },
     redirects: [],
     retries: 0,
-  };
+  });
 }
 
 /** A deterministic clock that advances by one tick per read. */
@@ -90,19 +85,22 @@ const setVar = (id: string, key: string, value: string): WorkflowNode => ({
   position: pos,
   config: { key, value },
 });
-const request = (id: string, config?: Partial<RequestNodeConfig>): WorkflowNode => ({
+const request = (id: string, payload?: Partial<HttpPayload>): WorkflowNode => ({
   id,
   kind: 'request',
   name: `req ${id}`,
   position: pos,
   config: {
-    method: 'GET',
-    url: 'https://x',
-    headers: {},
-    query: {},
-    body: { type: 'none' },
+    type: 'http',
+    payload: {
+      method: 'GET',
+      url: 'https://x',
+      headers: {},
+      query: {},
+      body: { type: 'none' },
+      ...payload,
+    },
     extract: [],
-    ...config,
   },
 });
 
@@ -226,7 +224,7 @@ describe('WorkflowEngine', () => {
     const result = await new WorkflowEngine(makePorts({ executeRequest })).run(wf);
     expect(result.status).toBe('success');
     expect(result.nodeResults[1].status).toBe('success');
-    expect(result.nodeResults[1].response?.status).toBe(404);
+    expect(result.nodeResults[1].response?.protocol).toMatchObject({ status: 404 });
   });
 
   it('invokes the injected sleep for delay nodes', async () => {

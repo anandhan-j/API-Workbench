@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { HttpMethod } from './collection';
 import { AuthConfig } from './auth';
+import { VariableContext } from './variable';
+
+export { VariableContext };
 
 /**
  * Transport DTOs for the Request Execution Engine (Phase 10).
@@ -51,17 +54,7 @@ export const ExecutionRequest = z.object({
   /** A stored credential to apply (resolved/decrypted in the main process). */
   credentialId: z.string().optional(),
   options: ExecutionOptions.partial().optional(),
-  /** Variable scope context for resolving {{vars}} in fields. */
-  variableContext: z
-    .object({
-      workspaceId: z.string().optional(),
-      collectionId: z.string().optional(),
-      folderId: z.string().optional(),
-      requestId: z.string().optional(),
-      workflowId: z.string().optional(),
-      runtime: z.record(z.string()).optional(),
-    })
-    .optional(),
+  variableContext: VariableContext.optional(),
 });
 export type ExecutionRequest = z.infer<typeof ExecutionRequest>;
 

@@ -1,8 +1,8 @@
 # ADR-0007: Plugin SDK as a versioned, capability-constrained contract
 
-- **Status:** Accepted
+- **Status:** Accepted (isolation mechanism refined by ADR-0010; request-type model defined by ADR-0009)
 - **Date:** 2026-06-27
-- **Related:** ADR-0001, ADR-0003, ADR-0005
+- **Related:** ADR-0001, ADR-0003, ADR-0005, ADR-0009, ADR-0010
 
 ## Context
 

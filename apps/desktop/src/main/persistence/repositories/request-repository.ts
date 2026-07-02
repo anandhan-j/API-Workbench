@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, isNotNull, like, max, or } from 'drizzle-orm';
 import type { HttpMethod, RequestSummary } from '@shared/collection';
+import type { WireAuthConfig } from '@shared/auth';
 import type { RequestSource } from '@shared/sync';
 import { RequestDetails, type RequestDetailFull } from '@shared/request-details';
 import type { AppDatabase } from '../types';
@@ -14,6 +15,7 @@ function toDto(row: RequestRow): RequestSummary {
     collectionId: row.collectionId,
     folderId: row.folderId,
     name: row.name,
+    type: row.type,
     method: row.method as HttpMethod,
     url: row.url,
     favorite: row.favorite,
@@ -29,6 +31,7 @@ function toFull(row: RequestRow): RequestDetailFull {
     collectionId: row.collectionId,
     folderId: row.folderId,
     name: row.name,
+    type: row.type,
     method: row.method as HttpMethod,
     url: row.url,
     favorite: row.favorite,
@@ -40,6 +43,8 @@ export interface CreateRequestRow {
   collectionId: string;
   folderId?: string | null;
   name: string;
+  /** Request type (ADR-0009); defaults to 'http'. */
+  type?: string;
   method?: HttpMethod;
   url?: string;
   details?: RequestDetails | null;
@@ -87,6 +92,7 @@ export class RequestRepository {
       collectionId: input.collectionId,
       folderId: input.folderId ?? null,
       name: input.name,
+      type: input.type ?? 'http',
       method: input.method ?? 'GET',
       url: input.url ?? '',
       favorite: false,
@@ -121,10 +127,11 @@ export class RequestRepository {
   /** Persists an edited request: identity patch plus the full definition. */
   save(
     id: string,
-    input: { name?: string; method?: HttpMethod; url?: string; details: RequestDetails },
+    input: { name?: string; type?: string; method?: HttpMethod; url?: string; details: RequestDetails },
   ): RequestSummary {
     return this.patch(id, {
       ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.type !== undefined ? { type: input.type } : {}),
       ...(input.method !== undefined ? { method: input.method } : {}),
       ...(input.url !== undefined ? { url: input.url } : {}),
       details: input.details,
@@ -133,6 +140,22 @@ export class RequestRepository {
 
   listByCollection(collectionId: string): RequestSummary[] {
     return this.db.select().from(requests).where(eq(requests.collectionId, collectionId)).all().map(toDto);
+  }
+
+  listByFolder(folderId: string): RequestSummary[] {
+    return this.db.select().from(requests).where(eq(requests.folderId, folderId)).all().map(toDto);
+  }
+
+  /**
+   * Overwrites just the `auth` slice of a request's stored definition, leaving
+   * the rest of `details` intact. Used by the folder "apply to children" cascade
+   * to set requests to `{ type: 'inherit' }`.
+   */
+  setAuth(id: string, auth: WireAuthConfig): RequestSummary {
+    const row = this.db.select().from(requests).where(eq(requests.id, id)).get();
+    if (!row) throw new NotFoundError('Request', id);
+    const details = RequestDetails.parse(row.details ?? {});
+    return this.patch(id, { details: { ...details, auth } });
   }
 
   /** Spec-originated requests (source not null), with their baseline, for syncing. */
@@ -213,7 +236,7 @@ export class RequestRepository {
   private patch(
     id: string,
     patch: Partial<
-      Pick<RequestRow, 'name' | 'method' | 'url' | 'folderId' | 'favorite' | 'source' | 'details'>
+      Pick<RequestRow, 'name' | 'type' | 'method' | 'url' | 'folderId' | 'favorite' | 'source' | 'details'>
     >,
   ): RequestSummary {
     const row = this.db.select().from(requests).where(eq(requests.id, id)).get();
@@ -232,6 +255,7 @@ export class RequestRepository {
       collectionId: row.collectionId,
       folderId: targetFolderId === undefined ? row.folderId : targetFolderId,
       name: `${row.name} (copy)`,
+      type: row.type,
       method: row.method,
       url: row.url,
       favorite: false,

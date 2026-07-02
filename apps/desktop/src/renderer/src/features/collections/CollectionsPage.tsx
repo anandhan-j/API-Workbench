@@ -11,12 +11,16 @@ import { cn } from '../../lib/cn';
 import { RequestEditor } from '../runner/RequestEditor';
 import { RequestVariablesUsedPanel } from './RequestVariablesUsedPanel';
 import { detailToDraft, draftToDetails, type RequestDraft } from '../runner/build-request';
+import { HTTP_REQUEST_TYPE } from '@shared/protocol';
 import { Modal } from '../../components/menu/Modal';
 import { ImportPanel } from './ImportPanel';
 import { SyncPanel } from './SyncPanel';
 import { VersionsPanel } from './VersionsPanel';
+import { FolderAuthPanel } from './FolderAuthPanel';
 import { useConfirm } from '../../components/confirm/ConfirmProvider';
 import { useToast } from '../../components/toast/ToastProvider';
+import { qualifiedContributionId } from '@shared/plugins';
+import { usePluginContributions } from '../plugins/use-plugins';
 import { useImport } from './use-import';
 import { useSync } from './use-sync';
 import { useVersions, useVersionMutations } from './use-versions';
@@ -39,6 +43,11 @@ export function CollectionsPage(): JSX.Element {
   const mutations = useCollectionMutations(projectId);
   const importer = useImport(projectId);
   const syncer = useSync(projectId);
+  // Plugin importers for the import dialog's format select (empty → hidden).
+  const pluginImporters = usePluginContributions().importers.map((imp) => ({
+    id: qualifiedContributionId(imp.pluginId, imp.id),
+    label: imp.label,
+  }));
   const confirm = useConfirm();
   const toast = useToast();
 
@@ -51,6 +60,8 @@ export function CollectionsPage(): JSX.Element {
   const [selectedRequest, setSelectedRequest] = useState<
     (OpenedRequest & { collectionId: string }) | null
   >(null);
+  // A selected folder opens its authorization panel (mutually exclusive with a request).
+  const [selectedFolder, setSelectedFolder] = useState<{ id: string; name: string } | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [diff, setDiff] = useState<{ versionId: string; data: VersionDiff } | null>(null);
@@ -205,6 +216,7 @@ export function CollectionsPage(): JSX.Element {
             busy={importer.isPending}
             result={importer.data ?? null}
             error={importer.error instanceof Error ? importer.error.message : null}
+            importers={pluginImporters}
             onImport={(payload) => importer.mutate({ projectId, ...payload })}
           />
         </Modal>
@@ -265,11 +277,18 @@ export function CollectionsPage(): JSX.Element {
                 collection={c}
                 searchNodes={searchNodes}
                 selectedRequestId={selectedRequest?.id ?? null}
+                selectedFolderId={selectedFolder?.id ?? null}
                 onOpenRequest={(req, colId) => {
                   setCollectionId(colId);
+                  setSelectedFolder(null);
                   setSelectedRequest({ ...req, collectionId: colId });
                   setEditingName(false);
                   mutations.openRequest.mutate(req.id);
+                }}
+                onOpenFolder={(id, name) => {
+                  setCollectionId(c.id);
+                  setSelectedRequest(null);
+                  setSelectedFolder({ id, name });
                 }}
                 onToggleFavorite={(id) => mutations.toggleFavorite.mutate(id)}
                 onAddRequest={(colId) =>
@@ -305,6 +324,7 @@ export function CollectionsPage(): JSX.Element {
                     })
                   ) {
                     mutations.deleteFolder.mutate(id);
+                    if (selectedFolder?.id === id) setSelectedFolder(null);
                   }
                 }}
                 onDeleteRequest={async (id, name) => {
@@ -413,6 +433,7 @@ export function CollectionsPage(): JSX.Element {
                         .mutateAsync({
                           id: selectedRequest.id,
                           name: selectedRequest.name,
+                          type: draft.requestType ?? HTTP_REQUEST_TYPE,
                           method: draft.method,
                           url: draft.url,
                           details: draftToDetails(draft),
@@ -438,6 +459,13 @@ export function CollectionsPage(): JSX.Element {
                 onToggle={() => setVarsPanelCollapsed((v) => !v)}
               />
             </div>
+          ) : selectedFolder ? (
+            <FolderAuthPanel
+              key={selectedFolder.id}
+              folderId={selectedFolder.id}
+              name={selectedFolder.name}
+              onClose={() => setSelectedFolder(null)}
+            />
           ) : collectionId ? (
             <>
               <div className="flex items-center justify-end gap-2">

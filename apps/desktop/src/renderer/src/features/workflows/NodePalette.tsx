@@ -1,6 +1,9 @@
 import { Box, Boxes, type LucideIcon } from 'lucide-react';
 import type { WorkflowNodeKind } from '@shared/workflow';
-import { NODE_META, PALETTE_KINDS } from './node-meta';
+import { qualifiedContributionId } from '@shared/plugins';
+import { pluginIconFor } from '../../components/plugin-icon';
+import { usePluginContributions } from '../plugins/use-plugins';
+import { NODE_META, PALETTE_KINDS, type PluginNodeContribution } from './node-meta';
 
 /**
  * The draggable node palette. Dragging a chip onto the canvas adds a node of
@@ -32,6 +35,7 @@ export function NodePalette({
   canUngroup = false,
 }: NodePaletteProps = {}): JSX.Element {
   const showGrouping = Boolean(onGroup || onUngroup);
+  const contributions = usePluginContributions();
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
       <div className="flex flex-col gap-1.5">
@@ -40,6 +44,22 @@ export function NodePalette({
         ))}
       </div>
       <p className="mt-1 px-1 text-[11px] text-muted">Drag onto the canvas, then connect.</p>
+
+      {contributions.nodes.length > 0 && (
+        <>
+          <p className="mt-3 px-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
+            Plugins
+          </p>
+          <div className="mt-1.5 flex flex-col gap-1.5">
+            {contributions.nodes.map((node) => (
+              <PluginPaletteItem
+                key={qualifiedContributionId(node.pluginId, node.kind)}
+                node={node}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       {showGrouping && (
         <>
@@ -88,6 +108,28 @@ function PaletteItem({ kind }: { kind: WorkflowNodeKind }): JSX.Element {
         <Icon size={14} />
       </span>
       <span className="truncate">{meta.label}</span>
+    </div>
+  );
+}
+
+/** A plugin-contributed node chip; drags its fully-qualified kind. */
+function PluginPaletteItem({ node }: { node: PluginNodeContribution }): JSX.Element {
+  const qualified = qualifiedContributionId(node.pluginId, node.kind);
+  const Icon = pluginIconFor(node.icon);
+  return (
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(DND_MIME, qualified);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      title={node.description ?? `From ${node.pluginName}`}
+      className="flex cursor-grab items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm hover:bg-surface-2 active:cursor-grabbing"
+    >
+      <span className="flex h-6 w-6 items-center justify-center rounded bg-slate-500/15 text-slate-300">
+        <Icon size={14} />
+      </span>
+      <span className="truncate">{node.label}</span>
     </div>
   );
 }

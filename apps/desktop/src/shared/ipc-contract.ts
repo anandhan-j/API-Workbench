@@ -23,8 +23,9 @@ import {
 import { RequestDetailFull, SaveRequestInput } from './request-details';
 import { ImportRequest, ImportResult } from './openapi';
 import { SyncRequest, SyncResult } from './sync';
-import { CredentialMeta, SaveCredentialInput } from './auth';
-import { ExecutionRequest, ExecutionResponse } from './execution';
+import { CredentialMeta, SaveCredentialInput, WireAuthConfig } from './auth';
+import { RequestEnvelope, ProtocolResponse } from './protocol';
+import { Capability, InstalledPlugin, PluginContributionIndex, PluginInspection } from './plugins';
 import { RunTestsRequest, TestReport } from './testing';
 import { ScriptRunRequest, ScriptRunResult, PreScriptRunRequest } from './scripting';
 import { CollectionVersion, VersionDiff, VersionSnapshot, RestoreResult } from './version';
@@ -147,11 +148,22 @@ export const IpcChannels = {
 
   // --- Folders ---
   'folder.create': { request: CreateFolderInput, response: Folder },
+  'folder.get': { request: IdOnly, response: Folder },
   'folder.rename': {
     request: z.object({ id: z.string(), name: z.string().min(1) }),
     response: Folder,
   },
   'folder.move': { request: z.object({ id: z.string(), parentId: NullableId }), response: Folder },
+  /** Sets a folder's own authorization config (null = inherit from parent). */
+  'folder.updateAuth': {
+    request: z.object({ id: z.string(), auth: WireAuthConfig.nullable() }),
+    response: Folder,
+  },
+  /** Sets every descendant folder and request to "inherit from parent". */
+  'folder.applyAuthToChildren': {
+    request: IdOnly,
+    response: z.object({ folders: z.number(), requests: z.number() }),
+  },
   'folder.delete': { request: IdOnly, response: Empty },
 
   // --- Requests ---
@@ -221,8 +233,8 @@ export const IpcChannels = {
 
   // --- Request execution (Phase 10) ---
   'request.execute': {
-    request: z.object({ request: ExecutionRequest }),
-    response: ExecutionResponse,
+    request: z.object({ request: RequestEnvelope }),
+    response: ProtocolResponse,
   },
   'request.cancel': { request: z.object({ id: z.string() }), response: z.object({}).strict() },
 
@@ -306,16 +318,38 @@ export const IpcChannels = {
   'backup.create': { request: Empty, response: BackupInfo },
   'backup.list': { request: Empty, response: z.array(BackupInfo) },
   'backup.restore': { request: IdOnly, response: BackupInfo },
+
+  // --- Plugins (Phase 16, ADR-0007) ---
+  'plugins.list': { request: Empty, response: z.object({ plugins: z.array(InstalledPlugin) }) },
+  'plugins.inspect': { request: z.object({ path: z.string() }), response: PluginInspection },
+  'plugins.install': {
+    request: z.object({ path: z.string(), grantedCapabilities: z.array(Capability).default([]) }),
+    response: InstalledPlugin,
+  },
+  'plugins.installDev': {
+    request: z.object({ path: z.string(), grantedCapabilities: z.array(Capability).default([]) }),
+    response: InstalledPlugin,
+  },
+  'plugins.uninstall': { request: IdOnly, response: Empty },
+  'plugins.setEnabled': {
+    request: z.object({ id: z.string(), enabled: z.boolean() }),
+    response: InstalledPlugin,
+  },
+  'plugins.contributions': { request: Empty, response: PluginContributionIndex },
 } as const;
 
 export type IpcChannelName = keyof typeof IpcChannels;
 export type IpcRequest<C extends IpcChannelName> = z.infer<(typeof IpcChannels)[C]['request']>;
 export type IpcResponse<C extends IpcChannelName> = z.infer<(typeof IpcChannels)[C]['response']>;
 
+export const PluginsChangedEvent = z.object({ reason: z.string() });
+export type PluginsChangedEvent = z.infer<typeof PluginsChangedEvent>;
+
 export const IpcEvents = {
   'dispatch.event': DispatchEvent,
   'workflow.awaitingInput': WorkflowInputRequest,
   'workflow.nodeProgress': WorkflowProgressEvent,
+  'plugins.changed': PluginsChangedEvent,
 } as const;
 
 export type IpcEventName = keyof typeof IpcEvents;
@@ -329,4 +363,5 @@ export interface WorkbenchApi {
   onDispatchEvent(listener: (event: DispatchEvent) => void): () => void;
   onWorkflowAwaitingInput(listener: (event: WorkflowInputRequest) => void): () => void;
   onWorkflowNodeProgress(listener: (event: WorkflowProgressEvent) => void): () => void;
+  onPluginsChanged(listener: (event: PluginsChangedEvent) => void): () => void;
 }

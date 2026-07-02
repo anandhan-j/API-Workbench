@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { RequestDetailFull } from '@shared/request-details';
 import {
   applyParamsToUrl,
-  buildExecutionRequest,
+  buildHttpPayload,
+  buildRequestEnvelope,
   defaultDraft,
   detailToDraft,
   draftToDetails,
@@ -20,9 +21,9 @@ function draftWith(over: Partial<RequestDraft>): RequestDraft {
   return { ...defaultDraft('POST', 'https://api.test/x'), ...over };
 }
 
-describe('buildExecutionRequest', () => {
-  it('collects enabled params and headers, ignoring blank/disabled rows', () => {
-    const req = buildExecutionRequest(
+describe('buildRequestEnvelope', () => {
+  it('collects enabled params and headers into the payload, ignoring blank/disabled rows', () => {
+    const payload = buildHttpPayload(
       draftWith({
         params: [
           { id: '1', key: 'q', value: '1', enabled: true },
@@ -32,17 +33,23 @@ describe('buildExecutionRequest', () => {
         headers: [{ id: 'h', key: 'X-Test', value: 'yes', enabled: true }, newRow()],
       }),
     );
-    expect(req.query).toEqual({ q: '1' });
-    expect(req.headers).toEqual({ 'X-Test': 'yes' });
+    expect(payload.query).toEqual({ q: '1' });
+    expect(payload.headers).toEqual({ 'X-Test': 'yes' });
+  });
+
+  it('builds an http envelope with the payload nested', () => {
+    const req = buildRequestEnvelope(draftWith({}));
+    expect(req.type).toBe('http');
+    expect(req.payload).toEqual(buildHttpPayload(draftWith({})));
   });
 
   it('builds a JSON raw body', () => {
-    const req = buildExecutionRequest(draftWith({ bodyMode: 'raw', rawType: 'json', rawBody: '{"a":1}' }));
-    expect(req.body).toEqual({ type: 'json', content: '{"a":1}' });
+    const payload = buildHttpPayload(draftWith({ bodyMode: 'raw', rawType: 'json', rawBody: '{"a":1}' }));
+    expect(payload.body).toEqual({ type: 'json', content: '{"a":1}' });
   });
 
   it('builds text/xml raw bodies with content types', () => {
-    expect(buildExecutionRequest(draftWith({ bodyMode: 'raw', rawType: 'xml', rawBody: '<x/>' })).body).toEqual({
+    expect(buildHttpPayload(draftWith({ bodyMode: 'raw', rawType: 'xml', rawBody: '<x/>' })).body).toEqual({
       type: 'text',
       content: '<x/>',
       contentType: 'application/xml',
@@ -54,24 +61,24 @@ describe('buildExecutionRequest', () => {
       { id: '1', key: 'a', value: '1', enabled: true },
       { id: '2', key: 'b', value: '2', enabled: false },
     ];
-    expect(buildExecutionRequest(draftWith({ bodyMode: 'urlencoded', formFields: fields })).body).toEqual({
+    expect(buildHttpPayload(draftWith({ bodyMode: 'urlencoded', formFields: fields })).body).toEqual({
       type: 'form',
       fields: [{ name: 'a', value: '1' }],
     });
-    expect(buildExecutionRequest(draftWith({ bodyMode: 'formdata', formFields: fields })).body).toEqual({
+    expect(buildHttpPayload(draftWith({ bodyMode: 'formdata', formFields: fields })).body).toEqual({
       type: 'multipart',
       fields: [{ name: 'a', value: '1' }],
     });
   });
 
   it('omits auth when type is none and includes it otherwise', () => {
-    expect(buildExecutionRequest(draftWith({})).auth).toBeUndefined();
-    const withAuth = buildExecutionRequest(draftWith({ auth: { type: 'bearer', token: 't' } }));
+    expect(buildRequestEnvelope(draftWith({})).auth).toBeUndefined();
+    const withAuth = buildRequestEnvelope(draftWith({ auth: { type: 'bearer', token: 't' } }));
     expect(withAuth.auth).toEqual({ type: 'bearer', token: 't' });
   });
 
-  it('passes execution options and an optional id', () => {
-    const req = buildExecutionRequest(draftWith({ options: { timeoutMs: 5000, maxRetries: 2, followRedirects: false } }), 'exec-1');
+  it('passes execution options and an optional id at the envelope level', () => {
+    const req = buildRequestEnvelope(draftWith({ options: { timeoutMs: 5000, maxRetries: 2, followRedirects: false } }), 'exec-1');
     expect(req.id).toBe('exec-1');
     expect(req.options).toEqual({ timeoutMs: 5000, maxRetries: 2, followRedirects: false });
   });
@@ -82,6 +89,7 @@ const detail: RequestDetailFull = {
   collectionId: 'c1',
   folderId: null,
   name: 'Create pet',
+  type: 'http',
   method: 'POST',
   url: 'https://api.test/pets',
   favorite: false,
@@ -98,7 +106,7 @@ const detail: RequestDetailFull = {
 
 describe('form-data file fields', () => {
   it('maps a file row to a multipart file part', () => {
-    const body = buildExecutionRequest(
+    const body = buildHttpPayload(
       draftWith({
         bodyMode: 'formdata',
         formFields: [

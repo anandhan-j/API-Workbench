@@ -11,10 +11,11 @@ import type { CollectionExplorer } from '../collections';
 import type { ImportService, SyncService } from '../openapi';
 import type { VersioningService } from '../versioning';
 import type { VariableService } from '../variables';
-import type { AuthService } from '../auth';
+import { type AuthService, resolveInheritedAuth, type InheritanceLookups } from '../auth';
 import type { ExecutionService } from '../execution';
 import type { TestRunner } from '../testing';
 import { type WorkflowService, RunController } from '../workflows';
+import type { PluginService } from '../plugins';
 import { runPostResponseScript, runPreRequestScript } from '../scripting';
 
 /**
@@ -37,6 +38,7 @@ export interface IpcContext {
   execution: ExecutionService;
   testRunner: TestRunner;
   workflows: WorkflowService;
+  plugins: PluginService;
 }
 
 /** Extra, non-service dependencies the IPC layer needs. */
@@ -60,6 +62,11 @@ const pendingInputs = new Map<string, (result: WorkflowInputResult) => void>();
 function sendToRenderer(channel: string, payload: unknown): void {
   const window = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
   window?.webContents.send(channel, payload);
+}
+
+/** Pushes a `plugins.changed` event so renderer queries refetch (Phase 16). */
+export function notifyPluginsChanged(reason: string): void {
+  sendToRenderer('plugins.changed', { reason });
 }
 
 /**
@@ -106,6 +113,7 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     execution,
     testRunner,
     workflows,
+    plugins,
   } = context;
   const { logFilePath } = options;
 
@@ -121,6 +129,16 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
       for (const [key, resolved] of variables.resolve(ctx)) map.set(key, { value: resolved.value });
       return map;
     },
+  };
+
+  // Folder/request lookups the inheritance resolver walks to turn an `inherit`
+  // request auth into the effective config from its parent folder chain (ADR-0009).
+  const inheritanceLookups: InheritanceLookups = {
+    folder: (id) => {
+      const f = persistence.folders.findById(id);
+      return f ? { parentId: f.parentId, auth: f.auth } : undefined;
+    },
+    requestFolderId: (id) => persistence.requests.findById(id)?.folderId,
   };
 
   const handlers: { [C in IpcChannelName]: Handler<C> } = {
@@ -189,8 +207,11 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     'collection.source': (request) => collections.getSource(request.collectionId),
 
     'folder.create': (request) => collections.createFolder(request),
+    'folder.get': (request) => collections.getFolder(request.id),
     'folder.rename': (request) => collections.renameFolder(request.id, request.name),
     'folder.move': (request) => collections.moveFolder(request.id, request.parentId),
+    'folder.updateAuth': (request) => collections.updateFolderAuth(request.id, request.auth),
+    'folder.applyAuthToChildren': (request) => collections.applyAuthToChildren(request.id),
     'folder.delete': (request) => {
       collections.deleteFolder(request.id);
       return {};
@@ -279,9 +300,24 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     },
 
     'request.execute': async (payload) => {
+      // Stored credentials are resolved inside the execution dispatcher via the
+      // AuthService port (ADR-0009), so the envelope passes through as-is.
       let req = payload.request;
-      if (req.credentialId && !req.auth) {
-        req = { ...req, auth: auth.getConfig(req.credentialId) };
+      // Folder-auth inheritance: an `inherit` request takes its effective auth
+      // from the nearest ancestor folder. Resolve it here (main owns the folder
+      // chain) before the envelope reaches execution; a `none` result drops auth.
+      if (req.auth?.type === 'inherit') {
+        const resolved = resolveInheritedAuth(
+          {
+            ...(req.variableContext?.requestId ? { requestId: req.variableContext.requestId } : {}),
+            ...(req.variableContext?.folderId !== undefined
+              ? { folderId: req.variableContext.folderId }
+              : {}),
+          },
+          inheritanceLookups,
+        );
+        const { auth: _inherit, ...rest } = req;
+        req = resolved.type === 'none' ? rest : { ...rest, auth: resolved };
       }
       const id = req.id;
       const controller = id ? new AbortController() : undefined;
@@ -406,6 +442,30 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
       return {};
     },
     'preferences.list': () => persistence.preferences.list(),
+
+    'plugins.list': () => ({ plugins: plugins.list() }),
+    'plugins.inspect': (request) => plugins.inspect(request.path),
+    'plugins.install': async (request) => {
+      const installed = await plugins.install(request.path, request.grantedCapabilities);
+      notifyPluginsChanged('installed');
+      return installed;
+    },
+    'plugins.installDev': async (request) => {
+      const installed = await plugins.installDev(request.path, request.grantedCapabilities);
+      notifyPluginsChanged('installed');
+      return installed;
+    },
+    'plugins.uninstall': async (request) => {
+      await plugins.uninstall(request.id);
+      notifyPluginsChanged('uninstalled');
+      return {};
+    },
+    'plugins.setEnabled': async (request) => {
+      const updated = await plugins.setEnabled(request.id, request.enabled);
+      notifyPluginsChanged(request.enabled ? 'enabled' : 'disabled');
+      return updated;
+    },
+    'plugins.contributions': () => plugins.contributions(),
 
     'backup.create': () => persistence.createBackup(),
     'backup.list': () => persistence.listBackups(),

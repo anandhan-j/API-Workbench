@@ -72,7 +72,7 @@ Sequential and parallel execution, conditions, loops, switch, retry, timeout, er
 
 JSONPath, JMESPath, regex extraction, transform expressions, visual mapping, an expression editor, and data preview. **Acceptance:** users can map outputs to subsequent requests visually.
 
-### Phase 16 — Plugin SDK · *Planned*
+### Phase 16 — Plugin SDK · *Done*
 
 Plugin loader, extension API, and support for custom nodes, custom request types, custom authentication providers, and custom importers, with a marketplace-ready architecture. **Acceptance:** third-party plugins can be added without modifying the core.
 

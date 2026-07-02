@@ -1,5 +1,5 @@
 import vm from 'node:vm';
-import type { ExecutionResponse } from '@shared/execution';
+import type { HttpView } from '@shared/protocol';
 import { tryParseJson } from './assertions';
 
 /**
@@ -10,7 +10,7 @@ import { tryParseJson } from './assertions';
  */
 export function runScript(
   code: string,
-  response: ExecutionResponse,
+  response: HttpView,
 ): { passed: boolean; message: string } {
   const sandbox = {
     response: {

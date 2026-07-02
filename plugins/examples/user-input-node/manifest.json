@@ -1,0 +1,42 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.user-input-node",
+  "name": "User Input Node",
+  "version": "1.0.0",
+  "description": "Adds a workflow node that pauses the run and prompts the user for values — the same native popup as the built-in User input node — then runs plugin code over the collected values.",
+  "publisher": "API Workbench examples",
+  "license": "MIT",
+  "main": "dist/index.cjs",
+  "engines": { "sdk": "^1.0.0" },
+  "capabilities": [],
+  "contributes": {
+    "nodes": [
+      {
+        "kind": "user-input",
+        "label": "User Input",
+        "description": "Pauses the run, prompts the user for name and email, and writes them to runtime variables.",
+        "icon": "message-square",
+        "category": "Data",
+        "configSchema": {
+          "fields": [
+            {
+              "kind": "boolean",
+              "key": "trim",
+              "label": "Trim whitespace",
+              "description": "Strip leading/trailing whitespace from the submitted values.",
+              "default": true
+            }
+          ]
+        },
+        "input": {
+          "message": "Enter the details for this run",
+          "fields": [
+            { "variable": "userName", "label": "Your name", "default": "" },
+            { "variable": "userEmail", "label": "Email address", "default": "" },
+            { "variable": "apiToken", "label": "API token", "secret": true, "default": "" }
+          ]
+        }
+      }
+    ]
+  }
+}

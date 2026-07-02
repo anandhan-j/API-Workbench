@@ -19,5 +19,24 @@ module.exports = {
     '@typescript-eslint/explicit-function-return-type': 'off',
     '@typescript-eslint/no-explicit-any': 'warn',
   },
+  overrides: [
+    {
+      // The plugin host bundle runs unprivileged in a utility process
+      // (ADR-0010). It must never reach into the privileged main process or
+      // Electron — only @shared contracts and the public SDK types.
+      files: ['src/plugin-host/**/*.ts'],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              { group: ['@main/*', '**/main/*', '../main/*'], message: 'The plugin host must not import main-process code (ADR-0010).' },
+              { group: ['electron'], message: 'The plugin host must not import electron (ADR-0010).' },
+            ],
+          },
+        ],
+      },
+    },
+  ],
   ignorePatterns: ['out/', 'dist/', 'node_modules/', 'coverage/', '*.config.js', '*.config.ts'],
 };

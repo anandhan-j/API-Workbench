@@ -62,6 +62,8 @@ import {
   useRunControls,
 } from './use-workflows';
 import { useProjectRequests } from './use-project-requests';
+import { usePluginContributions } from '../plugins/use-plugins';
+import { setPluginNodeMeta } from './node-meta';
 import { requestDetailToNodeConfig } from './request-import';
 import { WorkflowCanvas, type FlowNode } from './WorkflowCanvas';
 import type { NodeDisplayStatus } from './graph-mapping';
@@ -164,6 +166,15 @@ export function WorkflowsPage(): JSX.Element {
   const run = useRunWorkflow();
   const controls = useRunControls();
   const projectRequests = useProjectRequests(projectId);
+
+  // Keep the node-meta registry in step with plugin node contributions so the
+  // palette, canvas drop handler, node renderer, and inspector all resolve
+  // plugin kinds (label/icon/default config) through getNodeMeta.
+  const pluginContributions = usePluginContributions();
+  useEffect(() => {
+    setPluginNodeMeta(pluginContributions.nodes);
+  }, [pluginContributions.nodes]);
+
   const [paused, setPaused] = useState(false);
   const confirm = useConfirm();
   const toast = useToast();

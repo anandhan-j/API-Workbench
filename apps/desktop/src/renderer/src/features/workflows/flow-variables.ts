@@ -1,4 +1,5 @@
 import type { WorkflowGraph, WorkflowNode } from '@shared/workflow';
+import { getPluginNodeContribution } from './node-meta';
 
 /**
  * A runtime variable produced by an upstream workflow step, available to nodes
@@ -56,8 +57,29 @@ export function variablesProducedBy(
       if (!id || !subWorkflowVars) return [];
       return subWorkflowVars(id).map((key) => ({ key, field: 'sub-workflow' }));
     }
-    default:
-      return [];
+    default: {
+      // Plugin node (`plugin:<id>/<kind>`): surface the variables it declares —
+      // prompted `input` fields plus any `producesVariables` (named literally or
+      // by a config field's value, e.g. the uuid node's "variable"). Variables
+      // the executor writes without declaring them can't be known statically.
+      const contribution = getPluginNodeContribution(node.kind);
+      if (!contribution) return [];
+      const config = (node.config ?? {}) as Record<string, unknown>;
+      const out: { key: string; field: string }[] = [];
+      const push = (key: string | undefined, field: string): void => {
+        const trimmed = key?.trim();
+        if (trimmed) out.push({ key: trimmed, field });
+      };
+      for (const f of contribution.input?.fields ?? []) push(f.variable, 'input');
+      for (const p of contribution.producesVariables ?? []) {
+        if (p.source === 'literal') push(p.name, 'output');
+        else {
+          const value = config[p.key];
+          push(typeof value === 'string' ? value : undefined, 'output');
+        }
+      }
+      return out;
+    }
   }
 }
 

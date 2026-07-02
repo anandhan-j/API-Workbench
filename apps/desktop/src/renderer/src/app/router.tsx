@@ -8,6 +8,7 @@ import { CollectionsPage } from '../features/collections/CollectionsPage';
 import { VariablesPage } from '../features/variables/VariablesPage';
 import { RequestRunnerPage } from '../features/runner/RequestRunnerPage';
 import { WorkflowsPage } from '../features/workflows/WorkflowsPage';
+import { PluginsPage } from '../features/plugins/PluginsPage';
 
 /**
  * Hash routing is used because the renderer is loaded from a file:// URL in
@@ -25,6 +26,7 @@ export const router = createHashRouter([
       { path: 'runner', element: <RequestRunnerPage /> },
       { path: 'workflows', element: <WorkflowsPage /> },
       { path: 'dispatch', element: <DispatchPage /> },
+      { path: 'plugins', element: <PluginsPage /> },
       { path: 'settings', element: <SettingsPage /> },
     ],
   },

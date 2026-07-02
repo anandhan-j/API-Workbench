@@ -7,18 +7,19 @@ import {
   Loader2,
   XCircle,
 } from 'lucide-react';
-import type { ExecutionResponse } from '@shared/execution';
-import type { NodeRunResult, WorkflowNodeKind, WorkflowRunResult } from '@shared/workflow';
+import type { ProtocolResponse } from '@shared/protocol';
+import type { NodeRunResult, WorkflowRunResult } from '@shared/workflow';
 import { cn } from '../../lib/cn';
 import { formatBytes } from '../../lib/pick-file';
 import { Modal } from '../../components/menu/Modal';
 import { ResponseViewer } from '../runner/ResponseViewer';
-import { NODE_META } from './node-meta';
+import { getNodeMeta } from './node-meta';
 
 /** The stage currently executing (shown with a spinner while a run is live). */
 export interface RunningNode {
   nodeId: string;
-  kind: WorkflowNodeKind;
+  /** Built-in node kind or a plugin kind (`plugin:...`). */
+  kind: string;
   name: string;
 }
 
@@ -64,7 +65,7 @@ export function RunPanel({
   onSelectHistory,
 }: RunPanelProps): JSX.Element {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [modalResponse, setModalResponse] = useState<ExecutionResponse | null>(null);
+  const [modalResponse, setModalResponse] = useState<ProtocolResponse | null>(null);
   const rowRefs = useRef<Map<string, HTMLLIElement>>(new Map());
 
   // While running, drive the list from the live stream; otherwise the final run.
@@ -225,10 +226,10 @@ function NodeRow({
   node: NodeRunResult;
   expanded: boolean;
   onActivate: () => void;
-  onOpenResponse: (response: ExecutionResponse) => void;
+  onOpenResponse: (response: ProtocolResponse) => void;
   registerRef: (el: HTMLLIElement | null) => void;
 }): JSX.Element {
-  const meta = NODE_META[node.kind];
+  const meta = getNodeMeta(node.kind);
   const failed = node.status === 'failed';
   return (
     <li
@@ -272,10 +273,10 @@ function StageDetails({
   onOpenResponse,
 }: {
   node: NodeRunResult;
-  onOpenResponse: (response: ExecutionResponse) => void;
+  onOpenResponse: (response: ProtocolResponse) => void;
 }): JSX.Element {
   const vars = node.variablesSet ? Object.entries(node.variablesSet) : [];
-  const meta = NODE_META[node.kind];
+  const meta = getNodeMeta(node.kind);
   return (
     <div className="flex flex-col gap-2 px-2 pb-2 pl-7 text-xs">
       <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
@@ -326,11 +327,11 @@ function ResponseSection({
   response,
   onOpen,
 }: {
-  response: ExecutionResponse;
+  response: ProtocolResponse;
   onOpen: () => void;
 }): JSX.Element {
   const [showHeaders, setShowHeaders] = useState(false);
-  const headers = Object.entries(response.headers);
+  const headers = Object.entries(response.metadata);
   const isBinary = response.bodyKind === 'binary';
   const body = response.prettyBody ?? response.body;
   return (
@@ -342,7 +343,7 @@ function ResponseSection({
             response.ok ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400',
           )}
         >
-          {response.status} {response.statusText}
+          {response.summary.label}
         </span>
         <span className="truncate text-[11px] text-muted">
           {response.timings.totalMs} ms · {formatBytes(response.sizeBytes)}
@@ -397,7 +398,7 @@ function ResponseSection({
 }
 
 function RunningRow({ node }: { node: RunningNode }): JSX.Element {
-  const meta = NODE_META[node.kind];
+  const meta = getNodeMeta(node.kind);
   return (
     <li className="flex items-center gap-2 rounded-md bg-accent/10 px-2 py-1">
       <Loader2 size={15} className="shrink-0 animate-spin text-accent" />

@@ -1,11 +1,12 @@
 import type { RequestDetailFull } from '@shared/request-details';
+import { HTTP_REQUEST_TYPE } from '@shared/protocol';
 import type { ExtractRule, RequestNodeConfig } from '@shared/workflow';
-import { buildExecutionRequest, detailToDraft } from '../runner/build-request';
+import { buildRequestEnvelope, detailToDraft } from '../runner/build-request';
 
 /**
  * Maps a collection request's full definition into a workflow request-node config
  * (Phase: link workflows to collections). It reuses the runner's exact
- * draft → ExecutionRequest conversion so a node imported from a collection
+ * draft → RequestEnvelope conversion so a node imported from a collection
  * behaves identically to running that request in the runner: same method, URL,
  * headers, query params, body, auth, and options.
  *
@@ -17,15 +18,12 @@ export function requestDetailToNodeConfig(
   detail: RequestDetailFull,
   extract: ExtractRule[] = [],
 ): RequestNodeConfig {
-  const exec = buildExecutionRequest(detailToDraft(detail));
+  const envelope = buildRequestEnvelope(detailToDraft(detail));
   return {
-    method: exec.method,
-    url: exec.url,
-    headers: exec.headers ?? {},
-    query: exec.query ?? {},
-    body: exec.body ?? { type: 'none' },
-    ...(exec.auth ? { auth: exec.auth } : {}),
-    ...(exec.options ? { options: exec.options } : {}),
+    type: HTTP_REQUEST_TYPE,
+    payload: envelope.payload,
+    ...(envelope.auth ? { auth: envelope.auth } : {}),
+    ...(envelope.options ? { options: envelope.options } : {}),
     extract,
     requestId: detail.id,
   };
