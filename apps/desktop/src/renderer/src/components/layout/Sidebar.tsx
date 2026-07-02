@@ -16,7 +16,6 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/variables', label: 'Variables', icon: Braces },
   { to: '/runner', label: 'Run', icon: Send },
   { to: '/workflows', label: 'Workflows', icon: Workflow },
-  { to: '/dispatch', label: 'Dispatch Monitor', icon: Activity },
   { to: '/plugins', label: 'Plugins', icon: Puzzle },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];

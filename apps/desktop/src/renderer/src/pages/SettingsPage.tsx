@@ -47,8 +47,12 @@ export function SettingsPage(): JSX.Element {
     <div className="w-full p-8">
       <h1 className="text-2xl font-semibold">Settings</h1>
 
-      <section className="mt-6 rounded-lg border border-border bg-surface p-5">
-        <h2 className="text-sm font-semibold">Appearance</h2>
+      <h2 className="mt-6 px-1 text-xs font-semibold uppercase tracking-wide text-muted">
+        Appearance
+      </h2>
+
+      <section className="mt-3 rounded-lg border border-border bg-surface p-5">
+        <h3 className="text-sm font-semibold">Theme</h3>
         <p className="mt-1 text-sm text-muted">Choose the application theme.</p>
         <div className="mt-3 flex gap-2">
           {THEMES.map((mode) => (
@@ -69,7 +73,7 @@ export function SettingsPage(): JSX.Element {
       </section>
 
       <section className="mt-4 rounded-lg border border-border bg-surface p-5">
-        <h2 className="text-sm font-semibold">Font size</h2>
+        <h3 className="text-sm font-semibold">Font size</h3>
         <p className="mt-1 text-sm text-muted">Adjust the interface text size.</p>
         <div className="mt-3 flex items-center gap-2">
           <button
@@ -111,8 +115,12 @@ export function SettingsPage(): JSX.Element {
         </div>
       </section>
 
-      <section className="mt-4 rounded-lg border border-border bg-surface p-5">
-        <h2 className="text-sm font-semibold">Dispatch monitor</h2>
+      <h2 className="mt-8 px-1 text-xs font-semibold uppercase tracking-wide text-muted">
+        General
+      </h2>
+
+      <section className="mt-3 rounded-lg border border-border bg-surface p-5">
+        <h3 className="text-sm font-semibold">Dispatch monitor</h3>
         <p className="mt-1 text-sm text-muted">
           Show the live event/log panel at the bottom of the window.
         </p>
@@ -123,7 +131,7 @@ export function SettingsPage(): JSX.Element {
       </section>
 
       <section className="mt-4 rounded-lg border border-border bg-surface p-5">
-        <h2 className="text-sm font-semibold">Network security</h2>
+        <h3 className="text-sm font-semibold">Network security</h3>
         <p className="mt-1 text-sm text-muted">
           Validate TLS/SSL certificates when sending requests. Applies to the request runner and
           workflow requests.
@@ -149,7 +157,7 @@ export function SettingsPage(): JSX.Element {
       </section>
 
       <section className="mt-4 rounded-lg border border-border bg-surface p-5">
-        <h2 className="text-sm font-semibold">Diagnostics</h2>
+        <h3 className="text-sm font-semibold">Diagnostics</h3>
         <p className="mt-1 text-sm text-muted">
           Errors from the app are written to a rotating log file. Share it when reporting a problem.
         </p>

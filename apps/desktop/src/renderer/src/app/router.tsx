@@ -2,7 +2,6 @@ import { createHashRouter } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { HomePage } from '../pages/HomePage';
 import { SettingsPage } from '../pages/SettingsPage';
-import { DispatchPage } from '../pages/DispatchPage';
 import { WorkspacesPage } from '../features/workspaces/WorkspacesPage';
 import { CollectionsPage } from '../features/collections/CollectionsPage';
 import { VariablesPage } from '../features/variables/VariablesPage';
@@ -25,7 +24,6 @@ export const router = createHashRouter([
       { path: 'variables', element: <VariablesPage /> },
       { path: 'runner', element: <RequestRunnerPage /> },
       { path: 'workflows', element: <WorkflowsPage /> },
-      { path: 'dispatch', element: <DispatchPage /> },
       { path: 'plugins', element: <PluginsPage /> },
       { path: 'settings', element: <SettingsPage /> },
     ],
