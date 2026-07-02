@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Download, History, Loader2, Pencil, Plus, RefreshCw, Search } from 'lucide-react';
 import { usePersistentState } from '../../lib/use-persistent-state';
 import type { VersionDiff } from '@shared/version';
+import type { TreeNode } from '@shared/collection';
 import { isBridgeAvailable } from '../../lib/ipc';
 import { useActiveSelection, useWorkspaceDetail } from '../workspaces/use-workspaces';
 import { CollectionNode } from './CollectionNode';
@@ -51,6 +53,34 @@ export function CollectionsPage(): JSX.Element {
   }));
   const confirm = useConfirm();
   const toast = useToast();
+  const qc = useQueryClient();
+
+  // Deleting a folder or collection removes its whole subtree from the DB. Collect
+  // the ids of everything under `rootId` (folders and requests) from the cached
+  // collection trees so an open right-side editor can be closed when it was showing
+  // the deleted node or any of its descendants. Read the cache synchronously before
+  // the delete mutation invalidates it.
+  const collectSubtreeIds = (rootId: string): Set<string> => {
+    const nodes = qc
+      .getQueriesData<TreeNode[]>({ queryKey: ['tree'] })
+      .flatMap(([, data]) => data ?? []);
+    const childrenByParent = new Map<string | null, TreeNode[]>();
+    for (const n of nodes) {
+      const list = childrenByParent.get(n.parentId) ?? [];
+      list.push(n);
+      childrenByParent.set(n.parentId, list);
+    }
+    const ids = new Set<string>([rootId]);
+    const stack: string[] = [rootId];
+    while (stack.length > 0) {
+      const parent = stack.pop() as string;
+      for (const child of childrenByParent.get(parent) ?? []) {
+        ids.add(child.id);
+        if (child.type === 'folder') stack.push(child.id);
+      }
+    }
+    return ids;
+  };
 
   const [collectionId, setCollectionId] = useState<string | null>(null);
   const [newCollection, setNewCollection] = useState('');
@@ -328,8 +358,18 @@ export function CollectionsPage(): JSX.Element {
                       danger: true,
                     })
                   ) {
+                    // Close the right-side editor if it was showing this collection
+                    // or anything inside it (all deleted in the cascade). A folder's
+                    // membership is resolved from the collection's cached tree.
+                    const folderIds = new Set(
+                      (qc.getQueryData<TreeNode[]>(['tree', id]) ?? [])
+                        .filter((n) => n.type === 'folder')
+                        .map((n) => n.id),
+                    );
                     mutations.deleteCollection.mutate(id);
                     if (selectedCollection?.id === id) setSelectedCollection(null);
+                    if (selectedRequest?.collectionId === id) setSelectedRequest(null);
+                    if (selectedFolder && folderIds.has(selectedFolder.id)) setSelectedFolder(null);
                   }
                 }}
                 onDeleteFolder={async (id, name) => {
@@ -341,8 +381,12 @@ export function CollectionsPage(): JSX.Element {
                       danger: true,
                     })
                   ) {
+                    // Close the right-side editor if it was showing this folder or
+                    // any request/subfolder within it (all deleted in the cascade).
+                    const removed = collectSubtreeIds(id);
                     mutations.deleteFolder.mutate(id);
-                    if (selectedFolder?.id === id) setSelectedFolder(null);
+                    if (selectedFolder && removed.has(selectedFolder.id)) setSelectedFolder(null);
+                    if (selectedRequest && removed.has(selectedRequest.id)) setSelectedRequest(null);
                   }
                 }}
                 onDeleteRequest={async (id, name) => {

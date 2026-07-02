@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react';
+import { Check, Copy } from 'lucide-react';
 import { HttpProtocolExtras, statusOf, type ProtocolResponse } from '@shared/protocol';
 import { cn } from '../../lib/cn';
 
@@ -27,6 +29,41 @@ const TONE_COLOR: Record<ProtocolResponse['summary']['tone'], string> = {
  * shown only when the response carries parseable HTTP extras.
  */
 export function ResponseViewer({ response, loading }: ResponseViewerProps): JSX.Element {
+  const bodyRef = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Scope Ctrl/Cmd+A to the response body: when the user is interacting with it
+  // (it holds focus, or the caret/selection sits inside it), select only its
+  // contents instead of letting the browser select the entire app. A document
+  // listener is used because a click in the pane doesn't reliably move focus to
+  // it, so an element-level handler would never fire.
+  useEffect(() => {
+    const onKeyDown = (e: globalThis.KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || (e.key !== 'a' && e.key !== 'A')) return;
+      const el = bodyRef.current;
+      if (!el) return;
+      const active = document.activeElement;
+      // Leave real text inputs alone — their own select-all should still work.
+      if (
+        active instanceof HTMLElement &&
+        (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)
+      ) {
+        return;
+      }
+      const selection = window.getSelection();
+      const insideBody =
+        el.contains(active) || (!!selection?.anchorNode && el.contains(selection.anchorNode));
+      if (!insideBody || !selection) return;
+      e.preventDefault();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   if (loading) return <p className="p-4 text-sm text-muted">Sending…</p>;
   if (!response) return <p className="p-4 text-sm text-muted">No response yet.</p>;
 
@@ -44,6 +81,9 @@ export function ResponseViewer({ response, loading }: ResponseViewerProps): JSX.
   const chipColor = extras.success
     ? statusColor(extras.data.status, response.ok)
     : TONE_COLOR[response.summary.tone];
+
+  const isBinary = response.bodyKind === 'binary';
+  const bodyText = isBinary ? '' : (response.prettyBody ?? response.body ?? '');
 
   return (
     <div className="rounded-md border border-border bg-surface">
@@ -80,11 +120,36 @@ export function ResponseViewer({ response, loading }: ResponseViewerProps): JSX.
         </table>
       </details>
 
-      <pre className="max-h-96 overflow-auto p-4 font-mono text-xs" data-testid="response-body">
-        {response.bodyKind === 'binary'
-          ? `[binary ${response.sizeBytes} bytes, base64]`
-          : (response.prettyBody ?? response.body)}
-      </pre>
+      <div className="relative">
+        {!isBinary && bodyText !== '' && (
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard
+                ?.writeText(bodyText)
+                .then(() => {
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1200);
+                })
+                .catch(() => undefined);
+            }}
+            aria-label="Copy response body"
+            title={copied ? 'Copied' : 'Copy response'}
+            className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded border border-border bg-surface px-1.5 py-0.5 text-[11px] text-muted shadow-sm hover:text-fg"
+          >
+            {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        )}
+        <pre
+          ref={bodyRef}
+          tabIndex={0}
+          className="max-h-96 overflow-auto p-4 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
+          data-testid="response-body"
+        >
+          {isBinary ? `[binary ${response.sizeBytes} bytes, base64]` : bodyText}
+        </pre>
+      </div>
     </div>
   );
 }

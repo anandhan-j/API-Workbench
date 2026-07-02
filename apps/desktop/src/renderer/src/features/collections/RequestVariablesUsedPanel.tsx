@@ -103,6 +103,9 @@ export function RequestVariablesUsedPanel({
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['usedVarValues'] });
       void qc.invalidateQueries({ queryKey: ['variableKeys'] });
+      // The hover popover reads values from its own `evalVar` cache; refresh it
+      // too so an edit here is reflected there.
+      void qc.invalidateQueries({ queryKey: ['evalVar'] });
       void qc.invalidateQueries({ queryKey: ['variables'] });
       setEditing(null);
     },

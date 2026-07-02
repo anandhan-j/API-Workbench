@@ -89,6 +89,9 @@ export function VariableHoverPopover({
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['variableKeys'] });
       void qc.invalidateQueries({ queryKey: ['evalVar', name] });
+      // The "Variables used" panel reads values from its own query cache; refresh
+      // it too so an edit here is reflected there.
+      void qc.invalidateQueries({ queryKey: ['usedVarValues'] });
       void qc.invalidateQueries({ queryKey: ['variables'] });
       setEditing(false);
     },
