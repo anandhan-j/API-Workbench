@@ -40,6 +40,23 @@ export class CollectionExplorer {
     return this.persistence.collections.rename(id, name);
   }
 
+  /** A single collection, including its own auth config (top of the chain). */
+  getCollection(id: string): Collection {
+    return this.persistence.collections.get(id);
+  }
+
+  /** Sets the collection's own authorization config (null = no auth). */
+  updateCollectionAuth(id: string, auth: WireAuthConfig | null): Collection {
+    this.persistence.collections.get(id); // validate exists
+    return this.persistence.collections.updateAuth(id, auth);
+  }
+
+  /** Sets every folder and request in the collection to inherit from it. */
+  applyCollectionAuthToChildren(id: string): { folders: number; requests: number } {
+    this.persistence.collections.get(id); // validate exists
+    return this.persistence.applyCollectionAuthToChildren(id);
+  }
+
   deleteCollection(id: string): void {
     this.persistence.transaction(() => {
       // Purge scoped variables/credentials before the cascade removes the

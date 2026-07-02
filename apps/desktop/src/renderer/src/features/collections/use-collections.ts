@@ -81,6 +81,27 @@ export function useFolderDetail(id: string | null | undefined) {
   });
 }
 
+export function useCollectionDetail(id: string | null | undefined) {
+  return useQuery({
+    queryKey: ['collection', id ?? ''],
+    queryFn: () => invoke('collection.get', { id: id as string }),
+    enabled: Boolean(id) && isBridgeAvailable(),
+  });
+}
+
+/**
+ * Invalidate every auth-affected cache after a cascade. Returned as a promise so
+ * `mutateAsync` awaits the refetch — callers can then re-seed open editors from
+ * fresh data instead of stale cache.
+ */
+function invalidateAuthCaches(qc: ReturnType<typeof useQueryClient>): Promise<unknown> {
+  return Promise.all([
+    qc.invalidateQueries({ queryKey: ['folder'] }),
+    qc.invalidateQueries({ queryKey: ['collection'] }),
+    qc.invalidateQueries({ queryKey: ['request'] }),
+  ]);
+}
+
 /** Folder authorization mutations: set a folder's auth, or cascade inherit to children. */
 export function useFolderAuthMutations() {
   const qc = useQueryClient();
@@ -88,17 +109,29 @@ export function useFolderAuthMutations() {
     updateAuth: useMutation({
       mutationFn: (input: { id: string; auth: WireAuthConfig | null }) =>
         invoke('folder.updateAuth', input),
-      onSuccess: (_data, input) => {
-        void qc.invalidateQueries({ queryKey: ['folder', input.id] });
-      },
+      onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['folder', input.id] }),
     }),
     applyToChildren: useMutation({
       mutationFn: (id: string) => invoke('folder.applyAuthToChildren', { id }),
-      onSuccess: () => {
-        // Descendant folders and requests changed auth; refresh their caches.
-        void qc.invalidateQueries({ queryKey: ['folder'] });
-        void qc.invalidateQueries({ queryKey: ['request'] });
-      },
+      // Return the invalidation promise so mutateAsync resolves only once the
+      // affected queries have refetched (open editors then re-seed from fresh data).
+      onSuccess: () => invalidateAuthCaches(qc),
+    }),
+  };
+}
+
+/** Collection authorization mutations (top of the chain): set auth, or cascade inherit. */
+export function useCollectionAuthMutations() {
+  const qc = useQueryClient();
+  return {
+    updateAuth: useMutation({
+      mutationFn: (input: { id: string; auth: WireAuthConfig | null }) =>
+        invoke('collection.updateAuth', input),
+      onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['collection', input.id] }),
+    }),
+    applyToChildren: useMutation({
+      mutationFn: (id: string) => invoke('collection.applyAuthToChildren', { id }),
+      onSuccess: () => invalidateAuthCaches(qc),
     }),
   };
 }

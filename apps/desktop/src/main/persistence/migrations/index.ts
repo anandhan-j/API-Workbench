@@ -11,6 +11,7 @@ import { migration0009 } from './0009-workflows';
 import { migration0010 } from './0010-request-type';
 import { migration0011 } from './0011-plugins';
 import { migration0012 } from './0012-folder-auth';
+import { migration0013 } from './0013-collection-auth';
 
 export type { Migration } from './types';
 
@@ -31,4 +32,5 @@ export const MIGRATIONS: readonly Migration[] = [
   migration0010,
   migration0011,
   migration0012,
+  migration0013,
 ];

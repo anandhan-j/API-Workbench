@@ -12,6 +12,8 @@ export interface CollectionNodeProps {
   selectedRequestId: string | null;
   /** The folder whose authorization panel is open (highlighted in the tree). */
   selectedFolderId?: string | null;
+  /** Whether this collection's authorization panel is open (highlights its header). */
+  selectedCollectionId?: string | null;
   /**
    * Search mode: when set, the collection renders expanded with these
    * pre-filtered nodes and all folders forced open (bypassing its own lazy tree
@@ -33,6 +35,8 @@ export interface CollectionNodeProps {
   onMoveRequest: (id: string, folderId: string | null) => void;
   /** Select a folder to open its authorization panel. */
   onOpenFolder?: (id: string, name: string) => void;
+  /** Open this collection's authorization panel (top of the inheritance chain). */
+  onOpenCollection?: (id: string, name: string) => void;
 }
 
 /**
@@ -43,6 +47,7 @@ export function CollectionNode({
   collection,
   selectedRequestId,
   selectedFolderId,
+  selectedCollectionId,
   searchNodes,
   onOpenRequest,
   onOpenFolder,
@@ -57,6 +62,7 @@ export function CollectionNode({
   onRenameRequest,
   onDuplicateRequest,
   onMoveRequest,
+  onOpenCollection,
 }: CollectionNodeProps): JSX.Element {
   const searching = searchNodes !== undefined;
   // Expand state is persisted per collection so it survives an app restart.
@@ -109,7 +115,10 @@ export function CollectionNode({
   return (
     <div>
       <div
-        className="group flex items-center pr-2 hover:bg-surface-2"
+        className={cn(
+          'group flex items-center pr-2 hover:bg-surface-2',
+          collection.id === selectedCollectionId && 'bg-surface-2',
+        )}
         onContextMenu={(e) => {
           e.preventDefault();
           setMenu({ x: e.clientX, y: e.clientY });
@@ -142,20 +151,30 @@ export function CollectionNode({
             />
           </span>
         ) : (
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            onDoubleClick={() => setRenameDraft(collection.name)}
-            disabled={searching}
-            className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-2 text-left text-sm font-medium disabled:cursor-default"
-          >
+          <>
             <ChevronRight
               size={14}
-              className={cn('shrink-0 text-muted transition-transform', showTree && 'rotate-90')}
+              aria-label={showTree ? `Collapse ${collection.name}` : `Expand ${collection.name}`}
+              onClick={() => !searching && setOpen((v) => !v)}
+              className={cn(
+                'ml-2 shrink-0 cursor-pointer text-muted transition-transform',
+                showTree && 'rotate-90',
+              )}
             />
-            <Boxes size={15} className="shrink-0 text-accent" />
-            <span className="truncate">{collection.name}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() =>
+                onOpenCollection
+                  ? onOpenCollection(collection.id, collection.name)
+                  : setOpen((v) => !v)
+              }
+              onDoubleClick={() => setRenameDraft(collection.name)}
+              className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pl-1.5 text-left text-sm font-medium"
+            >
+              <Boxes size={15} className="shrink-0 text-accent" />
+              <span className="truncate">{collection.name}</span>
+            </button>
+          </>
         )}
         <button
           type="button"

@@ -22,8 +22,23 @@ describe('migration 0012 (folder auth)', () => {
     );
     expect(cols).not.toContain('auth');
 
-    applyMigrations(conn.db, MIGRATIONS); // apply 0012
+    applyMigrations(conn.db, MIGRATIONS); // apply the rest
     cols = (conn.db.all(sql`PRAGMA table_info(folders)`) as Array<{ name: string }>).map(
+      (r) => r.name,
+    );
+    expect(cols).toContain('auth');
+  });
+
+  it('0013 adds a nullable auth column to collections', async () => {
+    const conn = await createSqlJsConnection();
+    applyMigrations(conn.db, MIGRATIONS.slice(0, 12)); // through 0012
+    let cols = (conn.db.all(sql`PRAGMA table_info(collections)`) as Array<{ name: string }>).map(
+      (r) => r.name,
+    );
+    expect(cols).not.toContain('auth');
+
+    applyMigrations(conn.db, MIGRATIONS); // apply 0013
+    cols = (conn.db.all(sql`PRAGMA table_info(collections)`) as Array<{ name: string }>).map(
       (r) => r.name,
     );
     expect(cols).toContain('auth');
@@ -95,5 +110,31 @@ describe('folder auth persistence', () => {
     expect(service.folders.get(top.id).auth).toBeNull();
     // The outside request is unchanged.
     expect(service.requests.getFull(outside.id).details.auth).toEqual(bearer);
+  });
+
+  it('defaults collections to null auth and round-trips collection updateAuth', () => {
+    const created = service.collections.get(collectionId);
+    expect(created.auth).toBeNull();
+
+    const updated = service.collections.updateAuth(collectionId, bearer);
+    expect(updated.auth).toEqual(bearer);
+    expect(service.collections.get(collectionId).auth).toEqual(bearer);
+  });
+
+  it('applyCollectionAuthToChildren sets every folder and request in the collection to inherit', () => {
+    const top = service.folders.create({ collectionId, name: 'top' });
+    const sub = service.folders.create({ collectionId, parentId: top.id, name: 'sub' });
+    service.folders.updateAuth(top.id, bearer);
+    const rootReq = service.requests.create({ collectionId, name: 'root' });
+    const subReq = service.requests.create({ collectionId, folderId: sub.id, name: 'nested' });
+    service.requests.setAuth(rootReq.id, bearer);
+
+    const counts = service.applyCollectionAuthToChildren(collectionId);
+    expect(counts).toEqual({ folders: 2, requests: 2 });
+
+    expect(service.folders.get(top.id).auth).toEqual({ type: 'inherit' });
+    expect(service.folders.get(sub.id).auth).toEqual({ type: 'inherit' });
+    expect(service.requests.getFull(rootReq.id).details.auth).toEqual({ type: 'inherit' });
+    expect(service.requests.getFull(subReq.id).details.auth).toEqual({ type: 'inherit' });
   });
 });

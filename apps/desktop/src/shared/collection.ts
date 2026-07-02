@@ -21,6 +21,8 @@ export const Collection = z.object({
   id: z.string(),
   projectId: z.string(),
   name: z.string().min(1),
+  /** Collection-level auth (top of the inheritance chain); null = no auth. */
+  auth: WireAuthConfig.nullable().default(null),
   createdAt: z.number(),
   updatedAt: z.number(),
 });

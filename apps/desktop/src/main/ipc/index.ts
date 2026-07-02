@@ -138,7 +138,11 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
       const f = persistence.folders.findById(id);
       return f ? { parentId: f.parentId, auth: f.auth } : undefined;
     },
-    requestFolderId: (id) => persistence.requests.findById(id)?.folderId,
+    request: (id) => {
+      const r = persistence.requests.findById(id);
+      return r ? { folderId: r.folderId, collectionId: r.collectionId } : undefined;
+    },
+    collectionAuth: (id) => persistence.collections.findById(id)?.auth,
   };
 
   const handlers: { [C in IpcChannelName]: Handler<C> } = {
@@ -198,7 +202,11 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
 
     'collection.list': (request) => collections.listCollections(request.projectId),
     'collection.create': (request) => collections.createCollection(request),
+    'collection.get': (request) => collections.getCollection(request.id),
     'collection.rename': (request) => collections.renameCollection(request.id, request.name),
+    'collection.updateAuth': (request) => collections.updateCollectionAuth(request.id, request.auth),
+    'collection.applyAuthToChildren': (request) =>
+      collections.applyCollectionAuthToChildren(request.id),
     'collection.delete': (request) => {
       collections.deleteCollection(request.id);
       return {};
@@ -312,6 +320,9 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
             ...(req.variableContext?.requestId ? { requestId: req.variableContext.requestId } : {}),
             ...(req.variableContext?.folderId !== undefined
               ? { folderId: req.variableContext.folderId }
+              : {}),
+            ...(req.variableContext?.collectionId
+              ? { collectionId: req.variableContext.collectionId }
               : {}),
           },
           inheritanceLookups,

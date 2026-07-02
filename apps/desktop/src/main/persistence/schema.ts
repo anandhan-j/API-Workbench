@@ -63,6 +63,8 @@ export const collections = sqliteTable(
     id: text('id').primaryKey(),
     projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
+    /** Collection-level auth (top of the inheritance chain); null = no auth (migration 0013). */
+    auth: text('auth', { mode: 'json' }).$type<WireAuthConfig>(),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
