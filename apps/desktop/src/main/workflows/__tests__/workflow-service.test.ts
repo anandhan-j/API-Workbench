@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -32,7 +32,7 @@ describe('WorkflowService', () => {
   let persistence: PersistenceService;
   let service: WorkflowService;
   let projectId: string;
-  let executeRequest: ReturnType<typeof vi.fn>;
+  let executeRequest: Mock<WorkflowServiceDeps['executeRequest']>;
 
   const deps = (): WorkflowServiceDeps => ({
     executeRequest,
@@ -44,7 +44,7 @@ describe('WorkflowService', () => {
     const conn = await createSqlJsConnection();
     dir = mkdtempSync(join(tmpdir(), 'awb-wf-'));
     persistence = new PersistenceService(conn, { backupDir: dir, appVersion: '0.1.0' });
-    executeRequest = vi.fn(async () => okResponse());
+    executeRequest = vi.fn<WorkflowServiceDeps['executeRequest']>(async () => okResponse());
     service = new WorkflowService(persistence, deps());
     const ws = persistence.workspaces.create({ name: 'WS' });
     projectId = persistence.projects.create({ workspaceId: ws.id, name: 'P' }).id;
