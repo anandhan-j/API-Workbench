@@ -1,0 +1,42 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.approval-dialog-node",
+  "name": "Approval Dialog Node",
+  "version": "1.0.0",
+  "description": "Adds a workflow node that shows a plugin-requested dialog (ctx.ui.showDialog) asking the user to approve or reject the run, with an optional comment.",
+  "publisher": "API Workbench examples",
+  "license": "MIT",
+  "main": "dist/index.cjs",
+  "engines": { "sdk": "^1.0.0" },
+  "capabilities": ["ui:dialog"],
+  "contributes": {
+    "nodes": [
+      {
+        "kind": "approval-gate",
+        "label": "Approval Gate",
+        "description": "Pauses the run behind a plugin-shown dialog; fails when the user rejects or cancels.",
+        "icon": "shield-check",
+        "configSchema": {
+          "fields": [
+            {
+              "kind": "string",
+              "key": "question",
+              "label": "Question",
+              "description": "Shown as the dialog message; {{variables}} are substituted.",
+              "required": true,
+              "default": "Approve this run?"
+            },
+            {
+              "kind": "string",
+              "key": "variable",
+              "label": "Comment variable",
+              "description": "Runtime variable that receives the approver's comment.",
+              "default": "approvalComment"
+            }
+          ]
+        },
+        "producesVariables": [{ "source": "config", "key": "variable" }]
+      }
+    ]
+  }
+}

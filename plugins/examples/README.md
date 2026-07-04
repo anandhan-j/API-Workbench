@@ -7,7 +7,10 @@ the desktop app's plugin integration tests as fixtures:
 | Plugin | Extension point | What it does |
 | --- | --- | --- |
 | [uuid-node](./uuid-node) | Workflow node | Writes a random UUID into a runtime variable |
-| [user-input-node](./user-input-node) | Workflow node | Captures named values and merges them into the run's runtime variables (plugin analogue of the built-in *User input* node) |
+| [user-input-node](./user-input-node) | Workflow node | Prompts with one field per prompt kind — text, secret, preset dropdown (`options`), preset key-value (`entries`), run-time list (`filledAtRuntime`) — and merges the values into the run's runtime variables (plugin analogue of the built-in *User input* node) |
+| [pick-item-node](./pick-item-node) | Workflow node | Picks one item from a configurable `list` field (first/last/random/by index via a `select` field) into a runtime variable, optionally exposing the full list as a JSON-array variable |
+| [approval-dialog-node](./approval-dialog-node) | Workflow node | Gates the run behind a plugin-requested dialog (`ctx.ui.showDialog`, `ui:dialog` capability): approve/reject + comment |
+| [dropdown-dialog-node](./dropdown-dialog-node) | Workflow node | Turns a `keyvalue` config grid and a `list` field into dropdowns inside one runtime dialog and stores the selections in variables — an extensibility exercise using only the public SDK |
 | [echo-request-type](./echo-request-type) | Request type | Loopback protocol echoing its payload (and auth headers) back |
 | [header-token-auth](./header-token-auth) | Auth provider | Sends a secret token in a configurable header |
 | [csv-importer](./csv-importer) | Importer | Builds a collection from `name,method,url,folder` CSV rows |

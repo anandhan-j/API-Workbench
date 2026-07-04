@@ -1,0 +1,74 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.dropdown-dialog-node",
+  "name": "Dropdown Dialog Node",
+  "version": "1.0.0",
+  "description": "Adds a workflow node that turns a configurable key/value list into a runtime dialog dropdown; the user's selection is written to runtime variables. Built purely on the public SDK — no host changes.",
+  "publisher": "API Workbench examples",
+  "license": "MIT",
+  "main": "dist/index.cjs",
+  "engines": { "sdk": "^1.0.0" },
+  "capabilities": ["ui:dialog"],
+  "contributes": {
+    "nodes": [
+      {
+        "kind": "dropdown-picker",
+        "label": "Dropdown Picker",
+        "description": "Pauses the run with a dropdown built from the configured items and stores the selection in variables.",
+        "icon": "list",
+        "configSchema": {
+          "fields": [
+            {
+              "kind": "string",
+              "key": "prompt",
+              "label": "Prompt",
+              "description": "Message shown above the dropdown.",
+              "default": "Pick an item to continue"
+            },
+            {
+              "kind": "keyvalue",
+              "key": "items",
+              "label": "Dropdown items",
+              "description": "Key = label shown in the dropdown, Value = what gets stored. {{variables}} in values are substituted at run time.",
+              "required": true
+            },
+            {
+              "kind": "list",
+              "key": "listItems",
+              "label": "List items",
+              "description": "Optional plain list shown as a second dropdown in the same dialog; the picked item is stored as-is. {{variables}} are substituted at run time.",
+              "maxItems": 50
+            },
+            {
+              "kind": "string",
+              "key": "listVariable",
+              "label": "List item variable",
+              "description": "Runtime variable that receives the item picked from the list dropdown.",
+              "default": "selectedListItem"
+            },
+            {
+              "kind": "string",
+              "key": "variable",
+              "label": "Value variable",
+              "description": "Runtime variable that receives the selected item's value.",
+              "required": true,
+              "default": "selectedValue"
+            },
+            {
+              "kind": "string",
+              "key": "labelVariable",
+              "label": "Label variable",
+              "description": "Runtime variable that receives the selected item's key/label. Leave blank to skip.",
+              "default": ""
+            }
+          ]
+        },
+        "producesVariables": [
+          { "source": "config", "key": "variable" },
+          { "source": "config", "key": "labelVariable" },
+          { "source": "config", "key": "listVariable" }
+        ]
+      }
+    ]
+  }
+}

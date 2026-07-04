@@ -1,0 +1,76 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.pick-item-node",
+  "name": "Pick From List Node",
+  "version": "1.0.0",
+  "description": "Adds a workflow node that picks one item from a user-defined list (first, last, random, or by index) and writes it into a runtime variable.",
+  "publisher": "API Workbench examples",
+  "license": "MIT",
+  "main": "dist/index.cjs",
+  "engines": { "sdk": "^1.0.0" },
+  "capabilities": [],
+  "contributes": {
+    "nodes": [
+      {
+        "kind": "pick-item",
+        "label": "Pick From List",
+        "description": "Picks one item from a configurable list and stores it in a runtime variable.",
+        "icon": "list",
+        "configSchema": {
+          "fields": [
+            {
+              "kind": "list",
+              "key": "items",
+              "label": "Items",
+              "description": "The candidate values. Add as many items as you need; {{variables}} are substituted at run time.",
+              "placeholder": "e.g. staging-api or {{baseUrl}}",
+              "required": true,
+              "maxItems": 50
+            },
+            {
+              "kind": "select",
+              "key": "strategy",
+              "label": "Selection strategy",
+              "description": "How the item is chosen from the list.",
+              "options": [
+                { "value": "first", "label": "First item" },
+                { "value": "last", "label": "Last item" },
+                { "value": "random", "label": "Random item" },
+                { "value": "index", "label": "By index (uses Index below)" }
+              ],
+              "default": "first"
+            },
+            {
+              "kind": "number",
+              "key": "index",
+              "label": "Index",
+              "description": "Zero-based position used when the strategy is \"By index\".",
+              "integer": true,
+              "min": 0,
+              "default": 0
+            },
+            {
+              "kind": "string",
+              "key": "variable",
+              "label": "Output variable",
+              "description": "Runtime variable that receives the picked item.",
+              "required": true,
+              "default": "pickedItem"
+            },
+            {
+              "kind": "string",
+              "key": "listVariable",
+              "label": "List variable",
+              "description": "Runtime variable that receives the full items list as a JSON array. Leave blank to skip.",
+              "default": "pickedItemList"
+            }
+          ]
+        },
+        "producesVariables": [
+          { "source": "config", "key": "variable" },
+          { "source": "config", "key": "listVariable" }
+        ]
+      }
+    ]
+  }
+}

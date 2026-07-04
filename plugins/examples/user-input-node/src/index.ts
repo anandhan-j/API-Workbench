@@ -9,7 +9,7 @@ import { definePlugin } from '@api-workbench/plugin-sdk';
  * optionally trims them and reports what was collected.
  */
 
-const PROMPTED = ['userName', 'userEmail', 'apiToken'] as const;
+const PROMPTED = ['userName', 'userEmail', 'apiToken', 'environment', 'baseUrl', 'tags'] as const;
 
 export default definePlugin({
   activate(ctx) {

@@ -14,7 +14,7 @@
       {
         "kind": "user-input",
         "label": "User Input",
-        "description": "Pauses the run, prompts the user for name and email, and writes them to runtime variables.",
+        "description": "Pauses the run and prompts the user with one field per prompt kind (text, secret, preset dropdown, preset key-value, run-time list), writing every value to runtime variables.",
         "icon": "message-square",
         "category": "Data",
         "configSchema": {
@@ -33,7 +33,29 @@
           "fields": [
             { "variable": "userName", "label": "Your name", "default": "" },
             { "variable": "userEmail", "label": "Email address", "default": "" },
-            { "variable": "apiToken", "label": "API token", "secret": true, "default": "" }
+            { "variable": "apiToken", "label": "API token", "kind": "secret", "default": "" },
+            {
+              "variable": "environment",
+              "label": "Environment",
+              "kind": "select",
+              "default": "staging",
+              "options": ["staging", "qa", "production"]
+            },
+            {
+              "variable": "baseUrl",
+              "label": "Target server",
+              "kind": "keyvalue",
+              "entries": {
+                "Staging": "https://staging.example.com",
+                "Production": "https://api.example.com"
+              }
+            },
+            {
+              "variable": "tags",
+              "label": "Tags (added at run time)",
+              "kind": "select",
+              "filledAtRuntime": true
+            }
           ]
         }
       }
