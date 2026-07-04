@@ -285,8 +285,11 @@ function normalize(rows: KvRow[]): KvRow[] {
  * pattern. Rows live in local state so an in-progress key edit isn't collapsed
  * by the record round-trip; the built record is pushed up on change and local
  * rows resync only when the value changes from outside.
+ *
+ * Exported for reuse by built-in editors that hold a string→string record
+ * (e.g. the user-input node's pre-defined keyvalue entries).
  */
-function KeyValueGrid({
+export function KeyValueGrid({
   label,
   value,
   onChange,

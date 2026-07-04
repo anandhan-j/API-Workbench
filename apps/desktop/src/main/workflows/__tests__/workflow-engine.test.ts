@@ -420,11 +420,13 @@ describe('WorkflowEngine', () => {
     config: {
       message: 'Provide values',
       fields: fields.map((f) => ({
+        kind: f.options ? ('select' as const) : ('string' as const),
         label: f.variable,
         variable: f.variable,
         default: f.default ?? '',
-        secret: false,
         options: f.options ?? [],
+        entries: {},
+        filledAtRuntime: false,
       })),
     },
   });

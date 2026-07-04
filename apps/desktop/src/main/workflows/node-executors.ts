@@ -141,18 +141,30 @@ export const BUILTIN_NODE_EXECUTORS: BuiltinNodeExecutors = {
   },
 
   'user-input': async (node, env) => {
-    // Resolve each field's default and option templates so the prompt is
-    // pre-filled; a dropdown with no default pre-selects its first option.
+    // Resolve each field's default, option, and entry-value templates so the
+    // prompt is pre-filled. Any field prompted as a dropdown (`select`, or a
+    // pre-defined list/keyvalue) defaults to its first choice when the
+    // declared default is empty, so headless runs resolve deterministically.
     const fields = node.config.fields.map((f) => {
-      // `?? []`: graphs persisted before options existed lack the key entirely.
-      const options = (f.options ?? []).map((o) => env.ports.evaluate(o, env.ctx));
+      const options = f.options.map((o) => env.ports.evaluate(o, env.ctx));
+      const entries = Object.fromEntries(
+        Object.entries(f.entries).map(([key, value]) => [key, env.ports.evaluate(value, env.ctx)]),
+      );
       const dflt = env.ports.evaluate(f.default, env.ctx);
+      const dropdownValues =
+        f.kind === 'select' && !f.filledAtRuntime
+          ? options
+          : f.kind === 'keyvalue' && !f.filledAtRuntime
+            ? Object.values(entries)
+            : null;
       return {
+        kind: f.kind,
         label: f.label,
         variable: f.variable,
-        default: dflt || (options[0] ?? ''),
-        secret: f.secret,
+        default: dropdownValues ? dflt || (dropdownValues[0] ?? '') : dflt,
         options,
+        entries,
+        filledAtRuntime: f.filledAtRuntime,
       };
     });
     // Headless fallback: no input port → accept the evaluated defaults.

@@ -154,20 +154,41 @@ export const SetVariableNodeConfig = z.object({
 });
 export type SetVariableNodeConfig = z.infer<typeof SetVariableNodeConfig>;
 
+/** The input control a user-input prompt field renders. */
+export const UserInputFieldKind = z.enum([
+  'string',
+  'secret',
+  'number',
+  'boolean',
+  'select',
+  'keyvalue',
+]);
+export type UserInputFieldKind = z.infer<typeof UserInputFieldKind>;
+
 /**
  * A single value the run asks the user to supply when it reaches a user-input
- * node. `variable` is the runtime variable the submitted value is written to;
- * `default` is a template, evaluated against the run context, used to pre-fill
- * the prompt; `secret` masks the input field. A non-empty `options` list turns
- * the prompt into a dropdown of those choices (each option is a template,
- * evaluated like `default`); `secret` is ignored for dropdowns.
+ * node. `kind` picks the prompt control; `variable` is the runtime variable
+ * the submitted value is written to; `default` is a template, evaluated
+ * against the run context, used to pre-fill the prompt (for `boolean` the
+ * literal `'true'`, for a run-time-filled `list`/`keyvalue` a JSON string).
+ * Runtime variables are strings, so `number`/`boolean` submit their string
+ * form and run-time-filled `list`/`keyvalue` submit JSON.
+ *
+ * `select`/`keyvalue` fields have two modes, toggled by `filledAtRuntime`:
+ * pre-defined by the workflow author (the prompt shows a dropdown of the
+ * preset `options` / `entries` — keyvalue: key = label shown, value = what is
+ * stored — and submits the single chosen value), or filled at run time (the
+ * prompt shows the growable list / key-value editor and submits JSON).
+ * Option/entry values are templates, evaluated like `default`.
  */
 export const UserInputField = z.object({
+  kind: UserInputFieldKind.default('string'),
   label: z.string().default(''),
   variable: z.string(),
   default: z.string().default(''),
-  secret: z.boolean().default(false),
   options: z.array(z.string()).default([]),
+  entries: z.record(z.string()).default({}),
+  filledAtRuntime: z.boolean().default(false),
 });
 export type UserInputField = z.infer<typeof UserInputField>;
 

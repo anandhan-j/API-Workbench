@@ -265,14 +265,28 @@ export class PluginHostManager implements PluginHostPort {
         let collected: Record<string, string> = {};
         if (c.input) {
           const fields = c.input.fields.map((f) => {
-            const options = (f.options ?? []).map((o) => env.ports.evaluate(o, env.ctx));
+            const options = f.options.map((o) => env.ports.evaluate(o, env.ctx));
+            const entries = Object.fromEntries(
+              Object.entries(f.entries).map(([key, value]) => [
+                key,
+                env.ports.evaluate(value, env.ctx),
+              ]),
+            );
             const dflt = env.ports.evaluate(f.default, env.ctx);
+            const dropdownValues =
+              f.kind === 'select' && !f.filledAtRuntime
+                ? options
+                : f.kind === 'keyvalue' && !f.filledAtRuntime
+                  ? Object.values(entries)
+                  : null;
             return {
+              kind: f.kind,
               label: f.label,
               variable: f.variable,
-              default: dflt || (options[0] ?? ''),
-              secret: f.secret,
+              default: dropdownValues ? dflt || (dropdownValues[0] ?? '') : dflt,
               options,
+              entries,
+              filledAtRuntime: f.filledAtRuntime,
             };
           });
           if (env.ports.requestInput) {

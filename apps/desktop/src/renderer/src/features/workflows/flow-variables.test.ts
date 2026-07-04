@@ -71,8 +71,24 @@ describe('variablesProducedBy', () => {
         input: {
           message: '',
           fields: [
-            { variable: 'userName', label: '', default: '', secret: false, options: [] },
-            { variable: '  ', label: '', default: '', secret: false, options: [] },
+            {
+              variable: 'userName',
+              label: '',
+              default: '',
+              kind: 'string',
+              options: [],
+              entries: {},
+              filledAtRuntime: false,
+            },
+            {
+              variable: '  ',
+              label: '',
+              default: '',
+              kind: 'string',
+              options: [],
+              entries: {},
+              filledAtRuntime: false,
+            },
           ],
         },
       } as PluginNodeContribution,

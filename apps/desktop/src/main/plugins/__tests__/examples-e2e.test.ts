@@ -163,6 +163,29 @@ describe('example plugins end-to-end', () => {
     expect(['alpha', 'beta']).toContain(random.result.variablesSet?.['picked']);
   });
 
+  it('installs the user-input-node example and resolves its typed prompt fields headlessly', async () => {
+    const installed = await service.install(join(EXAMPLES_ROOT, 'user-input-node'), []);
+    expect(installed.status).toBe('active');
+
+    const kind = pluginNodeKind('com.example.user-input-node', 'user-input');
+    const executor = nodes.resolve(kind);
+    expect(executor).toBeDefined();
+
+    // fakeEnv has no requestInput port, so the host falls back to each
+    // field's default: preset dropdowns (select options / keyvalue entries)
+    // resolve to their first choice.
+    const outcome = await executor!(
+      { id: 'n1', kind, name: 'Ask', position: { x: 0, y: 0 }, config: { trim: true } },
+      fakeEnv(),
+    );
+    expect(outcome.result.status).toBe('success');
+    expect(outcome.result.variablesSet).toMatchObject({
+      environment: 'staging',
+      baseUrl: 'https://staging.example.com',
+    });
+    expect(outcome.result.message).toBe('Collected input for anonymous');
+  });
+
   it('gates a run behind the approval-dialog-node example (ui:dialog capability)', async () => {
     const installed = await service.install(join(EXAMPLES_ROOT, 'approval-dialog-node'), [
       'ui:dialog',

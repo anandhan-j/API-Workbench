@@ -2,6 +2,7 @@ import { z } from 'zod';
 import semverValid from 'semver/functions/valid';
 import semverValidRange from 'semver/ranges/valid';
 import { FormSchema } from './forms';
+import { UserInputFieldKind } from './workflow';
 
 /**
  * Plugin manifest and contribution schemas (Phase 16, ADR-0007).
@@ -39,17 +40,21 @@ export type Capability = z.infer<typeof Capability>;
 /**
  * One field a node prompts the user for before its executor runs (see
  * {@link NodeContribution.input}). Mirrors the built-in user-input node's field
- * shape: `variable` is the runtime variable the submitted value is written to,
- * `default` is a template pre-filling the prompt, `secret` masks the input, and
- * a non-empty `options` list renders the prompt as a dropdown of those choices
- * (each option is a template, evaluated like `default`).
+ * shape: `kind` picks the prompt control, `variable` is the runtime variable
+ * the submitted value is written to, and `default` is a template pre-filling
+ * the prompt. `select`/`keyvalue` are prompted as dropdowns of their preset
+ * `options`/`entries` (keyvalue: key = label shown, value = what is stored)
+ * and submit the single chosen value; with `filledAtRuntime: true` they
+ * instead show the growable list / key-value editor and submit JSON.
  */
 export const NodePromptField = z.object({
+  kind: UserInputFieldKind.default('string'),
   variable: z.string().min(1).max(60),
   label: z.string().max(80).default(''),
   default: z.string().max(2000).default(''),
-  secret: z.boolean().default(false),
   options: z.array(z.string().max(200)).max(50).default([]),
+  entries: z.record(z.string().max(200)).default({}),
+  filledAtRuntime: z.boolean().default(false),
 });
 export type NodePromptField = z.infer<typeof NodePromptField>;
 

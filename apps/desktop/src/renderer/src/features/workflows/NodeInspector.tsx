@@ -7,13 +7,14 @@ import type {
   NodePolicy,
   RequestNodeConfig,
   UserInputField,
+  UserInputFieldKind,
   Workflow,
   WorkflowNode,
 } from '@shared/workflow';
 import { extractFromResponse } from '@shared/extract';
 import { qualifiedContributionId } from '@shared/plugins';
 import { Modal } from '../../components/menu/Modal';
-import { SchemaForm, StringListEditor } from '../../components/forms/SchemaForm';
+import { KeyValueGrid, SchemaForm, StringListEditor } from '../../components/forms/SchemaForm';
 import { usePluginContributions } from '../plugins/use-plugins';
 import { RequestEditor } from '../runner/RequestEditor';
 import type { FlowNode } from './graph-mapping';
@@ -602,7 +603,18 @@ function UserInputFieldsEditor({
   const update = (i: number, patch: Partial<UserInputField>): void =>
     onChange(fields.map((f, j) => (j === i ? { ...f, ...patch } : f)));
   const add = (): void =>
-    onChange([...fields, { label: '', variable: '', default: '', secret: false, options: [] }]);
+    onChange([
+      ...fields,
+      {
+        kind: 'string',
+        label: '',
+        variable: '',
+        default: '',
+        options: [],
+        entries: {},
+        filledAtRuntime: false,
+      },
+    ]);
   const remove = (i: number): void => onChange(fields.filter((_, j) => j !== i));
 
   return (
@@ -616,62 +628,119 @@ function UserInputFieldsEditor({
             No fields — the node is a Continue/Cancel checkpoint.
           </p>
         )}
-        {fields.map((field, i) => (
-          <div key={i} className="flex flex-col gap-1 rounded-md border border-border p-1.5">
-            <div className="flex items-center gap-1">
-              <input
-                value={field.variable}
-                onChange={(e) => update(i, { variable: e.target.value })}
-                placeholder="variable"
-                className={`${smallField} w-28 font-mono`}
-              />
-              <input
-                value={field.label}
-                onChange={(e) => update(i, { label: e.target.value })}
-                placeholder="Label"
-                className={`${smallField} min-w-0 flex-1`}
-              />
-              <button
-                type="button"
-                aria-label="Remove field"
-                onClick={() => remove(i)}
-                className="ml-auto text-muted hover:text-rose-400"
-              >
-                <Trash2 size={13} />
-              </button>
-            </div>
-            <VariableField
-              value={field.default}
-              onChange={(value) => update(i, { default: value })}
-              suggestions={suggestions}
-              variableContext={variableContext}
-              aria-label="Default (template)"
-              placeholder="Default (template, e.g. {{token}})"
-              className={`${smallField} w-full font-mono`}
-            />
-            <div>
-              <span className="text-[11px] text-muted">
-                Choices (optional — the prompt becomes a dropdown)
-              </span>
-              <StringListEditor
-                label={`${field.label || field.variable || `Field ${i + 1}`} choices`}
-                value={field.options ?? []}
-                placeholder="e.g. staging"
-                onChange={(options) => update(i, { options })}
-              />
-            </div>
-            {(field.options ?? []).length === 0 && (
-              <label className="flex items-center gap-1.5 text-[11px] text-muted">
+        {fields.map((field, i) => {
+          const kind = field.kind ?? 'string';
+          return (
+            <div key={i} className="flex flex-col gap-1 rounded-md border border-border p-1.5">
+              <div className="flex items-center gap-1">
                 <input
-                  type="checkbox"
-                  checked={field.secret}
-                  onChange={(e) => update(i, { secret: e.target.checked })}
+                  value={field.variable}
+                  onChange={(e) => update(i, { variable: e.target.value })}
+                  placeholder="variable"
+                  className={`${smallField} w-28 font-mono`}
                 />
-                Mask input (secret)
-              </label>
-            )}
-          </div>
-        ))}
+                <input
+                  value={field.label}
+                  onChange={(e) => update(i, { label: e.target.value })}
+                  placeholder="Label"
+                  className={`${smallField} min-w-0 flex-1`}
+                />
+                <button
+                  type="button"
+                  aria-label="Remove field"
+                  onClick={() => remove(i)}
+                  className="ml-auto text-muted hover:text-rose-400"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+              <select
+                value={kind}
+                onChange={(e) =>
+                  update(i, { kind: e.target.value as UserInputFieldKind, filledAtRuntime: false })
+                }
+                aria-label="Field kind"
+                className={`${smallField} w-full`}
+              >
+                <option value="string">Text</option>
+                <option value="secret">Secret (masked)</option>
+                <option value="number">Number</option>
+                <option value="boolean">Yes / No</option>
+                <option value="select">Dropdown / List</option>
+                <option value="keyvalue">Key–value grid</option>
+              </select>
+              {(kind === 'string' ||
+                kind === 'secret' ||
+                kind === 'number' ||
+                (kind === 'select' && !field.filledAtRuntime)) && (
+                <VariableField
+                  value={field.default}
+                  onChange={(value) => update(i, { default: value })}
+                  suggestions={suggestions}
+                  variableContext={variableContext}
+                  aria-label="Default (template)"
+                  placeholder={
+                    kind === 'number'
+                      ? 'Default (template, e.g. 42)'
+                      : 'Default (template, e.g. {{token}})'
+                  }
+                  className={`${smallField} w-full font-mono`}
+                />
+              )}
+              {kind === 'boolean' && (
+                <label className="flex items-center gap-1.5 text-[11px] text-muted">
+                  <input
+                    type="checkbox"
+                    checked={(field.default ?? '').trim().toLowerCase() === 'true'}
+                    onChange={(e) => update(i, { default: e.target.checked ? 'true' : '' })}
+                  />
+                  Default to Yes
+                </label>
+              )}
+              {(kind === 'select' || kind === 'keyvalue') && (
+                <>
+                  <label className="flex items-center gap-1.5 text-[11px] text-muted">
+                    <input
+                      type="checkbox"
+                      checked={field.filledAtRuntime ?? false}
+                      onChange={(e) => update(i, { filledAtRuntime: e.target.checked })}
+                    />
+                    Filled at run time
+                  </label>
+                  {(field.filledAtRuntime ?? false) ? (
+                    <p className="text-[11px] text-muted">
+                      The user builds the {kind === 'select' ? 'list of items' : 'key–value grid'}{' '}
+                      in the prompt; stored in the variable as JSON.
+                    </p>
+                  ) : kind === 'select' ? (
+                    <div>
+                      <span className="text-[11px] text-muted">
+                        Choices (shown as a dropdown at run time)
+                      </span>
+                      <StringListEditor
+                        label={`${field.label || field.variable || `Field ${i + 1}`} choices`}
+                        value={field.options ?? []}
+                        placeholder="e.g. staging"
+                        onChange={(options) => update(i, { options })}
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <span className="text-[11px] text-muted">
+                        Entries (dropdown at run time: key = label, value = stored)
+                      </span>
+                      <KeyValueGrid
+                        label={`${field.label || field.variable || `Field ${i + 1}`} entries`}
+                        value={field.entries ?? {}}
+                        onChange={(entries) => update(i, { entries })}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
         <button
           type="button"
           onClick={add}

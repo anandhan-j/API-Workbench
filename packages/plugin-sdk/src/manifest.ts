@@ -11,18 +11,24 @@ import type { FormSchema } from './forms';
 
 /**
  * One field a node prompts the user for before its executor runs (see
- * {@link NodeContribution.input}). `variable` is the runtime variable the
- * submitted value is written to; `default` is a template pre-filling the
- * prompt; `secret` masks the input. A non-empty `options` list renders the
- * prompt as a dropdown of those choices (each option is a template, evaluated
- * like `default`); `secret` is ignored for dropdowns.
+ * {@link NodeContribution.input}). `kind` picks the prompt control (defaults
+ * to `'string'`); `variable` is the runtime variable the submitted value is
+ * written to; `default` is a template pre-filling the prompt (for `boolean`
+ * the literal `'true'`). `select`/`keyvalue` are prompted as dropdowns of
+ * their preset `options`/`entries` (keyvalue: key = label shown, value = what
+ * is stored; each a template, evaluated like `default`) and submit the single
+ * chosen value. With `filledAtRuntime: true` they instead show a growable
+ * list / key-value editor at run time and submit JSON (runtime variables are
+ * strings; `number`/`boolean` likewise submit their string form).
  */
 export interface NodePromptField {
+  kind?: 'string' | 'secret' | 'number' | 'boolean' | 'select' | 'keyvalue';
   variable: string;
   label?: string;
   default?: string;
-  secret?: boolean;
   options?: string[];
+  entries?: Record<string, string>;
+  filledAtRuntime?: boolean;
 }
 
 /**
