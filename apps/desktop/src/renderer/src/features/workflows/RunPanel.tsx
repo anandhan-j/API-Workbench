@@ -197,8 +197,12 @@ export function RunPanel({
                 key={k}
                 className="flex justify-between gap-3 border-b border-border px-2.5 py-1 last:border-0"
               >
-                <dt className="font-mono text-xs text-muted">{k}</dt>
-                <dd className="truncate font-mono text-xs">{v}</dd>
+                <dt className="font-mono text-xs text-muted" title={k}>
+                  {k}
+                </dt>
+                <dd className="truncate font-mono text-xs" title={variableHover(v)}>
+                  {v}
+                </dd>
               </div>
             ))}
           </dl>
@@ -214,6 +218,25 @@ export function RunPanel({
       )}
     </div>
   );
+}
+
+/**
+ * Tooltip text for a variable value. The native tooltip renders `title`
+ * verbatim, so a long single-line value (e.g. the compact JSON a run-time
+ * list/grid field produces) runs off the screen — pretty-print JSON into
+ * multiple lines and hard-wrap plain strings so the tooltip grows vertically
+ * instead, then cap the total size.
+ */
+function variableHover(value: string): string {
+  let text = value;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (parsed && typeof parsed === 'object') text = JSON.stringify(parsed, null, 2);
+  } catch {
+    // Not JSON — fall through to plain wrapping.
+  }
+  if (text === value) text = value.replace(/(.{100})/g, '$1\n');
+  return text.length > 3000 ? `${text.slice(0, 3000)}…` : text;
 }
 
 function NodeRow({
@@ -308,8 +331,12 @@ function StageDetails({
                 key={k}
                 className="flex justify-between gap-2 border-b border-border px-2 py-0.5 last:border-0"
               >
-                <dt className="shrink-0 font-mono text-muted">{k}</dt>
-                <dd className="truncate font-mono text-fg">{v}</dd>
+                <dt className="shrink-0 font-mono text-muted" title={k}>
+                  {k}
+                </dt>
+                <dd className="truncate font-mono text-fg" title={variableHover(v)}>
+                  {v}
+                </dd>
               </div>
             ))}
           </dl>
