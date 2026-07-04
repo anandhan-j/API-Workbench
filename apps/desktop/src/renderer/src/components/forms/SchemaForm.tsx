@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import type { FormField, FormSchema } from '@shared/forms';
 import { cn } from '../../lib/cn';
 
@@ -130,6 +130,16 @@ function FieldControl({
           className={fieldClass}
         />
       );
+    case 'list':
+      return (
+        <StringListEditor
+          label={field.label}
+          value={isStringArray(value) ? value : []}
+          placeholder={field.placeholder}
+          maxItems={field.maxItems}
+          onChange={onValue}
+        />
+      );
     case 'keyvalue':
       return (
         <KeyValueGrid
@@ -139,6 +149,100 @@ function FieldControl({
         />
       );
   }
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((v) => typeof v === 'string');
+}
+
+interface ListRow {
+  id: string;
+  value: string;
+}
+
+function listToRows(items: string[]): ListRow[] {
+  return items.map((item) => ({ id: crypto.randomUUID(), value: item }));
+}
+
+function rowsToItems(rows: ListRow[]): string[] {
+  return rows.map((r) => r.value).filter((v) => v.trim() !== '');
+}
+
+/**
+ * Editor for `list` fields: one input row per item with a remove button and an
+ * explicit "Add item" action. Rows live in local state (same pattern as
+ * {@link KeyValueGrid}) so a just-added empty row isn't collapsed by the
+ * committed array round-trip; empty items are dropped from the value pushed up.
+ *
+ * Exported for reuse by built-in editors that hold a `string[]` (e.g. the
+ * switch node's cases in the workflow inspector).
+ */
+export function StringListEditor({
+  label,
+  value,
+  placeholder,
+  maxItems,
+  onChange,
+}: {
+  label: string;
+  value: string[];
+  placeholder?: string;
+  maxItems?: number;
+  onChange: (next: string[]) => void;
+}): JSX.Element {
+  const [rows, setRows] = useState<ListRow[]>(() => listToRows(value));
+
+  useEffect(() => {
+    setRows((current) =>
+      JSON.stringify(rowsToItems(current)) === JSON.stringify(value) ? current : listToRows(value),
+    );
+  }, [value]);
+
+  const commit = (next: ListRow[]): void => {
+    setRows(next);
+    onChange(rowsToItems(next));
+  };
+  const add = (): void => commit([...rows, { id: crypto.randomUUID(), value: '' }]);
+  const update = (id: string, item: string): void =>
+    commit(rows.map((r) => (r.id === id ? { ...r, value: item } : r)));
+  const remove = (id: string): void => commit(rows.filter((r) => r.id !== id));
+
+  const atCapacity = maxItems !== undefined && rows.length >= maxItems;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {rows.map((row, i) => (
+        <div key={row.id} className="flex items-center gap-1.5">
+          <input
+            value={row.value}
+            onChange={(e) => update(row.id, e.target.value)}
+            placeholder={placeholder}
+            aria-label={`${label} item ${i + 1}`}
+            className={fieldClass}
+          />
+          <button
+            type="button"
+            aria-label={`Remove ${label} item ${i + 1}`}
+            onClick={() => remove(row.id)}
+          >
+            <X size={13} className="text-muted hover:text-danger" />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={add}
+        disabled={atCapacity}
+        className={cn(
+          'flex w-fit items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted hover:border-accent hover:text-fg',
+          atCapacity && 'cursor-not-allowed opacity-50',
+        )}
+      >
+        <Plus size={12} />
+        Add item
+      </button>
+    </div>
+  );
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {

@@ -3,10 +3,13 @@ import {
   StorageDeleteParams,
   StorageGetParams,
   StorageSetParams,
+  UiShowDialogParams,
   VariablesResolveParams,
   VariablesSetParams,
 } from '@shared/plugin-rpc';
 import { RpcCallError } from '@shared/plugin-rpc-endpoint';
+import { compileFormSchemaToZod } from '@shared/forms';
+import type { PluginDialogResult } from '@shared/plugins';
 import type { PersistenceService } from '../persistence';
 
 /** Storage quotas per plugin: 1 MB per value, 200 keys. */
@@ -18,6 +21,20 @@ export interface CapabilityBrokerDeps {
   /** Resolves `{{variables}}` (global scope; plugins carry no request context). */
   evaluate?: (template: string) => string;
   setVariable?: (scope: 'workspace' | 'global', key: string, value: string) => void;
+  /**
+   * Shows a plugin-requested modal in the renderer and resolves with the
+   * submitted values (`ui:dialog` capability). Absent in headless contexts,
+   * where dialogs resolve as cancelled.
+   */
+  showDialog?: (request: {
+    pluginId: string;
+    pluginName: string;
+    title: string;
+    message: string;
+    form: UiShowDialogParams['form'];
+    okLabel: string;
+    cancelLabel: string;
+  }) => Promise<PluginDialogResult>;
   log?: (level: 'info' | 'warn' | 'error', message: string, context?: object) => void;
 }
 
@@ -73,6 +90,32 @@ export class CapabilityBroker {
         }
         this.deps.setVariable(p.scope, p.key, p.value);
         return {};
+      }
+      case 'cap.ui.showDialog': {
+        const p = UiShowDialogParams.parse(params);
+        this.assertGranted(p.pluginId, 'ui:dialog');
+        if (!this.deps.showDialog) {
+          // Headless (tests, no window): resolve cancelled rather than hanging.
+          return { values: {}, cancelled: true };
+        }
+        const row = this.deps.persistence.plugins.get(p.pluginId);
+        const outcome = await this.deps.showDialog({
+          pluginId: p.pluginId,
+          pluginName: row?.name ?? p.pluginId,
+          title: p.title,
+          message: p.message,
+          form: p.form,
+          okLabel: p.okLabel,
+          cancelLabel: p.cancelLabel,
+        });
+        if (outcome.cancelled) return { values: {}, cancelled: true };
+        // Same invariant as node config: the plugin only ever sees values that
+        // passed its declared form schema.
+        const parsed = compileFormSchemaToZod(p.form).safeParse(outcome.values);
+        if (!parsed.success) {
+          throw new RpcCallError('E_DIALOG_VALUES', 'Dialog values failed schema validation');
+        }
+        return { values: parsed.data, cancelled: false };
       }
       default:
         throw new RpcCallError('E_UNKNOWN_CAPABILITY', `Unknown capability method: ${method}`);

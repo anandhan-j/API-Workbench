@@ -20,6 +20,7 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
   network: 'Network access',
   'variables:read': 'Read variables',
   'variables:write': 'Write variables',
+  'ui:dialog': 'Show dialogs',
 };
 
 const STATUS_STYLE: Record<InstalledPlugin['status'], string> = {

@@ -3,6 +3,7 @@ import { Capability, PluginManifest } from './plugins';
 import { ProtocolResponse } from './protocol';
 import { AuthArtifacts } from './auth';
 import { NormalizedSpec } from './openapi';
+import { FormSchema } from './forms';
 
 /**
  * The RPC protocol between the main process and the plugin host utility
@@ -14,7 +15,8 @@ import { NormalizedSpec } from './openapi';
  * Main→host methods: `plugin.activate`, `plugin.deactivate`, `node.execute`,
  * `request.execute`, `auth.apply`, `importer.detect`, `importer.parse`.
  * Host→main methods (capability calls): `cap.storage.get|set|delete`,
- * `cap.variables.resolve|set`. Grants are enforced per call in main.
+ * `cap.variables.resolve|set`, `cap.ui.showDialog`. Grants are enforced per
+ * call in main.
  */
 
 export const RPC_MAX_MESSAGE_BYTES = 10 * 1024 * 1024;
@@ -140,6 +142,27 @@ export const VariablesSetParams = z.object({
   value: z.string(),
 });
 
+/**
+ * `cap.ui.showDialog` — a plugin asks the host to show a modal dialog
+ * (requires the `ui:dialog` grant). The dialog itself is pure data (message +
+ * declarative form); the renderer draws it with trusted code and the values
+ * come back validated against the compiled form schema.
+ */
+export const UiShowDialogParams = z.object({
+  pluginId: z.string(),
+  title: z.string().max(80).default(''),
+  message: z.string().max(1000).default(''),
+  form: FormSchema.default({ fields: [] }),
+  okLabel: z.string().max(40).default('OK'),
+  cancelLabel: z.string().max(40).default('Cancel'),
+});
+export type UiShowDialogParams = z.infer<typeof UiShowDialogParams>;
+export const UiShowDialogResult = z.object({
+  values: z.record(z.unknown()).default({}),
+  cancelled: z.boolean().default(false),
+});
+export type UiShowDialogResult = z.infer<typeof UiShowDialogResult>;
+
 export const LogEventPayload = z.object({
   pluginId: z.string(),
   level: z.enum(['info', 'warn', 'error']),
@@ -161,4 +184,7 @@ export const RPC_TIMEOUTS: Record<string, number> = {
   // node.execute / request.execute use the caller's policy timeout; this is the backstop.
   'node.execute': 600_000,
   'request.execute': 600_000,
+  // A dialog stays open until the user acts; backstop matches node.execute so a
+  // dialog inside a node run cannot outlive the node call that spawned it.
+  'cap.ui.showDialog': 600_000,
 };

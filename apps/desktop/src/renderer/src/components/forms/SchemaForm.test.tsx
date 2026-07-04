@@ -21,6 +21,7 @@ const schema = FormSchema.parse({
       ],
     },
     { key: 'token', kind: 'secret', label: 'Token' },
+    { key: 'hosts', kind: 'list', label: 'Hosts', maxItems: 3 },
     { key: 'metadata', kind: 'keyvalue', label: 'Metadata' },
   ],
 });
@@ -49,6 +50,9 @@ describe('<SchemaForm />', () => {
     expect(screen.getByLabelText('Use TLS')).toBeInTheDocument();
     expect(screen.getByLabelText('Mode')).toBeInTheDocument();
     expect(screen.getByLabelText('Token')).toBeInTheDocument();
+    // List fields render no input until an item is added; the add action is the control.
+    expect(screen.getByText('Hosts')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Add item/ })).toBeInTheDocument();
     expect(screen.getByLabelText('Metadata key')).toBeInTheDocument();
   });
 
@@ -109,6 +113,36 @@ describe('<SchemaForm />', () => {
 
     await user.click(screen.getByRole('button', { name: 'Remove row' }));
     expect((onChange.mock.calls.at(-1)?.[0] as Record<string, unknown>).metadata).toEqual({});
+  });
+
+  it('adds, edits, and removes list items', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    const last = (): Record<string, unknown> =>
+      onChange.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+
+    await user.click(screen.getByRole('button', { name: /Add item/ }));
+    await user.type(screen.getByLabelText('Hosts item 1'), 'alpha');
+    expect(last().hosts).toEqual(['alpha']);
+
+    await user.click(screen.getByRole('button', { name: /Add item/ }));
+    await user.type(screen.getByLabelText('Hosts item 2'), 'beta');
+    expect(last().hosts).toEqual(['alpha', 'beta']);
+
+    await user.click(screen.getByRole('button', { name: 'Remove Hosts item 1' }));
+    expect(last().hosts).toEqual(['beta']);
+  });
+
+  it('disables the add action once maxItems rows exist', async () => {
+    const user = userEvent.setup();
+    render(<Harness onChange={vi.fn()} />);
+
+    const add = screen.getByRole('button', { name: /Add item/ });
+    await user.click(add);
+    await user.click(add);
+    await user.click(add);
+    expect(add).toBeDisabled();
   });
 
   it('shows field errors and descriptions', () => {

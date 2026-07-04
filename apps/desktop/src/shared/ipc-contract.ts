@@ -25,7 +25,14 @@ import { ImportRequest, ImportResult } from './openapi';
 import { SyncRequest, SyncResult } from './sync';
 import { CredentialMeta, SaveCredentialInput, WireAuthConfig } from './auth';
 import { RequestEnvelope, ProtocolResponse } from './protocol';
-import { Capability, InstalledPlugin, PluginContributionIndex, PluginInspection } from './plugins';
+import {
+  Capability,
+  InstalledPlugin,
+  PluginContributionIndex,
+  PluginDialogRequest,
+  PluginDialogResponse,
+  PluginInspection,
+} from './plugins';
 import { RunTestsRequest, TestReport } from './testing';
 import { ScriptRunRequest, ScriptRunResult, PreScriptRunRequest } from './scripting';
 import { CollectionVersion, VersionDiff, VersionSnapshot, RestoreResult } from './version';
@@ -347,6 +354,8 @@ export const IpcChannels = {
     response: InstalledPlugin,
   },
   'plugins.contributions': { request: Empty, response: PluginContributionIndex },
+  /** Settles a plugin dialog pushed via the `plugin.dialogRequest` event. */
+  'plugin.dialogRespond': { request: PluginDialogResponse, response: Empty },
 } as const;
 
 export type IpcChannelName = keyof typeof IpcChannels;
@@ -361,6 +370,7 @@ export const IpcEvents = {
   'workflow.awaitingInput': WorkflowInputRequest,
   'workflow.nodeProgress': WorkflowProgressEvent,
   'plugins.changed': PluginsChangedEvent,
+  'plugin.dialogRequest': PluginDialogRequest,
 } as const;
 
 export type IpcEventName = keyof typeof IpcEvents;
@@ -375,4 +385,5 @@ export interface WorkbenchApi {
   onWorkflowAwaitingInput(listener: (event: WorkflowInputRequest) => void): () => void;
   onWorkflowNodeProgress(listener: (event: WorkflowProgressEvent) => void): () => void;
   onPluginsChanged(listener: (event: PluginsChangedEvent) => void): () => void;
+  onPluginDialogRequest(listener: (event: PluginDialogRequest) => void): () => void;
 }

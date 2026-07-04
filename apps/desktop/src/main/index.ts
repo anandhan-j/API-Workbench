@@ -1,7 +1,12 @@
 import { join } from 'node:path';
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import appIcon from '../../resources/icon.png?asset';
-import { registerIpcHandlers, attachDispatchStream, notifyPluginsChanged } from './ipc';
+import {
+  registerIpcHandlers,
+  attachDispatchStream,
+  notifyPluginsChanged,
+  requestPluginDialog,
+} from './ipc';
 import { logger } from './services/logger';
 import { FileLogSink } from './services/file-log-sink';
 import { createBetterSqliteConnection, PersistenceService } from './persistence';
@@ -151,6 +156,7 @@ function initServices(): Services {
         value,
       });
     },
+    showDialog: (request) => requestPluginDialog(request),
     log: pluginLog,
   });
   const pluginHost = new PluginHostManager({

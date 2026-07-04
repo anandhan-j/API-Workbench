@@ -158,13 +158,16 @@ export type SetVariableNodeConfig = z.infer<typeof SetVariableNodeConfig>;
  * A single value the run asks the user to supply when it reaches a user-input
  * node. `variable` is the runtime variable the submitted value is written to;
  * `default` is a template, evaluated against the run context, used to pre-fill
- * the prompt; `secret` masks the input field.
+ * the prompt; `secret` masks the input field. A non-empty `options` list turns
+ * the prompt into a dropdown of those choices (each option is a template,
+ * evaluated like `default`); `secret` is ignored for dropdowns.
  */
 export const UserInputField = z.object({
   label: z.string().default(''),
   variable: z.string(),
   default: z.string().default(''),
   secret: z.boolean().default(false),
+  options: z.array(z.string()).default([]),
 });
 export type UserInputField = z.infer<typeof UserInputField>;
 

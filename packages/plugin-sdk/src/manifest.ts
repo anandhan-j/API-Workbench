@@ -13,13 +13,16 @@ import type { FormSchema } from './forms';
  * One field a node prompts the user for before its executor runs (see
  * {@link NodeContribution.input}). `variable` is the runtime variable the
  * submitted value is written to; `default` is a template pre-filling the
- * prompt; `secret` masks the input.
+ * prompt; `secret` masks the input. A non-empty `options` list renders the
+ * prompt as a dropdown of those choices (each option is a template, evaluated
+ * like `default`); `secret` is ignored for dropdowns.
  */
 export interface NodePromptField {
   variable: string;
   label?: string;
   default?: string;
   secret?: boolean;
+  options?: string[];
 }
 
 /**

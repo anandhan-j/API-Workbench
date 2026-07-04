@@ -264,12 +264,17 @@ export class PluginHostManager implements PluginHostPort {
         // never sees the prompt, only the resulting values in `runtime`.
         let collected: Record<string, string> = {};
         if (c.input) {
-          const fields = c.input.fields.map((f) => ({
-            label: f.label,
-            variable: f.variable,
-            default: env.ports.evaluate(f.default, env.ctx),
-            secret: f.secret,
-          }));
+          const fields = c.input.fields.map((f) => {
+            const options = (f.options ?? []).map((o) => env.ports.evaluate(o, env.ctx));
+            const dflt = env.ports.evaluate(f.default, env.ctx);
+            return {
+              label: f.label,
+              variable: f.variable,
+              default: dflt || (options[0] ?? ''),
+              secret: f.secret,
+              options,
+            };
+          });
           if (env.ports.requestInput) {
             const { values, cancelled } = await env.ports.requestInput(
               {
@@ -377,7 +382,11 @@ function pickApplyContext(ctx: ApplyContext): {
   };
 }
 
-/** Substitutes `{{vars}}` in top-level string values, honoring per-field opt-outs. */
+/**
+ * Substitutes `{{vars}}` in top-level string values (including the items of
+ * `list` arrays and the values of `keyvalue` records), honoring per-field
+ * opt-outs.
+ */
 function substitutePayload(
   payload: Record<string, unknown>,
   schema: FormSchema,
@@ -390,6 +399,8 @@ function substitutePayload(
       out[key] = value;
     } else if (typeof value === 'string') {
       out[key] = evaluate(value);
+    } else if (Array.isArray(value)) {
+      out[key] = value.map((item) => (typeof item === 'string' ? evaluate(item) : item));
     } else if (value && typeof value === 'object' && !Array.isArray(value)) {
       out[key] = Object.fromEntries(
         Object.entries(value as Record<string, unknown>).map(([k, v]) => [

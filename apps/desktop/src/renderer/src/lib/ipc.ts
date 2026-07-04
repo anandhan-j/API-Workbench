@@ -7,6 +7,7 @@ import type {
   WorkbenchApi,
 } from '@shared/ipc-contract';
 import type { WorkflowInputRequest, WorkflowProgressEvent } from '@shared/workflow';
+import type { PluginDialogRequest } from '@shared/plugins';
 
 /**
  * Renderer-side IPC client. Wraps the preload bridge and provides a safe fallback
@@ -28,6 +29,9 @@ const fallback: WorkbenchApi = {
     return () => undefined;
   },
   onPluginsChanged(_listener: (event: PluginsChangedEvent) => void): () => void {
+    return () => undefined;
+  },
+  onPluginDialogRequest(_listener: (event: PluginDialogRequest) => void): () => void {
     return () => undefined;
   },
 };
@@ -65,4 +69,10 @@ export function onWorkflowNodeProgress(
 
 export function onPluginsChanged(listener: (event: PluginsChangedEvent) => void): () => void {
   return getBridge().onPluginsChanged(listener);
+}
+
+export function onPluginDialogRequest(
+  listener: (event: PluginDialogRequest) => void,
+): () => void {
+  return getBridge().onPluginDialogRequest(listener);
 }

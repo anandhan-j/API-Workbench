@@ -58,6 +58,15 @@ export interface SelectField extends FormFieldBase {
   default?: string;
 }
 
+/** An ordered, growable list of string items (add/remove rows). */
+export interface ListField extends FormFieldBase {
+  kind: 'list';
+  placeholder?: string;
+  default?: string[];
+  /** Upper bound on item count. */
+  maxItems?: number;
+}
+
 /** Masked input; encrypted at rest when stored in a credential config. */
 export interface SecretField extends FormFieldBase {
   kind: 'secret';
@@ -74,6 +83,7 @@ export type FormField =
   | NumberField
   | BooleanField
   | SelectField
+  | ListField
   | SecretField
   | KeyValueField;
 

@@ -58,10 +58,17 @@ describe('example plugins end-to-end', () => {
   let requestTypes: RequestTypeRegistry;
   let host: PluginHostManager;
   let service: PluginService;
+  /** Per-test stand-in for the renderer's plugin dialog (default: cancel). */
+  let dialogHandler: (request: {
+    pluginName: string;
+    message: string;
+  }) => Promise<{ values: Record<string, unknown>; cancelled: boolean }>;
 
   beforeAll(() => {
     // Ensure the example bundles exist (idempotent, sub-second).
-    if (!existsSync(join(EXAMPLES_ROOT, 'uuid-node', 'dist', 'index.cjs'))) {
+    const bundled = (name: string): boolean =>
+      existsSync(join(EXAMPLES_ROOT, name, 'dist', 'index.cjs'));
+    if (!bundled('uuid-node') || !bundled('pick-item-node') || !bundled('approval-dialog-node')) {
       execFileSync(process.execPath, [join(EXAMPLES_ROOT, 'build.mjs')]);
     }
   });
@@ -74,7 +81,11 @@ describe('example plugins end-to-end', () => {
     auth = new AuthProviderRegistry();
     importers = new ImporterRegistry(builtinOpenApiImporters(), DEFAULT_IMPORTER_ID);
     requestTypes = new RequestTypeRegistry([]);
-    const broker = new CapabilityBroker({ persistence });
+    dialogHandler = async () => ({ values: {}, cancelled: true });
+    const broker = new CapabilityBroker({
+      persistence,
+      showDialog: (request) => dialogHandler(request),
+    });
     host = new PluginHostManager({
       spawn: () => new InProcessHostTransport(),
       broker,
@@ -107,6 +118,149 @@ describe('example plugins end-to-end', () => {
     );
     expect(outcome.result.status).toBe('success');
     expect(outcome.result.variablesSet?.['token']).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('installs the pick-item-node example and picks from its list per strategy', async () => {
+    const installed = await service.install(join(EXAMPLES_ROOT, 'pick-item-node'), []);
+    expect(installed.status).toBe('active');
+
+    const kind = pluginNodeKind('com.example.pick-item-node', 'pick-item');
+    const executor = nodes.resolve(kind);
+    expect(executor).toBeDefined();
+
+    const run = async (config: Record<string, unknown>) =>
+      executor!(
+        { id: 'n1', kind, name: 'Pick', position: { x: 0, y: 0 }, config },
+        fakeEnv(),
+      );
+
+    const last = await run({
+      items: ['alpha', 'beta', 'gamma'],
+      strategy: 'last',
+      variable: 'picked',
+      listVariable: 'pickedList',
+    });
+    expect(last.result.status).toBe('success');
+    expect(last.result.variablesSet?.['picked']).toBe('gamma');
+    expect(last.result.variablesSet?.['pickedList']).toBe('["alpha","beta","gamma"]');
+
+    const byIndex = await run({
+      items: ['alpha', 'beta', 'gamma'],
+      strategy: 'index',
+      index: 1,
+      variable: 'picked',
+      listVariable: '',
+    });
+    expect(byIndex.result.variablesSet?.['picked']).toBe('beta');
+    // Explicitly blank list variable → only the picked item is set.
+    expect(byIndex.result.variablesSet).toEqual({ picked: 'beta' });
+
+    const random = await run({
+      items: ['alpha', 'beta'],
+      strategy: 'random',
+      variable: 'picked',
+    });
+    expect(['alpha', 'beta']).toContain(random.result.variablesSet?.['picked']);
+  });
+
+  it('gates a run behind the approval-dialog-node example (ui:dialog capability)', async () => {
+    const installed = await service.install(join(EXAMPLES_ROOT, 'approval-dialog-node'), [
+      'ui:dialog',
+    ]);
+    expect(installed.status).toBe('active');
+
+    const kind = pluginNodeKind('com.example.approval-dialog-node', 'approval-gate');
+    const executor = nodes.resolve(kind);
+    expect(executor).toBeDefined();
+
+    const run = (config: Record<string, unknown>) =>
+      executor!(
+        { id: 'n1', kind, name: 'Gate', position: { x: 0, y: 0 }, config },
+        fakeEnv(),
+      );
+
+    // Approved: the comment lands in the configured variable.
+    let seen: { pluginName: string; message: string } | undefined;
+    dialogHandler = async (request) => {
+      seen = request;
+      return { values: { decision: 'approve', comment: 'LGTM' }, cancelled: false };
+    };
+    const approved = await run({ question: 'Deploy to prod?', variable: 'note' });
+    expect(approved.result.status).toBe('success');
+    expect(approved.result.variablesSet?.['note']).toBe('LGTM');
+    expect(seen?.pluginName).toBe('Approval Dialog Node');
+    expect(seen?.message).toBe('Deploy to prod?');
+
+    // Rejected: the node fails the run.
+    dialogHandler = async () => ({
+      values: { decision: 'reject', comment: 'not yet' },
+      cancelled: false,
+    });
+    await expect(run({ question: 'Deploy?' })).rejects.toThrow(/rejected: not yet/);
+
+    // Cancelled (also the headless outcome): fails closed.
+    dialogHandler = async () => ({ values: {}, cancelled: true });
+    await expect(run({ question: 'Deploy?' })).rejects.toThrow(/cancelled/);
+  });
+
+  it('extends the app with the dropdown-dialog-node example without any host changes', async () => {
+    const installed = await service.install(join(EXAMPLES_ROOT, 'dropdown-dialog-node'), [
+      'ui:dialog',
+    ]);
+    expect(installed.status).toBe('active');
+
+    const kind = pluginNodeKind('com.example.dropdown-dialog-node', 'dropdown-picker');
+    const executor = nodes.resolve(kind);
+    expect(executor).toBeDefined();
+
+    // One dialog: a dropdown from the keyvalue grid plus a dropdown from the
+    // `list` field, both built at runtime.
+    let form: { fields: Array<{ kind: string; options?: Array<{ value: string }> }> } | undefined;
+    dialogHandler = async (request) => {
+      form = (request as { form?: typeof form }).form;
+      return { values: { choice: 'Staging', listChoice: 'eu-west' }, cancelled: false };
+    };
+
+    const outcome = await executor!(
+      {
+        id: 'n1',
+        kind,
+        name: 'Pick env',
+        position: { x: 0, y: 0 },
+        config: {
+          items: { Production: 'https://api.example.com', Staging: 'https://staging.example.com' },
+          listItems: ['us-east', 'eu-west'],
+          variable: 'baseUrl',
+          labelVariable: 'envName',
+          listVariable: 'region',
+        },
+      },
+      fakeEnv(),
+    );
+    expect(form?.fields.map((f) => f.kind)).toEqual(['select', 'select']);
+    expect(form?.fields[0]?.options?.map((o) => o.value)).toEqual(['Production', 'Staging']);
+    expect(form?.fields[1]?.options?.map((o) => o.value)).toEqual(['us-east', 'eu-west']);
+    expect(outcome.result.status).toBe('success');
+    expect(outcome.result.variablesSet).toEqual({
+      baseUrl: 'https://staging.example.com',
+      envName: 'Staging',
+      region: 'eu-west',
+    });
+
+    // Cancelling the dialog fails the node.
+    dialogHandler = async () => ({ values: {}, cancelled: true });
+    await expect(
+      executor!(
+        {
+          id: 'n1',
+          kind,
+          name: 'Pick env',
+          position: { x: 0, y: 0 },
+          config: { items: { A: '1' }, variable: 'v' },
+        },
+        fakeEnv(),
+      ),
+    ).rejects.toThrow(/cancelled/);
   });
 
   it('executes the echo request type and applies plugin auth artifacts to it', async () => {

@@ -80,7 +80,7 @@ Rules worth knowing:
 
 ### Form schemas
 
-Field kinds: `string`, `textarea` (`language: 'text' | 'json'`), `number` (`min`/`max`/`integer`), `boolean`, `select` (`options`), `secret` (masked, encrypted at rest in credential configs), `keyvalue` (string→string grid). Common properties: `key`, `label`, `description`, `required`, `substituteVariables` (default `true` — set `false` on fields whose `{{ }}` braces must stay literal). Values are validated against the compiled schema **before** your code sees them.
+Field kinds: `string`, `textarea` (`language: 'text' | 'json'`), `number` (`min`/`max`/`integer`), `boolean`, `select` (`options`), `list` (growable string-item list with add/remove rows; optional `maxItems`, each item is variable-substituted individually), `secret` (masked, encrypted at rest in credential configs), `keyvalue` (string→string grid). Common properties: `key`, `label`, `description`, `required`, `substituteVariables` (default `true` — set `false` on fields whose `{{ }}` braces must stay literal). Values are validated against the compiled schema **before** your code sees them.
 
 ## The entry module
 
@@ -148,6 +148,7 @@ export default definePlugin({
 | `fetch` | `network` capability | `file:`/`app:` schemes blocked |
 | `variables.resolve` | `variables:read` | substitutes `{{name}}` templates |
 | `variables.set` | `variables:write` | workspace/global scopes |
+| `ui.showDialog` | `ui:dialog` | host-rendered modal: `{title?, message?, form?, okLabel?, cancelLabel?}` → `{cancelled, values}`. The `form` uses the same schema language as config forms; the host draws the dialog (always naming your plugin) and validates the values before you see them. Headless runs resolve as cancelled. |
 
 ### Extension-point contracts
 

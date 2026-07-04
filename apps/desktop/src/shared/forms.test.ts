@@ -131,6 +131,31 @@ describe('compileFormSchemaToZod', () => {
     expect(zod.parse({})).toEqual({ c: 'blue' });
   });
 
+  it('list: validates a string array, defaulting to []', () => {
+    const zod = compileFormSchemaToZod(schema([{ key: 'l', label: 'L', kind: 'list' }]));
+    expect(zod.parse({})).toEqual({ l: [] });
+    expect(zod.parse({ l: ['a', 'b'] })).toEqual({ l: ['a', 'b'] });
+    expect(() => zod.parse({ l: [1] })).toThrow();
+    expect(() => zod.parse({ l: 'nope' })).toThrow();
+  });
+
+  it('list: required must be non-empty; maxItems is enforced', () => {
+    const zod = compileFormSchemaToZod(
+      schema([{ key: 'l', label: 'L', kind: 'list', required: true, maxItems: 2 }]),
+    );
+    expect(zod.parse({ l: ['a'] })).toEqual({ l: ['a'] });
+    expect(() => zod.parse({})).toThrow();
+    expect(() => zod.parse({ l: [] })).toThrow();
+    expect(() => zod.parse({ l: ['a', 'b', 'c'] })).toThrow();
+  });
+
+  it('list: declared default wins over the natural empty array', () => {
+    const zod = compileFormSchemaToZod(
+      schema([{ key: 'l', label: 'L', kind: 'list', default: ['x'] }]),
+    );
+    expect(zod.parse({})).toEqual({ l: ['x'] });
+  });
+
   it('keyvalue: validates a string→string record, defaulting to {}', () => {
     const zod = compileFormSchemaToZod(schema([{ key: 'kv', label: 'KV', kind: 'keyvalue' }]));
     expect(zod.parse({})).toEqual({ kv: {} });
@@ -166,6 +191,8 @@ describe('formDefaults', () => {
           kind: 'select',
           options: [{ value: 'one', label: 'One' }],
         },
+        { key: 'l', label: 'L', kind: 'list' },
+        { key: 'ld', label: 'LD', kind: 'list', default: ['x', 'y'] },
         { key: 'kv', label: 'KV', kind: 'keyvalue' },
       ]),
     );
@@ -179,6 +206,8 @@ describe('formDefaults', () => {
       b: false,
       bd: true,
       c: 'one',
+      l: [],
+      ld: ['x', 'y'],
       kv: {},
     });
     expect('n' in values).toBe(false);

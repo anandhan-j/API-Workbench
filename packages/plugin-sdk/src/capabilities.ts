@@ -6,5 +6,6 @@
  * - `network` — outbound HTTP via `context.fetch`.
  * - `variables:read` — resolve `{{variable}}` templates via `context.variables`.
  * - `variables:write` — set workspace/global variables via `context.variables`.
+ * - `ui:dialog` — show host-rendered modal dialogs via `context.ui.showDialog`.
  */
-export type Capability = 'network' | 'variables:read' | 'variables:write';
+export type Capability = 'network' | 'variables:read' | 'variables:write' | 'ui:dialog';

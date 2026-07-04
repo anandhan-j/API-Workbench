@@ -1,4 +1,5 @@
 import type { AuthProvider, Importer, NodeExecutor, RequestTypeProvider } from './extension-points';
+import type { FormSchema, FormValues } from './forms';
 
 /**
  * The plugin entry contract. A plugin's `main` module default-exports a
@@ -44,6 +45,42 @@ export interface PluginVariables {
   set(scope: 'workspace' | 'global', key: string, value: string): Promise<void>;
 }
 
+/**
+ * A dialog the host shows on the plugin's behalf. Pure data: the host renders
+ * `message` and the declarative `form` with its own trusted UI (always naming
+ * the plugin), and resolves with the submitted values — plugin code never
+ * draws anything itself (ADR-0010). With no `form` the dialog is a plain
+ * confirm and `values` comes back empty.
+ */
+export interface PluginDialogOptions {
+  /** Dialog heading (defaults to the plugin's name). Max 80 chars. */
+  title?: string;
+  /** Body text above the form. Max 1000 chars. */
+  message?: string;
+  /** Fields to collect; same schema language as node config forms. */
+  form?: FormSchema;
+  /** Confirm-button label (default "OK"). */
+  okLabel?: string;
+  /** Cancel-button label (default "Cancel"). */
+  cancelLabel?: string;
+}
+
+export interface PluginDialogOutcome {
+  /** True when the user dismissed the dialog without confirming. */
+  cancelled: boolean;
+  /** Submitted values, validated against `form`; empty when cancelled. */
+  values: FormValues;
+}
+
+/** Host-rendered UI; present only when the `ui:dialog` capability was granted. */
+export interface PluginUi {
+  /**
+   * Shows a modal dialog and resolves once the user confirms or cancels.
+   * Headless runs (no window) resolve as cancelled, so always handle that.
+   */
+  showDialog(options: PluginDialogOptions): Promise<PluginDialogOutcome>;
+}
+
 export interface PluginContext {
   readonly pluginId: string;
   readonly log: PluginLogger;
@@ -52,6 +89,8 @@ export interface PluginContext {
   readonly variables?: PluginVariables;
   /** Outbound HTTP; present iff the `network` capability was granted. */
   readonly fetch?: typeof fetch;
+  /** Host-rendered dialogs; present iff the `ui:dialog` capability was granted. */
+  readonly ui?: PluginUi;
 
   /** Registers the executor for a node contribution declared in the manifest. */
   registerNodeExecutor(kind: string, executor: NodeExecutor): void;

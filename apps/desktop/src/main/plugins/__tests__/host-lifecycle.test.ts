@@ -96,6 +96,19 @@ describe('plugin host lifecycle', () => {
   let setVariable: ReturnType<
     typeof vi.fn<(scope: 'workspace' | 'global', key: string, value: string) => void>
   >;
+  let showDialog: ReturnType<
+    typeof vi.fn<
+      (request: {
+        pluginId: string;
+        pluginName: string;
+        title: string;
+        message: string;
+        form: { fields: unknown[] };
+        okLabel: string;
+        cancelLabel: string;
+      }) => Promise<{ values: Record<string, unknown>; cancelled: boolean }>
+    >
+  >;
 
   beforeEach(async () => {
     const conn = await createSqlJsConnection();
@@ -115,10 +128,12 @@ describe('plugin host lifecycle', () => {
     sleeps = [];
     brokerLog = vi.fn<(level: 'info' | 'warn' | 'error', message: string, context?: object) => void>();
     setVariable = vi.fn<(scope: 'workspace' | 'global', key: string, value: string) => void>();
+    showDialog = vi.fn(async () => ({ values: {}, cancelled: true }));
     broker = new CapabilityBroker({
       persistence,
       evaluate: (template) => template.replace('{{name}}', 'world'),
       setVariable,
+      showDialog,
       log: brokerLog,
     });
     manager = new PluginHostManager({
@@ -367,6 +382,104 @@ describe('plugin host lifecycle', () => {
     await expect(okCtx!.variables!.resolve('hello {{name}}')).resolves.toBe('hello world');
     await okCtx!.variables!.set('workspace', 'answer', '42');
     expect(setVariable).toHaveBeenCalledWith('workspace', 'answer', '42');
+  });
+
+  it('exposes ctx.ui only when ui:dialog is granted, and dialogs round-trip through the broker', async () => {
+    // No grant: the member is absent entirely.
+    const plainId = 'com.acme.nodlg';
+    const plainManifest = makeManifest(plainId);
+    let plainCtx: PluginContext | undefined;
+    defineModule(plainId, (context) => {
+      plainCtx = context;
+    });
+    await activate(plainId, plainManifest);
+    expect(plainCtx!.ui).toBeUndefined();
+
+    // Granted: the dialog flows to the injected port and the values flow back.
+    const id = 'com.acme.dlg';
+    const manifest = makeManifest(id, { capabilities: ['ui:dialog'] });
+    persistence.plugins.save({
+      manifest,
+      grantedCapabilities: ['ui:dialog'],
+      installPath: '/mem',
+      devMode: false,
+    });
+    let ctx: PluginContext | undefined;
+    defineModule(id, (context) => {
+      ctx = context;
+    });
+    await activate(id, manifest, ['ui:dialog']);
+    expect(ctx!.ui).toBeDefined();
+
+    const form = {
+      fields: [
+        {
+          kind: 'select' as const,
+          key: 'decision',
+          label: 'Decision',
+          options: [
+            { value: 'approve', label: 'Approve' },
+            { value: 'reject', label: 'Reject' },
+          ],
+        },
+      ],
+    };
+    showDialog.mockResolvedValueOnce({ values: { decision: 'approve' }, cancelled: false });
+    await expect(
+      ctx!.ui!.showDialog({ title: 'Approval', message: 'OK?', form }),
+    ).resolves.toEqual({ values: { decision: 'approve' }, cancelled: false });
+    expect(showDialog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pluginId: id,
+        pluginName: `Plugin ${id}`,
+        title: 'Approval',
+        message: 'OK?',
+        okLabel: 'OK',
+        cancelLabel: 'Cancel',
+      }),
+    );
+
+    // Values that violate the declared form schema never reach the plugin.
+    showDialog.mockResolvedValueOnce({ values: { decision: 'bogus' }, cancelled: false });
+    await expect(ctx!.ui!.showDialog({ form })).rejects.toThrow(/schema validation/);
+
+    // Cancelled dialogs come back cancelled with no values.
+    showDialog.mockResolvedValueOnce({ values: { decision: 'approve' }, cancelled: true });
+    await expect(ctx!.ui!.showDialog({ form })).resolves.toEqual({
+      values: {},
+      cancelled: true,
+    });
+  });
+
+  it('the broker denies dialogs without a persisted grant and cancels them headlessly', async () => {
+    // Activated claiming the grant, but the persisted row does not have it.
+    const liarId = 'com.acme.dlgliar';
+    const liarManifest = makeManifest(liarId, { capabilities: ['ui:dialog'] });
+    persistence.plugins.save({
+      manifest: liarManifest,
+      grantedCapabilities: [],
+      installPath: '/mem',
+      devMode: false,
+    });
+    let liarCtx: PluginContext | undefined;
+    defineModule(liarId, (context) => {
+      liarCtx = context;
+    });
+    await activate(liarId, liarManifest, ['ui:dialog']);
+    await expect(liarCtx!.ui!.showDialog({})).rejects.toThrow(/not granted/);
+    expect(showDialog).not.toHaveBeenCalled();
+
+    // Headless broker (no showDialog port): resolves cancelled, never hangs.
+    const headless = new CapabilityBroker({ persistence });
+    persistence.plugins.save({
+      manifest: makeManifest('com.acme.headless', { capabilities: ['ui:dialog'] }),
+      grantedCapabilities: ['ui:dialog'],
+      installPath: '/mem',
+      devMode: false,
+    });
+    await expect(
+      headless.handle('cap.ui.showDialog', { pluginId: 'com.acme.headless' }),
+    ).resolves.toEqual({ values: {}, cancelled: true });
   });
 
   it('write-only grants still reject reads (and vice versa) inside the host gate', async () => {

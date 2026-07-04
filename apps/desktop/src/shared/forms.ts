@@ -63,6 +63,15 @@ export const FormField = z.discriminatedUnion('kind', [
   }),
   z.object({
     ...fieldBase,
+    /** An ordered, growable list of string items (add/remove rows). */
+    kind: z.literal('list'),
+    placeholder: z.string().optional(),
+    default: z.array(z.string()).optional(),
+    /** Upper bound on item count. */
+    maxItems: z.number().int().positive().max(200).optional(),
+  }),
+  z.object({
+    ...fieldBase,
     /** Masked input; encrypted at rest when stored in a credential config. */
     kind: z.literal('secret'),
   }),
@@ -117,6 +126,11 @@ function fieldToZod(field: FormField): z.ZodType {
       return z.boolean();
     case 'select':
       return z.enum(field.options.map((o) => o.value) as [string, ...string[]]);
+    case 'list': {
+      let a = z.array(z.string());
+      if (field.maxItems !== undefined) a = a.max(field.maxItems);
+      return field.required ? a.min(1) : a;
+    }
     case 'keyvalue':
       return z.record(z.string());
   }
@@ -135,6 +149,8 @@ function fieldDefault(field: FormField): unknown {
       return false;
     case 'select':
       return field.options[0]?.value;
+    case 'list':
+      return [];
     case 'keyvalue':
       return {};
   }

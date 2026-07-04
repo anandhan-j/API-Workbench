@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { IpcChannels, type DispatchEvent, type IpcChannelName } from '@shared/ipc-contract';
 import type { WorkflowInputRequest, WorkflowInputResult } from '@shared/workflow';
+import type { PluginDialogRequest, PluginDialogResult } from '@shared/plugins';
 import { logger } from '../services/logger';
 import type { PersistenceService } from '../persistence';
 import type { WorkspaceManager } from '../workspace';
@@ -67,6 +68,34 @@ function sendToRenderer(channel: string, payload: unknown): void {
 /** Pushes a `plugins.changed` event so renderer queries refetch (Phase 16). */
 export function notifyPluginsChanged(reason: string): void {
   sendToRenderer('plugins.changed', { reason });
+}
+
+/**
+ * Resolvers for plugin dialogs currently open in the renderer, keyed by
+ * dialog id. `plugin.dialogRespond` settles them, unblocking the capability
+ * broker's `cap.ui.showDialog` call.
+ */
+const pendingDialogs = new Map<string, (result: PluginDialogResult) => void>();
+
+/**
+ * Pushes a plugin-requested dialog to the renderer and resolves once the user
+ * replies via `plugin.dialogRespond`. Resolves cancelled when no window can
+ * show it. The capability broker has already verified the `ui:dialog` grant.
+ */
+export function requestPluginDialog(
+  request: Omit<PluginDialogRequest, 'dialogId'>,
+): Promise<PluginDialogResult> {
+  const window = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+  if (!window) return Promise.resolve({ values: {}, cancelled: true });
+
+  const dialogId = randomUUID();
+  return new Promise<PluginDialogResult>((resolve) => {
+    pendingDialogs.set(dialogId, (result) => {
+      pendingDialogs.delete(dialogId);
+      resolve(result);
+    });
+    window.webContents.send('plugin.dialogRequest', { ...request, dialogId });
+  });
 }
 
 /**
@@ -441,6 +470,13 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     },
     'workflow.provideInput': (request) => {
       pendingInputs.get(`${request.workflowId}:${request.nodeId}`)?.({
+        values: request.values,
+        cancelled: request.cancelled,
+      });
+      return {};
+    },
+    'plugin.dialogRespond': (request) => {
+      pendingDialogs.get(request.dialogId)?.({
         values: request.values,
         cancelled: request.cancelled,
       });

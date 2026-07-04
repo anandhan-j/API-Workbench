@@ -141,13 +141,20 @@ export const BUILTIN_NODE_EXECUTORS: BuiltinNodeExecutors = {
   },
 
   'user-input': async (node, env) => {
-    // Resolve each field's default template so the prompt is pre-filled.
-    const fields = node.config.fields.map((f) => ({
-      label: f.label,
-      variable: f.variable,
-      default: env.ports.evaluate(f.default, env.ctx),
-      secret: f.secret,
-    }));
+    // Resolve each field's default and option templates so the prompt is
+    // pre-filled; a dropdown with no default pre-selects its first option.
+    const fields = node.config.fields.map((f) => {
+      // `?? []`: graphs persisted before options existed lack the key entirely.
+      const options = (f.options ?? []).map((o) => env.ports.evaluate(o, env.ctx));
+      const dflt = env.ports.evaluate(f.default, env.ctx);
+      return {
+        label: f.label,
+        variable: f.variable,
+        default: dflt || (options[0] ?? ''),
+        secret: f.secret,
+        options,
+      };
+    });
     // Headless fallback: no input port → accept the evaluated defaults.
     if (!env.ports.requestInput) {
       const values = Object.fromEntries(fields.map((f) => [f.variable, f.default]));

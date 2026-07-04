@@ -26,7 +26,16 @@ export function WorkflowInputPrompt({
   onCancel,
 }: WorkflowInputPromptProps): JSX.Element {
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(request.fields.map((f) => [f.variable, f.default])),
+    Object.fromEntries(
+      request.fields.map((f) => [
+        f.variable,
+        // A dropdown must submit one of its options; fall back to the first
+        // when the default is absent from (or empty for) the list.
+        f.options.length > 0 && !f.options.includes(f.default)
+          ? (f.options[0] ?? '')
+          : f.default,
+      ]),
+    ),
   );
 
   return (
@@ -48,14 +57,29 @@ export function WorkflowInputPrompt({
             <label className={labelClass} htmlFor={`wf-input-${field.variable}`}>
               {field.label || field.variable}
             </label>
-            <input
-              id={`wf-input-${field.variable}`}
-              type={field.secret ? 'password' : 'text'}
-              value={values[field.variable] ?? ''}
-              onChange={(e) => setValues((v) => ({ ...v, [field.variable]: e.target.value }))}
-              className={fieldClass}
-              autoComplete="off"
-            />
+            {field.options.length > 0 ? (
+              <select
+                id={`wf-input-${field.variable}`}
+                value={values[field.variable] ?? field.options[0]}
+                onChange={(e) => setValues((v) => ({ ...v, [field.variable]: e.target.value }))}
+                className={fieldClass}
+              >
+                {field.options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id={`wf-input-${field.variable}`}
+                type={field.secret ? 'password' : 'text'}
+                value={values[field.variable] ?? ''}
+                onChange={(e) => setValues((v) => ({ ...v, [field.variable]: e.target.value }))}
+                className={fieldClass}
+                autoComplete="off"
+              />
+            )}
           </div>
         ))}
 

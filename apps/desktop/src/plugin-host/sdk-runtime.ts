@@ -98,6 +98,29 @@ export function buildPluginContext(deps: SdkRuntimeDeps): PluginContext {
     });
   }
 
+  if (granted.has('ui:dialog')) {
+    Object.defineProperty(context, 'ui', {
+      enumerable: true,
+      value: {
+        showDialog: async (options: {
+          title?: string;
+          message?: string;
+          form?: unknown;
+          okLabel?: string;
+          cancelLabel?: string;
+        }) =>
+          (await call('cap.ui.showDialog', {
+            pluginId,
+            ...(options.title !== undefined ? { title: options.title } : {}),
+            ...(options.message !== undefined ? { message: options.message } : {}),
+            ...(options.form !== undefined ? { form: options.form } : {}),
+            ...(options.okLabel !== undefined ? { okLabel: options.okLabel } : {}),
+            ...(options.cancelLabel !== undefined ? { cancelLabel: options.cancelLabel } : {}),
+          })) as { values: Record<string, unknown>; cancelled: boolean },
+      },
+    });
+  }
+
   if (granted.has('network')) {
     const backing = deps.fetchImpl ?? fetch;
     Object.defineProperty(context, 'fetch', {

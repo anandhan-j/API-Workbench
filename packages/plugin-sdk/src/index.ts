@@ -9,6 +9,7 @@ export type {
   NumberField,
   BooleanField,
   SelectField,
+  ListField,
   SecretField,
   KeyValueField,
 } from './forms';
@@ -42,8 +43,11 @@ export type {
 export {
   definePlugin,
   type PluginContext,
+  type PluginDialogOptions,
+  type PluginDialogOutcome,
   type PluginLogger,
   type PluginStorage,
+  type PluginUi,
   type PluginVariables,
   type WorkbenchPlugin,
 } from './plugin';

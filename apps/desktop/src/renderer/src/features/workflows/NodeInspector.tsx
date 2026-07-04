@@ -13,7 +13,7 @@ import type {
 import { extractFromResponse } from '@shared/extract';
 import { qualifiedContributionId } from '@shared/plugins';
 import { Modal } from '../../components/menu/Modal';
-import { SchemaForm } from '../../components/forms/SchemaForm';
+import { SchemaForm, StringListEditor } from '../../components/forms/SchemaForm';
 import { usePluginContributions } from '../plugins/use-plugins';
 import { RequestEditor } from '../runner/RequestEditor';
 import type { FlowNode } from './graph-mapping';
@@ -306,9 +306,11 @@ export function NodeInspector({
               className={fieldClass}
             />
           </Field>
-          <Field label="Cases (comma-separated)" id="node-cases">
-            <CasesField
-              cases={(config.cases as string[]) ?? []}
+          <Field label="Cases" id="node-cases">
+            <StringListEditor
+              label="Cases"
+              value={(config.cases as string[]) ?? []}
+              placeholder="e.g. free"
               onChange={(cases) => set({ cases })}
             />
           </Field>
@@ -600,7 +602,7 @@ function UserInputFieldsEditor({
   const update = (i: number, patch: Partial<UserInputField>): void =>
     onChange(fields.map((f, j) => (j === i ? { ...f, ...patch } : f)));
   const add = (): void =>
-    onChange([...fields, { label: '', variable: '', default: '', secret: false }]);
+    onChange([...fields, { label: '', variable: '', default: '', secret: false, options: [] }]);
   const remove = (i: number): void => onChange(fields.filter((_, j) => j !== i));
 
   return (
@@ -647,14 +649,27 @@ function UserInputFieldsEditor({
               placeholder="Default (template, e.g. {{token}})"
               className={`${smallField} w-full font-mono`}
             />
-            <label className="flex items-center gap-1.5 text-[11px] text-muted">
-              <input
-                type="checkbox"
-                checked={field.secret}
-                onChange={(e) => update(i, { secret: e.target.checked })}
+            <div>
+              <span className="text-[11px] text-muted">
+                Choices (optional — the prompt becomes a dropdown)
+              </span>
+              <StringListEditor
+                label={`${field.label || field.variable || `Field ${i + 1}`} choices`}
+                value={field.options ?? []}
+                placeholder="e.g. staging"
+                onChange={(options) => update(i, { options })}
               />
-              Mask input (secret)
-            </label>
+            </div>
+            {(field.options ?? []).length === 0 && (
+              <label className="flex items-center gap-1.5 text-[11px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={field.secret}
+                  onChange={(e) => update(i, { secret: e.target.checked })}
+                />
+                Mask input (secret)
+              </label>
+            )}
           </div>
         ))}
         <button
@@ -728,49 +743,6 @@ function ReliabilitySection({
         </Field>
       </div>
     </details>
-  );
-}
-
-/** Splits the raw "a, b, c" text into trimmed, non-empty case labels. */
-function parseCases(text: string): string[] {
-  return text
-    .split(',')
-    .map((c) => c.trim())
-    .filter(Boolean);
-}
-
-/**
- * Comma-separated case editor for the switch node. It keeps the raw text in
- * local state so an in-progress comma or trailing space survives editing —
- * parsing the array directly on every keystroke (and re-joining it back into
- * `value`) would strip the comma the moment it's typed. The parsed array is
- * pushed up on change; local text resyncs only when the cases change from
- * outside (e.g. selecting a different node), not from our own edits.
- */
-function CasesField({
-  cases,
-  onChange,
-}: {
-  cases: string[];
-  onChange: (cases: string[]) => void;
-}): JSX.Element {
-  const [text, setText] = useState(cases.join(', '));
-  useEffect(() => {
-    if (JSON.stringify(parseCases(text)) !== JSON.stringify(cases)) {
-      setText(cases.join(', '));
-    }
-  }, [cases, text]);
-  return (
-    <input
-      id="node-cases"
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value);
-        onChange(parseCases(e.target.value));
-      }}
-      placeholder="free, pro, enterprise"
-      className={fieldClass}
-    />
   );
 }
 

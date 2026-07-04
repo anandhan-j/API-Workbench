@@ -33,20 +33,23 @@ export type PluginId = z.infer<typeof PluginId>;
 const contributionKey = z.string().regex(/^[a-z][a-z0-9-]*$/);
 
 /** Capabilities a plugin may request; granted per-plugin by the user at install. */
-export const Capability = z.enum(['network', 'variables:read', 'variables:write']);
+export const Capability = z.enum(['network', 'variables:read', 'variables:write', 'ui:dialog']);
 export type Capability = z.infer<typeof Capability>;
 
 /**
  * One field a node prompts the user for before its executor runs (see
  * {@link NodeContribution.input}). Mirrors the built-in user-input node's field
  * shape: `variable` is the runtime variable the submitted value is written to,
- * `default` is a template pre-filling the prompt, `secret` masks the input.
+ * `default` is a template pre-filling the prompt, `secret` masks the input, and
+ * a non-empty `options` list renders the prompt as a dropdown of those choices
+ * (each option is a template, evaluated like `default`).
  */
 export const NodePromptField = z.object({
   variable: z.string().min(1).max(60),
   label: z.string().max(80).default(''),
   default: z.string().max(2000).default(''),
   secret: z.boolean().default(false),
+  options: z.array(z.string().max(200)).max(50).default([]),
 });
 export type NodePromptField = z.infer<typeof NodePromptField>;
 
@@ -223,4 +226,40 @@ export type PluginContributionIndex = z.infer<typeof PluginContributionIndex>;
 /** Runtime id of a contribution: `plugin:<pluginId>/<key>`. */
 export function qualifiedContributionId(pluginId: string, key: string): string {
   return `plugin:${pluginId}/${key}`;
+}
+
+// --- Plugin dialogs (`ui:dialog` capability) ---
+
+/**
+ * A dialog a plugin asks the host to show (`ctx.ui.showDialog`, ADR-0010).
+ * Pure data: the renderer draws it with the trusted Modal + SchemaForm pair and
+ * always displays the owning plugin's name, so a plugin can never spoof host
+ * chrome. `form` may be empty — the dialog is then a plain confirm.
+ */
+export const PluginDialogRequest = z.object({
+  /** Correlation id minted by the main process, echoed by the reply. */
+  dialogId: z.string(),
+  pluginId: PluginId,
+  /** Display name shown in the dialog's provenance line. */
+  pluginName: z.string(),
+  title: z.string().max(80).default(''),
+  message: z.string().max(1000).default(''),
+  form: FormSchema.default({ fields: [] }),
+  okLabel: z.string().max(40).default('OK'),
+  cancelLabel: z.string().max(40).default('Cancel'),
+});
+export type PluginDialogRequest = z.infer<typeof PluginDialogRequest>;
+
+/** The renderer's reply settling a {@link PluginDialogRequest}. */
+export const PluginDialogResponse = z.object({
+  dialogId: z.string(),
+  values: z.record(z.unknown()).default({}),
+  cancelled: z.boolean().default(false),
+});
+export type PluginDialogResponse = z.infer<typeof PluginDialogResponse>;
+
+/** The broker-facing outcome of a plugin dialog. */
+export interface PluginDialogResult {
+  values: Record<string, unknown>;
+  cancelled: boolean;
 }

@@ -411,7 +411,7 @@ describe('WorkflowEngine', () => {
 
   const userInput = (
     id: string,
-    fields: { variable: string; default?: string }[],
+    fields: { variable: string; default?: string; options?: string[] }[],
   ): WorkflowNode => ({
     id,
     kind: 'user-input',
@@ -424,6 +424,7 @@ describe('WorkflowEngine', () => {
         variable: f.variable,
         default: f.default ?? '',
         secret: false,
+        options: f.options ?? [],
       })),
     },
   });
@@ -458,6 +459,33 @@ describe('WorkflowEngine', () => {
       fields: { default: string }[];
     };
     expect(sentFields.fields[0].default).toBe('S-x');
+  });
+
+  it('evaluates option templates and defaults a dropdown to its first option', async () => {
+    const requestInput = vi.fn(async () => ({ values: {}, cancelled: false }));
+    const wf = linearWorkflow('w', [
+      start(),
+      userInput('ask', [{ variable: 'env', options: ['{{seed}}-a', 'prod'] }]),
+      end(),
+    ]);
+    await new WorkflowEngine(makePorts({ requestInput })).run(wf, { runtime: { seed: 'S' } });
+
+    const sent = (requestInput.mock.calls[0] as unknown[])[0] as {
+      fields: { default: string; options: string[] }[];
+    };
+    expect(sent.fields[0].options).toEqual(['S-a', 'prod']);
+    expect(sent.fields[0].default).toBe('S-a');
+  });
+
+  it('headless runs resolve a dropdown field to its first option', async () => {
+    const wf = linearWorkflow('w', [
+      start(),
+      userInput('ask', [{ variable: 'env', options: ['staging', 'prod'] }]),
+      end(),
+    ]);
+    const result = await new WorkflowEngine(makePorts()).run(wf);
+    expect(result.status).toBe('success');
+    expect(result.finalVariables).toMatchObject({ env: 'staging' });
   });
 
   it('falls back to evaluated defaults when no input port is provided', async () => {
