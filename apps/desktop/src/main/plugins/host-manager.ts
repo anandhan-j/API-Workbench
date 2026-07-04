@@ -287,6 +287,7 @@ export class PluginHostManager implements PluginHostPort {
               options,
               entries,
               filledAtRuntime: f.filledAtRuntime,
+              required: f.required,
             };
           });
           if (env.ports.requestInput) {

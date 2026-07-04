@@ -165,6 +165,7 @@ export const BUILTIN_NODE_EXECUTORS: BuiltinNodeExecutors = {
         options,
         entries,
         filledAtRuntime: f.filledAtRuntime,
+        required: f.required,
       };
     });
     // Headless fallback: no input port → accept the evaluated defaults.

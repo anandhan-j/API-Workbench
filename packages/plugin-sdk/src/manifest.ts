@@ -29,6 +29,8 @@ export interface NodePromptField {
   options?: string[];
   entries?: Record<string, string>;
   filledAtRuntime?: boolean;
+  /** The prompt refuses submission while the field is empty. */
+  required?: boolean;
 }
 
 /**

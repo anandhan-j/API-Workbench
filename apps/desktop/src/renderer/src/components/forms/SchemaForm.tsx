@@ -32,7 +32,12 @@ export function SchemaForm({ schema, value, onChange, errors = {} }: SchemaFormP
             {field.label}
             {field.required && <span className="ml-0.5 text-rose-400">*</span>}
           </label>
-          <FieldControl field={field} value={value[field.key]} onValue={(v) => set(field.key, v)} />
+          <FieldControl
+            field={field}
+            value={value[field.key]}
+            onValue={(v) => set(field.key, v)}
+            invalid={Boolean(errors[field.key])}
+          />
           {field.description && <p className="mt-1 text-[11px] text-muted">{field.description}</p>}
           {errors[field.key] && <p className="mt-1 text-[11px] text-danger">{errors[field.key]}</p>}
         </div>
@@ -48,12 +53,16 @@ function FieldControl({
   field,
   value,
   onValue,
+  invalid = false,
 }: {
   field: FormField;
   value: unknown;
   onValue: (value: unknown) => void;
+  /** Draws the control's border in the danger color (failed validation). */
+  invalid?: boolean;
 }): JSX.Element {
   const id = `sf-${field.key}`;
+  const controlClass = cn(fieldClass, invalid && 'border-danger');
   switch (field.kind) {
     case 'string':
       return (
@@ -62,7 +71,7 @@ function FieldControl({
           value={typeof value === 'string' ? value : ''}
           onChange={(e) => onValue(e.target.value)}
           placeholder={field.placeholder}
-          className={fieldClass}
+          className={controlClass}
         />
       );
     case 'textarea':
@@ -73,7 +82,7 @@ function FieldControl({
           onChange={(e) => onValue(e.target.value)}
           placeholder={field.placeholder}
           rows={4}
-          className={cn(fieldClass, field.language === 'json' && 'font-mono text-xs')}
+          className={cn(controlClass, field.language === 'json' && 'font-mono text-xs')}
         />
       );
     case 'number':
@@ -91,7 +100,7 @@ function FieldControl({
             const n = field.integer ? Math.trunc(Number(raw)) : Number(raw);
             onValue(Number.isNaN(n) ? undefined : n);
           }}
-          className={fieldClass}
+          className={controlClass}
         />
       );
     case 'boolean':
@@ -110,7 +119,7 @@ function FieldControl({
           id={id}
           value={typeof value === 'string' ? value : (field.options[0]?.value ?? '')}
           onChange={(e) => onValue(e.target.value)}
-          className={fieldClass}
+          className={controlClass}
         >
           {field.options.map((o) => (
             <option key={o.value} value={o.value}>
@@ -127,7 +136,7 @@ function FieldControl({
           value={typeof value === 'string' ? value : ''}
           onChange={(e) => onValue(e.target.value)}
           autoComplete="off"
-          className={fieldClass}
+          className={controlClass}
         />
       );
     case 'list':
@@ -138,6 +147,7 @@ function FieldControl({
           placeholder={field.placeholder}
           maxItems={field.maxItems}
           onChange={onValue}
+          invalid={invalid}
         />
       );
     case 'keyvalue':
@@ -146,6 +156,7 @@ function FieldControl({
           label={field.label}
           value={isStringRecord(value) ? value : {}}
           onChange={onValue}
+          invalid={invalid}
         />
       );
   }
@@ -183,12 +194,15 @@ export function StringListEditor({
   placeholder,
   maxItems,
   onChange,
+  invalid = false,
 }: {
   label: string;
   value: string[];
   placeholder?: string;
   maxItems?: number;
   onChange: (next: string[]) => void;
+  /** Draws the editor in the danger color (failed validation). */
+  invalid?: boolean;
 }): JSX.Element {
   const [rows, setRows] = useState<ListRow[]>(() => listToRows(value));
 
@@ -218,7 +232,7 @@ export function StringListEditor({
             onChange={(e) => update(row.id, e.target.value)}
             placeholder={placeholder}
             aria-label={`${label} item ${i + 1}`}
-            className={fieldClass}
+            className={cn(fieldClass, invalid && 'border-danger')}
           />
           <button
             type="button"
@@ -234,7 +248,8 @@ export function StringListEditor({
         onClick={add}
         disabled={atCapacity}
         className={cn(
-          'flex w-fit items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted hover:border-accent hover:text-fg',
+          'flex w-fit items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted hover:border-accent hover:text-fg',
+          invalid ? 'border-danger' : 'border-border',
           atCapacity && 'cursor-not-allowed opacity-50',
         )}
       >
@@ -293,10 +308,13 @@ export function KeyValueGrid({
   label,
   value,
   onChange,
+  invalid = false,
 }: {
   label: string;
   value: Record<string, string>;
   onChange: (next: Record<string, string>) => void;
+  /** Draws the grid's border in the danger color (failed validation). */
+  invalid?: boolean;
 }): JSX.Element {
   const [rows, setRows] = useState<KvRow[]>(() => normalize(recordToRows(value)));
 
@@ -318,7 +336,9 @@ export function KeyValueGrid({
   const remove = (id: string): void => commit(rows.filter((r) => r.id !== id));
 
   return (
-    <table className="w-full rounded-md border border-border text-sm">
+    <table
+      className={cn('w-full rounded-md border text-sm', invalid ? 'border-danger' : 'border-border')}
+    >
       <tbody>
         {rows.map((row, i) => (
           <tr key={row.id} className="border-b border-border/60 last:border-0">

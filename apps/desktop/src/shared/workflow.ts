@@ -189,6 +189,8 @@ export const UserInputField = z.object({
   options: z.array(z.string()).default([]),
   entries: z.record(z.string()).default({}),
   filledAtRuntime: z.boolean().default(false),
+  /** The prompt refuses submission while the field is empty. */
+  required: z.boolean().default(false),
 });
 export type UserInputField = z.infer<typeof UserInputField>;
 

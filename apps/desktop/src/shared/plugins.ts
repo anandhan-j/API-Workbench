@@ -55,6 +55,8 @@ export const NodePromptField = z.object({
   options: z.array(z.string().max(200)).max(50).default([]),
   entries: z.record(z.string().max(200)).default({}),
   filledAtRuntime: z.boolean().default(false),
+  /** The prompt refuses submission while the field is empty. */
+  required: z.boolean().default(false),
 });
 export type NodePromptField = z.infer<typeof NodePromptField>;
 

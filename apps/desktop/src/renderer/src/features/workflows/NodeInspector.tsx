@@ -613,6 +613,7 @@ function UserInputFieldsEditor({
         options: [],
         entries: {},
         filledAtRuntime: false,
+        required: false,
       },
     ]);
   const remove = (i: number): void => onChange(fields.filter((_, j) => j !== i));
@@ -669,6 +670,16 @@ function UserInputFieldsEditor({
                 <option value="select">Dropdown / List</option>
                 <option value="keyvalue">Key–value grid</option>
               </select>
+              {kind !== 'boolean' && (
+                <label className="flex items-center gap-1.5 text-[11px] text-muted">
+                  <input
+                    type="checkbox"
+                    checked={field.required ?? false}
+                    onChange={(e) => update(i, { required: e.target.checked })}
+                  />
+                  Required (the prompt refuses submission while empty)
+                </label>
+              )}
               {(kind === 'string' ||
                 kind === 'secret' ||
                 kind === 'number' ||

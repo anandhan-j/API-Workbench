@@ -427,6 +427,7 @@ describe('WorkflowEngine', () => {
         options: f.options ?? [],
         entries: {},
         filledAtRuntime: false,
+        required: false,
       })),
     },
   });

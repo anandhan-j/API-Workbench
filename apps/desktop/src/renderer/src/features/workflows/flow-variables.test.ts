@@ -79,6 +79,7 @@ describe('variablesProducedBy', () => {
               options: [],
               entries: {},
               filledAtRuntime: false,
+              required: false,
             },
             {
               variable: '  ',
@@ -88,6 +89,7 @@ describe('variablesProducedBy', () => {
               options: [],
               entries: {},
               filledAtRuntime: false,
+              required: false,
             },
           ],
         },

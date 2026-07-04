@@ -32,6 +32,13 @@ export function WorkflowInputPrompt({
   const [values, setValues] = useState<Record<string, unknown>>(() =>
     Object.fromEntries(request.fields.map((f) => [f.variable, initialValue(f)])),
   );
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const handleChange = (next: Record<string, unknown>): void => {
+    setValues(next);
+    // After a failed submit, errors clear live as their fields are filled.
+    if (Object.keys(errors).length > 0) setErrors(missingRequired(request.fields, next));
+  };
 
   return (
     <Modal title={request.name || 'User input'} onClose={onCancel} maxWidth="max-w-md">
@@ -39,6 +46,8 @@ export function WorkflowInputPrompt({
         className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
+          const missing = missingRequired(request.fields, values);
+          if (Object.keys(missing).length > 0) return setErrors(missing);
           onSubmit(
             Object.fromEntries(
               request.fields.map((f) => [f.variable, serializeValue(f, values[f.variable])]),
@@ -51,7 +60,7 @@ export function WorkflowInputPrompt({
           {request.message || 'The workflow is paused, waiting for your input.'}
         </p>
 
-        <SchemaForm schema={schema} value={values} onChange={setValues} />
+        <SchemaForm schema={schema} value={values} onChange={handleChange} errors={errors} />
 
         <div className="mt-1 flex justify-end gap-2">
           <button
@@ -75,7 +84,7 @@ function toFormField(field: UserInputField): FormField {
   const base = {
     key: field.variable,
     label: field.label || field.variable,
-    required: false,
+    required: field.required,
     substituteVariables: true,
   };
   switch (fieldKind(field)) {
@@ -118,6 +127,43 @@ function initialValue(field: UserInputField): unknown {
     default:
       return field.default;
   }
+}
+
+/**
+ * Required-field validation: a field is missing when it is required and its
+ * control holds nothing — an empty/blank string, no number, an empty list or
+ * grid. Booleans always hold a value, so `required` never blocks them.
+ */
+function missingRequired(
+  fields: UserInputField[],
+  values: Record<string, unknown>,
+): Record<string, string> {
+  const errors: Record<string, string> = {};
+  for (const field of fields) {
+    if (!field.required) continue;
+    const value = values[field.variable];
+    let empty: boolean;
+    switch (fieldKind(field)) {
+      case 'boolean':
+        empty = false;
+        break;
+      case 'number':
+        empty = typeof value !== 'number';
+        break;
+      case 'list':
+        empty = !Array.isArray(value) || value.length === 0;
+        break;
+      case 'keyvalue':
+        empty =
+          !value || typeof value !== 'object' || Object.keys(value as object).length === 0;
+        break;
+      default:
+        empty = typeof value !== 'string' || value.trim() === '';
+        break;
+    }
+    if (empty) errors[field.variable] = 'This field is required.';
+  }
+  return errors;
 }
 
 /** What the prompt draws; run-time-filled selects render the growable list. */

@@ -12,6 +12,7 @@ function field(overrides: Partial<UserInputField> & Pick<UserInputField, 'variab
     options: [],
     entries: {},
     filledAtRuntime: false,
+    required: false,
     ...overrides,
   };
 }
@@ -129,6 +130,45 @@ describe('<WorkflowInputPrompt />', () => {
     expect(input.tagName).toBe('INPUT');
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     expect(onSubmit).toHaveBeenCalledWith({ env: 'x' });
+  });
+
+  it('blocks submission and marks empty required fields until they are filled', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <WorkflowInputPrompt
+        request={request([
+          field({ variable: 'name', kind: 'string', label: 'Name', required: true }),
+          field({
+            variable: 'tags',
+            kind: 'select',
+            filledAtRuntime: true,
+            label: 'Tags',
+            required: true,
+          }),
+          field({ variable: 'note', kind: 'string', label: 'Note' }),
+        ])}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getAllByText('This field is required.')).toHaveLength(2);
+    expect(screen.getByLabelText(/Name/)).toHaveClass('border-danger');
+
+    // Errors clear live as fields are filled; submission then succeeds.
+    await user.type(screen.getByLabelText(/Name/), 'anna');
+    expect(screen.getAllByText('This field is required.')).toHaveLength(1);
+    expect(screen.getByLabelText(/Name/)).not.toHaveClass('border-danger');
+
+    await user.click(screen.getByRole('button', { name: /Add item/ }));
+    await user.type(screen.getByLabelText('Tags item 1'), 'a');
+    expect(screen.queryByText('This field is required.')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'anna', tags: '["a"]', note: '' });
   });
 
   it('cancels without submitting', async () => {
