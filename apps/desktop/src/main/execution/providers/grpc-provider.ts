@@ -71,6 +71,9 @@ export function createGrpcProvider(invoker: GrpcInvoker): MainRequestTypeProvide
         });
 
         const ok = result.statusCode === 0;
+        // gRPC surfaces a client cancel as status CANCELLED (1) via the normal
+        // callback (not a throw), so classify it here instead of as an error.
+        const cancelled = (ctx.signal?.aborted ?? false) || result.statusCode === 1;
         const body = JSON.stringify(result.message ?? null, null, 2);
         const extras: GrpcProtocolExtras = {
           statusCode: result.statusCode,
@@ -82,8 +85,8 @@ export function createGrpcProvider(invoker: GrpcInvoker): MainRequestTypeProvide
           type: GRPC_REQUEST_TYPE,
           ok,
           summary: {
-            label: `${result.statusCode} ${result.statusName}`,
-            tone: ok ? 'success' : 'error',
+            label: cancelled ? 'Cancelled' : `${result.statusCode} ${result.statusName}`,
+            tone: ok ? 'success' : cancelled ? 'info' : 'error',
             code: String(result.statusCode),
           },
           metadata: { ...result.metadata, ...result.trailers },
@@ -94,6 +97,7 @@ export function createGrpcProvider(invoker: GrpcInvoker): MainRequestTypeProvide
           sizeBytes: Buffer.byteLength(body, 'utf8'),
           timings: { startedAt, totalMs: Date.now() - startedAt },
           ...(ok ? {} : { error: `gRPC ${result.statusName}` }),
+          ...(cancelled ? { cancelled: true } : {}),
           protocol: extras,
         };
       } catch (err) {

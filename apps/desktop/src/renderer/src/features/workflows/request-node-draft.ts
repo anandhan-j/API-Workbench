@@ -133,12 +133,18 @@ export function draftToNodeConfig(
   draft: RequestDraft,
   extract: ExtractRule[],
   requestId?: string,
+  /** A stored-credential reference to preserve when the editor uses no inline auth. */
+  credentialId?: string,
 ): RequestNodeConfig {
   const envelope = buildRequestEnvelope(draft);
   return {
     type: envelope.type,
     payload: envelope.payload,
     ...(envelope.auth ? { auth: envelope.auth } : {}),
+    // The request editor edits inline auth only; keep a node's stored-credential
+    // reference intact when the draft added no inline auth, so saving doesn't
+    // silently drop it and run the node unauthenticated.
+    ...(!envelope.auth && credentialId ? { credentialId } : {}),
     ...(envelope.options ? { options: envelope.options } : {}),
     extract,
     ...(requestId ? { requestId } : {}),

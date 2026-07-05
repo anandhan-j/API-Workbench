@@ -99,6 +99,22 @@ describe('createGrpcProvider', () => {
     expect(invoker.calls).toHaveLength(0);
   });
 
+  it('reports a CANCELLED status as cancelled, not an error', async () => {
+    // gRPC delivers a client cancel via the callback as status CANCELLED (1),
+    // so the invoker resolves (does not throw).
+    const invoker = fakeInvoker(() => ({
+      message: null,
+      statusCode: 1,
+      statusName: 'CANCELLED',
+      metadata: {},
+      trailers: {},
+    }));
+    const response = await service(invoker).run(envelope({ target: 'localhost:50051' }));
+    expect(response.cancelled).toBe(true);
+    expect(response.summary.label).toBe('Cancelled');
+    expect(response.summary.tone).toBe('info');
+  });
+
   it('surfaces invoker failures as an error response', async () => {
     const invoker = fakeInvoker(() => {
       throw new Error('proto not found');

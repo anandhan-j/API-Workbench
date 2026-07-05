@@ -25,15 +25,25 @@ export class SseParser {
   push(chunk: string): SseEvent[] {
     this.buffer += chunk;
     const events: SseEvent[] = [];
-    let newlineIndex: number;
-    // Normalize CRLF and lone CR to LF as we scan.
-    this.buffer = this.buffer.replace(/\r\n?/g, '\n');
-    while ((newlineIndex = this.buffer.indexOf('\n')) !== -1) {
-      const line = this.buffer.slice(0, newlineIndex);
-      this.buffer = this.buffer.slice(newlineIndex + 1);
-      const event = this.consumeLine(line);
-      if (event) events.push(event);
+    // A trailing lone CR may be the first half of a CRLF split across chunks;
+    // hold it back so we don't dispatch a spurious line before the LF arrives.
+    let scanEnd = this.buffer.length;
+    if (this.buffer.charCodeAt(scanEnd - 1) === 13 /* \r */) scanEnd -= 1;
+
+    let lineStart = 0;
+    let i = 0;
+    while (i < scanEnd) {
+      const code = this.buffer.charCodeAt(i);
+      if (code === 10 /* \n */ || code === 13 /* \r */) {
+        const event = this.consumeLine(this.buffer.slice(lineStart, i));
+        if (event) events.push(event);
+        // Treat CRLF as a single terminator.
+        if (code === 13 && this.buffer.charCodeAt(i + 1) === 10) i += 1;
+        lineStart = i + 1;
+      }
+      i += 1;
     }
+    this.buffer = this.buffer.slice(lineStart);
     return events;
   }
 

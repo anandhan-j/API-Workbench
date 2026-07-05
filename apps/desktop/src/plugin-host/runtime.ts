@@ -57,6 +57,8 @@ interface HostSession {
   pluginId: string;
   connection: PluginConnection;
   abort: AbortController;
+  /** Emits a terminal 'closed' state once (no-op if already ended). */
+  terminate: () => void;
 }
 
 export class PluginHostRuntime {
@@ -64,6 +66,9 @@ export class PluginHostRuntime {
   private readonly plugins = new Map<string, ActivePlugin>();
   /** Live interactive sessions (Phase 7), keyed by the renderer's sessionId. */
   private readonly sessions = new Map<string, HostSession>();
+  /** Sessions whose openConnection is still awaiting; a close arriving here
+   *  cancels the pending open so it doesn't register an orphaned session. */
+  private readonly pendingOpens = new Set<string>();
 
   constructor(private readonly options: HostRuntimeOptions) {
     this.endpoint = new RpcEndpoint(options.wire, {
@@ -103,7 +108,7 @@ export class PluginHostRuntime {
         });
       }
       case 'connection.open':
-        return this.openConnection(ConnectionOpenParams.parse(params));
+        return this.openConnection(ConnectionOpenParams.parse(params), signal);
       case 'connection.send': {
         const p = ConnectionSendParams.parse(params);
         const session = this.sessions.get(p.sessionId);
@@ -159,7 +164,10 @@ export class PluginHostRuntime {
     return entry;
   }
 
-  private async openConnection(p: ConnectionOpenParams): Promise<Record<string, never>> {
+  private async openConnection(
+    p: ConnectionOpenParams,
+    signal: AbortSignal,
+  ): Promise<Record<string, never>> {
     const provider = this.active(p.pluginId).requestTypes.get(p.type);
     if (!provider) {
       throw pluginError('E_UNKNOWN_REQUEST_TYPE', `No provider for request type "${p.type}"`);
@@ -167,26 +175,37 @@ export class PluginHostRuntime {
     if (!provider.openConnection) {
       throw pluginError('E_NO_INTERACTIVE', `Request type "${p.type}" has no interactive session`);
     }
-    if (this.sessions.has(p.sessionId)) {
+    if (this.sessions.has(p.sessionId) || this.pendingOpens.has(p.sessionId)) {
       throw pluginError('E_SESSION_EXISTS', `Session "${p.sessionId}" is already open`);
     }
     const abort = new AbortController();
+    // An RPC cancel/timeout on connection.open aborts the provider's open.
+    if (signal.aborted) abort.abort();
+    else signal.addEventListener('abort', () => abort.abort(), { once: true });
+
     let ended = false;
-    const emit = (event: { direction: string; kind?: string; data: string }): void =>
+    const emit = (event: { direction: string; kind?: string; data: string }): void => {
+      if (ended) return;
       this.endpoint.emit('connection.event', {
         sessionId: p.sessionId,
         event: { at: Date.now(), direction: event.direction, kind: event.kind ?? 'message', data: event.data },
       });
+    };
     const setState = (
       state: string,
       info?: { code?: number; reason?: string; error?: string },
     ): void => {
+      // A terminal state fires at most once, whichever side reports it first.
+      if (ended) return;
       this.endpoint.emit('connection.state', { sessionId: p.sessionId, state, ...(info ?? {}) });
       if (state === 'closed' || state === 'error') {
         ended = true;
         this.sessions.delete(p.sessionId);
+        this.pendingOpens.delete(p.sessionId);
       }
     };
+
+    this.pendingOpens.add(p.sessionId);
     const connection = await provider.openConnection({
       payload: p.payload,
       ...(p.artifacts ? { artifacts: p.artifacts } : {}),
@@ -194,12 +213,30 @@ export class PluginHostRuntime {
       emit,
       setState,
     });
-    // Register only if the provider didn't already end the session during open.
-    if (!ended) this.sessions.set(p.sessionId, { pluginId: p.pluginId, connection, abort });
+    // If a close arrived during open, or the open was aborted/ended, close the
+    // freshly-created connection instead of registering an orphaned session.
+    const stillPending = this.pendingOpens.delete(p.sessionId);
+    if (ended || !stillPending || abort.signal.aborted) {
+      try {
+        connection.close();
+      } catch {
+        // best-effort
+      }
+      setState('closed');
+      return {};
+    }
+    this.sessions.set(p.sessionId, {
+      pluginId: p.pluginId,
+      connection,
+      abort,
+      terminate: () => setState('closed'),
+    });
     return {};
   }
 
   private closeSession(sessionId: string): void {
+    // Cancel an in-flight open so it won't register after the fact.
+    this.pendingOpens.delete(sessionId);
     const session = this.sessions.get(sessionId);
     if (!session) return;
     this.sessions.delete(sessionId);
@@ -209,6 +246,11 @@ export class PluginHostRuntime {
     } catch {
       // best-effort close
     }
+    // Notify main that a host-initiated close (deactivate/explicit) ended the
+    // session, so the renderer doesn't stay stuck 'open' if the provider's
+    // close() didn't self-report. Idempotent: a no-op if the provider already
+    // reported a terminal state.
+    session.terminate();
   }
 
   private async activate(params: ActivatePluginParams): Promise<unknown> {

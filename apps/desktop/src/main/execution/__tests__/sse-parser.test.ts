@@ -32,4 +32,12 @@ describe('SseParser', () => {
     const events = parser.push('data: 1\n\ndata: 2\n\n');
     expect(events.map((e) => e.data)).toEqual(['1', '2']);
   });
+
+  it('keeps a multi-line CRLF event whole when a chunk splits between CR and LF', () => {
+    const parser = new SseParser();
+    // The CRLF after `data: a` is split across the two chunks.
+    expect(parser.push('data: a\r')).toEqual([]);
+    const events = parser.push('\ndata: b\r\n\r\n');
+    expect(events).toEqual([{ event: 'message', data: 'a\nb' }]);
+  });
 });

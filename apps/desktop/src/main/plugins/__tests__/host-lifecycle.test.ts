@@ -587,6 +587,42 @@ describe('plugin host lifecycle', () => {
     expect(states.at(-1)).toMatchObject({ sessionId: 's1', state: 'closed', code: 1000 });
   });
 
+  it('emits a terminal closed state when a plugin with a live session is deactivated', async () => {
+    const id = 'com.acme.chat2';
+    const manifest = makeManifest(id, {
+      contributes: {
+        requestTypes: [
+          {
+            type: 'chat',
+            label: 'Chat',
+            payloadSchema: { fields: [] },
+            summary: { badge: 'CHAT', targetKey: 'room' },
+            interactive: true,
+          },
+        ],
+      },
+    });
+    defineModule(id, (ctx) => {
+      ctx.registerRequestType('chat', {
+        execute: () => Promise.reject(new Error('interactive')),
+        // A well-behaved provider whose close() does NOT self-report state.
+        openConnection: ({ setState }) => {
+          setState('open');
+          return { close: () => undefined };
+        },
+      });
+    });
+    await activate(id, manifest);
+
+    const states: Array<{ sessionId: string; state: string }> = [];
+    manager.onConnectionState((p) => states.push(p));
+    await manager.openConnection({ pluginId: id, type: 'chat', sessionId: 's2', payload: {} });
+    await waitUntil(() => states.some((s) => s.state === 'open'), 'open');
+
+    await manager.deactivate(id);
+    await waitUntil(() => states.some((s) => s.state === 'closed'), 'closed on deactivate');
+  });
+
   it('crash rejects in-flight calls, marks host-failed, unregisters, then respawns and recovers', async () => {
     const id = 'com.acme.crashy';
     const manifest = makeManifest(id, {

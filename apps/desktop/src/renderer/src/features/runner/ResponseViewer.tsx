@@ -75,7 +75,15 @@ export function ResponseViewer({ response, loading }: ResponseViewerProps): JSX.
   if (loading) return <p className="p-4 text-sm text-muted">Sending…</p>;
   if (!response) return <p className="p-4 text-sm text-muted">No response yet.</p>;
 
-  if (response.error && statusOf(response) === 0) {
+  // Protocol-specific extras, shown above the body when present.
+  const graphql = GraphqlProtocolExtras.safeParse(response.protocol);
+  const grpc = GrpcProtocolExtras.safeParse(response.protocol);
+  const stream = StreamProtocolExtras.safeParse(response.protocol);
+  const graphqlErrors = graphql.success ? graphql.data.graphqlErrors : [];
+
+  // A bare transport error with nothing else to show collapses to one line;
+  // stream responses keep their event timeline even when they errored.
+  if (response.error && statusOf(response) === 0 && !stream.success) {
     return (
       <div className="rounded-md border border-border bg-surface p-4">
         <p className="text-sm text-danger" data-testid="response-error">
@@ -92,12 +100,6 @@ export function ResponseViewer({ response, loading }: ResponseViewerProps): JSX.
 
   const isBinary = response.bodyKind === 'binary';
   const bodyText = isBinary ? '' : (response.prettyBody ?? response.body ?? '');
-
-  // Protocol-specific extras, shown above the body when present.
-  const graphql = GraphqlProtocolExtras.safeParse(response.protocol);
-  const grpc = GrpcProtocolExtras.safeParse(response.protocol);
-  const stream = StreamProtocolExtras.safeParse(response.protocol);
-  const graphqlErrors = graphql.success ? graphql.data.graphqlErrors : [];
 
   return (
     <div className="rounded-md border border-border bg-surface">

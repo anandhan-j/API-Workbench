@@ -538,6 +538,7 @@ export function NodeInspector({
                     draft,
                     (config.extract as ExtractRule[]) ?? [],
                     config.requestId as string | undefined,
+                    config.credentialId as string | undefined,
                   ),
                 );
                 setEditorOpen(false);

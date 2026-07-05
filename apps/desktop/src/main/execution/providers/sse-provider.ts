@@ -87,6 +87,7 @@ export function createSseProvider(
         handshakeHeaders = result.headers;
 
         if (result.status < 200 || result.status >= 300) {
+          controller.abort(); // release the undici body/socket instead of leaking it
           return finish({
             connected: false,
             metadata: handshakeHeaders,

@@ -202,7 +202,15 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     emitEvent: (payload) => sendToRenderer('connection.event', payload),
     emitState: (payload) => sendToRenderer('connection.state', payload),
   });
+  // Tear live sessions down on app quit, window close (macOS keeps the app
+  // running), and renderer reload (fresh sessionIds would orphan the old ones).
   app.on('before-quit', () => connections.closeAll());
+  const wireWindowTeardown = (win: BrowserWindow): void => {
+    win.on('closed', () => connections.closeAll());
+    win.webContents.on('did-start-loading', () => connections.closeAll());
+  };
+  BrowserWindow.getAllWindows().forEach(wireWindowTeardown);
+  app.on('browser-window-created', (_event, win) => wireWindowTeardown(win));
 
   const handlers: { [C in IpcChannelName]: Handler<C> } = {
     'app.getInfo': () => ({

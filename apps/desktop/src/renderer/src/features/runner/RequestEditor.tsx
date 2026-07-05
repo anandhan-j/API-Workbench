@@ -160,6 +160,12 @@ export function RequestEditor({
     return () => clearTimeout(t);
   }, [draft, onDraftChange]);
 
+  // Switching request type drops interactive mode so the ConnectionPanel
+  // unmounts and its live session is closed, rather than leaking across types.
+  useEffect(() => {
+    setInteractive(false);
+  }, [draft.requestType]);
+
   const onUrlChange = (url: string): void =>
     setDraft((d) => ({ ...d, url, params: parseQueryParams(url) }));
   const onParamsChange = (rows: KeyValue[]): void =>

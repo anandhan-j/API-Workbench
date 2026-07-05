@@ -125,6 +125,15 @@ describe('createWebSocketProvider (collect mode)', () => {
     expect(StreamProtocolExtras.parse(response.protocol).truncated).toBe(true);
   });
 
+  it('reports ok:false when the socket never opened before the duration cap', async () => {
+    const connector = fakeConnector();
+    const promise = service(connector).run(envelope({ collect: { maxEvents: 50, durationMs: 20 } }));
+    await Promise.resolve();
+    // Never call emitOpen — the upgrade stalls until durationMs elapses.
+    const response = await promise;
+    expect(response.ok).toBe(false);
+  });
+
   it('parses JSON message data into the body array', async () => {
     const connector = fakeConnector();
     const promise = service(connector).run(envelope({}));

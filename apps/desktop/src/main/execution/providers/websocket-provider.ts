@@ -41,6 +41,7 @@ export function createWebSocketProvider(
       const timers: ReturnType<typeof setTimeout>[] = [];
       let connection: WsConnection | undefined;
       let settled = false;
+      let connected = false;
 
       // Auth headers + cookies + query on the handshake.
       const headers: Record<string, string> = { ...p.headers, ...ctx.artifacts.headers };
@@ -76,7 +77,7 @@ export function createWebSocketProvider(
           resolve(buildStreamResponse(collection));
         };
 
-        const onAbort = (): void => finish({ cancelled: true, connected: true });
+        const onAbort = (): void => finish({ cancelled: true, connected });
         if (ctx.signal) {
           if (ctx.signal.aborted) {
             finish({ cancelled: true });
@@ -85,9 +86,9 @@ export function createWebSocketProvider(
           ctx.signal.addEventListener('abort', onAbort, { once: true });
         }
 
-        // Overall session cap.
+        // Overall session cap — `connected` reflects whether the socket opened.
         timers.push(
-          setTimeout(() => finish({ truncated: true, connected: true }), p.collect.durationMs),
+          setTimeout(() => finish({ truncated: true, connected }), p.collect.durationMs),
         );
 
         try {
@@ -98,6 +99,7 @@ export function createWebSocketProvider(
         }
 
         connection.onOpen(() => {
+          connected = true;
           events.push({ at: Date.now(), direction: 'info', kind: 'open', data: 'connected' });
           for (const message of p.messages) {
             timers.push(
@@ -119,13 +121,13 @@ export function createWebSocketProvider(
           events.push({ at: Date.now(), direction: 'received', kind: 'text', data });
           const received = events.filter((e) => e.direction === 'received').length;
           if (received >= p.collect.maxEvents) {
-            finish({ truncated: true, connected: true });
+            finish({ truncated: true, connected });
           }
         });
 
         connection.onClose((info) => {
           finish({
-            connected: true,
+            connected,
             closeCode: info.code,
             ...(info.reason ? { closeReason: info.reason } : {}),
           });

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { ConnectionEvent, ConnectionStateEvent } from '@shared/protocol';
 import { ConnectionSessionManager, type PluginConnectionPort } from '../streams/connection-sessions';
 import type { WsCloseInfo, WsConnection, WsConnectOptions, WsConnector } from '../streams/ws-port';
-import type { SseStreamer } from '../streams/sse-port';
+import type { SseOpenRequest, SseStreamer } from '../streams/sse-port';
 import { RequestTypeRegistry } from '../../plugins/registries/request-type-registry';
 import { deepSubstitute } from '@shared/substitute';
 
@@ -157,6 +157,7 @@ class FakePluginPort implements PluginConnectionPort {
   closed: Array<{ sessionId: string; pluginId: string }> = [];
   private eventHandlers: Array<(p: ConnectionEvent) => void> = [];
   private stateHandlers: Array<(p: ConnectionStateEvent) => void> = [];
+  private hostDownHandlers: Array<() => void> = [];
   async openConnection(req: { sessionId: string; pluginId: string; type: string; payload: Record<string, unknown> }): Promise<void> {
     this.opened.push(req);
   }
@@ -174,11 +175,18 @@ class FakePluginPort implements PluginConnectionPort {
     this.stateHandlers.push(h);
     return () => undefined;
   }
+  onHostDown(h: () => void): () => void {
+    this.hostDownHandlers.push(h);
+    return () => undefined;
+  }
   pushEvent(p: ConnectionEvent): void {
     this.eventHandlers.forEach((h) => h(p));
   }
   pushState(p: ConnectionStateEvent): void {
     this.stateHandlers.forEach((h) => h(p));
+  }
+  pushHostDown(): void {
+    this.hostDownHandlers.forEach((h) => h());
   }
 }
 
@@ -248,5 +256,65 @@ describe('ConnectionSessionManager (plugin sessions, Phase 7)', () => {
     h.port.pushState({ sessionId: 'p1', state: 'closed', code: 1000 });
     // The session is gone, so a later send throws.
     expect(() => h.manager.send('p1', 'x')).toThrow(/not open/);
+  });
+
+  it('fails live plugin sessions when the host goes down', async () => {
+    const h = pluginHarness();
+    await h.manager.open('p1', { type: 'plugin:demo/chat', payload: { room: 'x' } });
+    h.port.pushState({ sessionId: 'p1', state: 'open' });
+    h.port.pushHostDown();
+    expect(h.states.at(-1)).toMatchObject({ sessionId: 'p1', state: 'error' });
+    expect(() => h.manager.send('p1', 'x')).toThrow(/not open/);
+  });
+});
+
+describe('ConnectionSessionManager interactive auth artifacts (Phase 7)', () => {
+  /** A manager whose auth resolves to cookie + query artifacts. */
+  function authHarness() {
+    let wsUrl: string | undefined;
+    let wsHeaders: Record<string, string> | undefined;
+    let sseReq: SseOpenRequest | undefined;
+    const manager = new ConnectionSessionManager({
+      wsConnector: {
+        connect(url, options) {
+          wsUrl = url;
+          wsHeaders = options.headers;
+          return new FakeConnection();
+        },
+      },
+      sseStreamer: {
+        async open(req) {
+          sseReq = req;
+          return { status: 200, headers: {}, chunks: (async function* () {})() };
+        },
+      },
+      evaluate: (t) => t,
+      resolveArtifacts: async () => ({ headers: {}, query: { token: 'abc' }, cookies: { sid: 'xyz' } }),
+      emitEvent: () => undefined,
+      emitState: () => undefined,
+    });
+    return { manager, ws: () => ({ url: wsUrl, headers: wsHeaders }), sse: () => sseReq };
+  }
+
+  it('applies cookie and query artifacts to the WebSocket handshake', async () => {
+    const h = authHarness();
+    await h.manager.open('w1', {
+      type: 'websocket',
+      payload: { url: 'ws://echo.test/feed' },
+      auth: { type: 'bearer', token: 't' },
+    });
+    expect(h.ws().url).toBe('ws://echo.test/feed?token=abc');
+    expect(h.ws().headers?.Cookie).toBe('sid=xyz');
+  });
+
+  it('applies cookie and query artifacts to the SSE request', async () => {
+    const h = authHarness();
+    await h.manager.open('s1', {
+      type: 'sse',
+      payload: { url: 'https://sse.test/events' },
+      auth: { type: 'bearer', token: 't' },
+    });
+    expect(h.sse()?.url).toBe('https://sse.test/events?token=abc');
+    expect(h.sse()?.headers.Cookie).toBe('sid=xyz');
   });
 });

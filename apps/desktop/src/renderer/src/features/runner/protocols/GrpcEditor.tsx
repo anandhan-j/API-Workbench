@@ -2,7 +2,7 @@ import { FolderOpen } from 'lucide-react';
 import type { GrpcPayload } from '@shared/protocol';
 import { invoke } from '../../../lib/ipc';
 import { VariableField } from '../../variables/VariableField';
-import { Labeled, INPUT_CLASS } from './fields';
+import { Labeled, INPUT_CLASS, parseIntField } from './fields';
 import { RecordEditor } from './RecordEditor';
 import type { ProtocolEditorProps } from './types';
 
@@ -41,7 +41,7 @@ export function GrpcEditor({
           <input
             type="number"
             value={payload.deadlineMs ?? 30000}
-            onChange={(e) => patch({ deadlineMs: Number(e.target.value) })}
+            onChange={(e) => patch({ deadlineMs: parseIntField(e.target.value, payload.deadlineMs ?? 30000) })}
             aria-label="gRPC deadline"
             className={INPUT_CLASS}
           />

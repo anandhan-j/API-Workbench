@@ -49,7 +49,8 @@ export function buildStreamResponse(collection: StreamCollection): ProtocolRespo
   };
 
   const failed = Boolean(collection.error);
-  const ok = !failed && collection.connected;
+  // A cancelled or never-connected collection is not a success.
+  const ok = !failed && collection.connected && !collection.cancelled;
   const bodyKind: BodyKind = 'json';
 
   const label = collection.cancelled

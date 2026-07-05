@@ -68,6 +68,7 @@ export class PluginHostManager implements PluginHostPort {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly connectionEventHandlers = new Set<(p: PluginConnectionEventPayload) => void>();
   private readonly connectionStateHandlers = new Set<(p: PluginConnectionStatePayload) => void>();
+  private readonly hostDownHandlers = new Set<() => void>();
 
   constructor(private readonly deps: HostManagerDeps) {
     this.sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
@@ -114,6 +115,13 @@ export class PluginHostManager implements PluginHostPort {
   onConnectionState(handler: (p: PluginConnectionStatePayload) => void): () => void {
     this.connectionStateHandlers.add(handler);
     return () => this.connectionStateHandlers.delete(handler);
+  }
+
+  /** Fires when the host process goes down, so live plugin sessions can be
+   *  torn down (the crashed host can no longer emit per-session terminal state). */
+  onHostDown(handler: () => void): () => void {
+    this.hostDownHandlers.add(handler);
+    return () => this.hostDownHandlers.delete(handler);
   }
 
   async activate(input: ActiveRecord): Promise<void> {
@@ -217,6 +225,9 @@ export class PluginHostManager implements PluginHostPort {
       this.transport = undefined;
       endpoint.failPending({ code: 'E_HOST_CRASHED', message: `Plugin host exited (${code})` });
       if (expected) return;
+      // A crashed host can no longer emit per-session terminal state, so tell the
+      // connection manager to tear down any live plugin sessions.
+      for (const h of this.hostDownHandlers) h();
       this.deps.log?.('error', 'Plugin host crashed', { code });
       for (const id of this.active.keys()) {
         this.statuses.set(id, { status: 'host-failed', message: `Host exited with code ${code}` });

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import type { WebSocketPayload } from '@shared/protocol';
 import { VariableField } from '../../variables/VariableField';
-import { Labeled, INPUT_CLASS } from './fields';
+import { Labeled, INPUT_CLASS, parseIntField } from './fields';
 import { RecordEditor } from './RecordEditor';
 import { CollectSettingsEditor } from './CollectSettingsEditor';
 import type { ProtocolEditorProps } from './types';
@@ -98,7 +98,7 @@ export function WebSocketEditor({
             <input
               type="number"
               value={message.delayMs}
-              onChange={(e) => setMessage(i, { delayMs: Number(e.target.value) })}
+              onChange={(e) => setMessage(i, { delayMs: parseIntField(e.target.value, message.delayMs, 0) })}
               aria-label={`Message ${i + 1} delay`}
               title="Delay (ms) after connect"
               className={`${INPUT_CLASS} w-24`}

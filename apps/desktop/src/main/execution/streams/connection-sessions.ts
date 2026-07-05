@@ -36,6 +36,8 @@ export interface PluginConnectionPort {
   closeConnection(req: { sessionId: string; pluginId: string }): Promise<void>;
   onConnectionEvent(handler: (p: ConnectionEvent) => void): () => void;
   onConnectionState(handler: (p: ConnectionStateEvent) => void): () => void;
+  /** Fires when the plugin host goes down, so live plugin sessions can be failed. */
+  onHostDown(handler: () => void): () => void;
 }
 
 export interface ConnectionSessionDeps {
@@ -64,6 +66,31 @@ interface Session {
   /** Set for a plugin-host session; its owning plugin id for send/close routing. */
   plugin?: { pluginId: string };
   closed: boolean;
+}
+
+/**
+ * Applies auth artifacts to a request the same way the one-shot providers do:
+ * headers merged, cookies folded into a `Cookie` header, query appended to the
+ * URL. Kept identical so interactive sessions authenticate like one-shot runs.
+ */
+function applyArtifacts(
+  url: string,
+  baseHeaders: Record<string, string>,
+  artifacts: AuthArtifacts,
+): { url: string; headers: Record<string, string> } {
+  const headers: Record<string, string> = { ...baseHeaders, ...artifacts.headers };
+  const cookiePairs = Object.entries(artifacts.cookies).map(([n, v]) => `${n}=${v}`);
+  if (cookiePairs.length > 0) {
+    headers['Cookie'] = [headers['Cookie'], ...cookiePairs].filter(Boolean).join('; ');
+  }
+  const queryEntries = Object.entries(artifacts.query);
+  let finalUrl = url;
+  if (queryEntries.length > 0) {
+    const sep = url.includes('?') ? '&' : '?';
+    finalUrl +=
+      sep + queryEntries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  }
+  return { url: finalUrl, headers };
 }
 
 /** Splits `plugin:<pluginId>/<type>` into its parts. */
@@ -96,6 +123,13 @@ export class ConnectionSessionManager {
       if (!session?.plugin) return;
       this.deps.emitState(p);
       if (p.state === 'closed' || p.state === 'error') this.sessions.delete(p.sessionId);
+    });
+    // A crashed host can't emit per-session terminal state; fail our live plugin
+    // sessions so the renderer doesn't stay stuck 'open'.
+    deps.pluginConnections?.onHostDown(() => {
+      for (const [sessionId, session] of [...this.sessions]) {
+        if (session.plugin) this.fail(sessionId, 'Plugin host stopped');
+      }
     });
   }
 
@@ -236,11 +270,9 @@ export class ConnectionSessionManager {
   ): Promise<void> {
     const payload = deepSubstitute(WebSocketPayload.parse(envelope.payload ?? {}), evaluate) as WebSocketPayload;
     const artifacts = await this.resolveArtifacts(envelope, { url: payload.url.replace(/^ws/, 'http') }, evaluate);
-    const headers = { ...payload.headers, ...artifacts.headers };
-    const cookiePairs = Object.entries(artifacts.cookies).map(([n, v]) => `${n}=${v}`);
-    if (cookiePairs.length > 0) headers['Cookie'] = [headers['Cookie'], ...cookiePairs].filter(Boolean).join('; ');
+    const { url, headers } = applyArtifacts(payload.url, payload.headers, artifacts);
 
-    const connection = this.deps.wsConnector.connect(payload.url, { headers, protocols: payload.subprotocols });
+    const connection = this.deps.wsConnector.connect(url, { headers, protocols: payload.subprotocols });
     session.ws = connection;
 
     connection.onOpen(() => {
@@ -272,18 +304,19 @@ export class ConnectionSessionManager {
   ): Promise<void> {
     const payload = deepSubstitute(SsePayload.parse(envelope.payload ?? {}), evaluate) as SsePayload;
     const artifacts = await this.resolveArtifacts(envelope, { method: payload.method, url: payload.url }, evaluate);
-    const headers = { ...payload.headers, ...artifacts.headers };
+    const { url, headers } = applyArtifacts(payload.url, payload.headers, artifacts);
     const controller = new AbortController();
     session.sse = controller;
 
     const result = await this.deps.sseStreamer.open({
-      url: payload.url,
+      url,
       method: payload.method,
       headers,
       ...(payload.method === 'POST' && payload.body ? { body: payload.body } : {}),
       signal: controller.signal,
     });
     if (result.status < 200 || result.status >= 300) {
+      controller.abort(); // release the undici body/socket
       this.fail(sessionId, `SSE handshake failed with status ${result.status}`);
       return;
     }
