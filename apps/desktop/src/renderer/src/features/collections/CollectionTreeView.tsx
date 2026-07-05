@@ -6,6 +6,7 @@ import {
   FolderPlus,
   MoreHorizontal,
   Pencil,
+  Plus,
   Star,
   Trash2,
 } from 'lucide-react';
@@ -13,6 +14,7 @@ import type { TreeNode } from '@shared/collection';
 import { cn } from '../../lib/cn';
 import { ContextMenu, type MenuItem } from '../../components/menu/ContextMenu';
 import { endpointLabel } from './request-label';
+import { BUILTIN_PROTOCOL_TYPES, getRequestTypeMeta } from '../runner/request-type-meta';
 
 const DRAG_TYPE = 'application/x-awb-request';
 
@@ -118,6 +120,8 @@ export interface CollectionTreeViewProps {
   onMoveRequest?: (id: string, folderId: string | null) => void;
   /** Create a subfolder under `parentId` (a folder in this collection). */
   onAddFolder?: (parentId: string) => void;
+  /** Create a request inside `folderId`; `type` selects the protocol (default HTTP). */
+  onAddRequest?: (folderId: string, type?: string) => void;
 }
 
 const ICON = 13;
@@ -146,6 +150,7 @@ export function CollectionTreeView({
   onDuplicateRequest,
   onMoveRequest,
   onAddFolder,
+  onAddRequest,
 }: CollectionTreeViewProps): JSX.Element {
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | 'root' | null>(null);
@@ -193,6 +198,20 @@ export function CollectionTreeView({
   );
 
   const folderMenu = (node: Extract<TreeNode, { type: 'folder' }>): MenuItem[] => [
+    ...(onAddRequest
+      ? [
+          {
+            label: 'Add request',
+            icon: <Plus size={ICON} />,
+            onSelect: () => onAddRequest(node.id),
+          },
+          ...BUILTIN_PROTOCOL_TYPES.map((t) => ({
+            label: `Add ${getRequestTypeMeta(t)?.label ?? t} request`,
+            icon: <Plus size={ICON} />,
+            onSelect: () => onAddRequest(node.id, t),
+          })),
+        ]
+      : []),
     ...(onAddFolder
       ? [
           {

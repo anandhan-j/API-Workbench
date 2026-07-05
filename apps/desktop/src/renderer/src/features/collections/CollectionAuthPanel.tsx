@@ -9,6 +9,8 @@ export interface CollectionAuthPanelProps {
   onClose: () => void;
   /** Called after an "apply to children" cascade settles (refreshes open editors). */
   onApplied?: () => void;
+  /** Rename the collection from the panel header. */
+  onRename?: (name: string) => Promise<unknown>;
 }
 
 /**
@@ -21,6 +23,7 @@ export function CollectionAuthPanel({
   name,
   onClose,
   onApplied,
+  onRename,
 }: CollectionAuthPanelProps): JSX.Element {
   const collection = useCollectionDetail(collectionId);
   const { updateAuth, applyToChildren } = useCollectionAuthMutations();
@@ -43,6 +46,7 @@ export function CollectionAuthPanel({
       onSave={(auth: WireAuthConfig) => updateAuth.mutateAsync({ id: collectionId, auth })}
       onApplyToChildren={() => applyToChildren.mutateAsync(collectionId)}
       onApplied={onApplied}
+      {...(onRename ? { onRename } : {})}
       onClose={onClose}
     />
   );

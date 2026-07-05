@@ -9,6 +9,8 @@ export interface FolderAuthPanelProps {
   onClose: () => void;
   /** Called after an "apply to children" cascade settles (refreshes open editors). */
   onApplied?: () => void;
+  /** Rename the folder from the panel header. */
+  onRename?: (name: string) => Promise<unknown>;
 }
 
 /**
@@ -22,6 +24,7 @@ export function FolderAuthPanel({
   name,
   onClose,
   onApplied,
+  onRename,
 }: FolderAuthPanelProps): JSX.Element {
   const folder = useFolderDetail(folderId);
   const { updateAuth, applyToChildren } = useFolderAuthMutations();
@@ -46,6 +49,7 @@ export function FolderAuthPanel({
       onSave={(auth: WireAuthConfig) => updateAuth.mutateAsync({ id: folderId, auth })}
       onApplyToChildren={() => applyToChildren.mutateAsync(folderId)}
       onApplied={onApplied}
+      {...(onRename ? { onRename } : {})}
       onClose={onClose}
     />
   );

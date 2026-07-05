@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Pencil } from 'lucide-react';
 import type { WireAuthConfig } from '@shared/auth';
 import type { ResolvedKey } from '@shared/variable';
 import { AuthEditor } from '../runner/AuthEditor';
@@ -26,6 +26,8 @@ export interface AuthScopePanelProps {
   onApplyToChildren: () => Promise<{ folders: number; requests: number }>;
   /** Called after a successful cascade settles (used to refresh open editors). */
   onApplied?: () => void;
+  /** When provided, the title becomes inline-editable to rename the scope. */
+  onRename?: (name: string) => Promise<unknown>;
   onClose: () => void;
 }
 
@@ -53,6 +55,7 @@ export function AuthScopePanel({
   onSave,
   onApplyToChildren,
   onApplied,
+  onRename,
   onClose,
 }: AuthScopePanelProps): JSX.Element {
   const confirm = useConfirm();
@@ -60,6 +63,7 @@ export function AuthScopePanel({
   const [auth, setAuth] = useState<EditorAuthConfig>(
     (savedAuth as EditorAuthConfig | null) ?? DEFAULT_AUTH,
   );
+  const [renaming, setRenaming] = useState<string | null>(null);
 
   // Re-seed whenever the saved value changes (initial load, or an external
   // cascade that invalidated and refetched this scope).
@@ -71,6 +75,15 @@ export function AuthScopePanel({
     onSave(auth as WireAuthConfig)
       .then(() => toast('Authorization saved'))
       .catch(() => toast('Failed to save authorization', { type: 'error' }));
+  };
+
+  const commitRename = (): void => {
+    const next = (renaming ?? '').trim();
+    setRenaming(null);
+    if (!onRename || !next || next === title) return;
+    onRename(next)
+      .then(() => toast('Renamed'))
+      .catch(() => toast('Failed to rename', { type: 'error' }));
   };
 
   const applyToAll = async (): Promise<void> => {
@@ -90,7 +103,40 @@ export function AuthScopePanel({
     <div className="min-w-0 flex-1">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-medium">{title}</h2>
+          {renaming !== null ? (
+            <input
+              autoFocus
+              value={renaming}
+              onChange={(e) => setRenaming(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commitRename();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setRenaming(null);
+                }
+              }}
+              aria-label="Rename"
+              className="w-full rounded border border-accent bg-bg px-1.5 py-0.5 text-sm font-medium outline-none"
+            />
+          ) : (
+            <h2 className="group flex min-w-0 items-center gap-1.5 text-sm font-medium">
+              <span className="truncate">{title}</span>
+              {onRename && (
+                <button
+                  type="button"
+                  onClick={() => setRenaming(title)}
+                  aria-label="Rename"
+                  title="Rename"
+                  className="shrink-0 text-muted opacity-0 transition-opacity hover:text-fg group-hover:opacity-100"
+                >
+                  <Pencil size={13} />
+                </button>
+              )}
+            </h2>
+          )}
           <p className="text-xs text-muted">{subtitle}</p>
         </div>
         <button type="button" onClick={onClose} className="shrink-0 text-xs text-muted hover:text-fg">

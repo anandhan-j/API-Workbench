@@ -340,10 +340,11 @@ export function CollectionsPage(): JSX.Element {
                   setSelectedCollection({ id, name });
                 }}
                 onToggleFavorite={(id) => mutations.toggleFavorite.mutate(id)}
-                onAddRequest={(colId, type) => {
+                onAddRequest={(colId, type, folderId) => {
                   const badge = type ? requestTypeBadge(type, pluginRequestTypes) : undefined;
                   mutations.createRequest.mutate({
                     collectionId: colId,
+                    ...(folderId ? { folderId } : {}),
                     name: 'New request',
                     ...(type && type !== 'http'
                       ? { type, ...(badge ? { method: badge } : {}) }
@@ -536,6 +537,11 @@ export function CollectionsPage(): JSX.Element {
               folderId={selectedFolder.id}
               name={selectedFolder.name}
               onApplied={() => setReloadToken((t) => t + 1)}
+              onRename={(name) =>
+                mutations.renameFolder
+                  .mutateAsync({ id: selectedFolder.id, name })
+                  .then(() => setSelectedFolder({ id: selectedFolder.id, name }))
+              }
               onClose={() => setSelectedFolder(null)}
             />
           ) : selectedCollection ? (
@@ -544,6 +550,11 @@ export function CollectionsPage(): JSX.Element {
               collectionId={selectedCollection.id}
               name={selectedCollection.name}
               onApplied={() => setReloadToken((t) => t + 1)}
+              onRename={(name) =>
+                mutations.renameCollection
+                  .mutateAsync({ id: selectedCollection.id, name })
+                  .then(() => setSelectedCollection({ id: selectedCollection.id, name }))
+              }
               onClose={() => setSelectedCollection(null)}
             />
           ) : collectionId ? (

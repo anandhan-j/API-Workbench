@@ -25,8 +25,9 @@ export interface CollectionNodeProps {
   searchNodes?: TreeNode[];
   onOpenRequest: (request: OpenedRequest, collectionId: string) => void;
   onToggleFavorite: (id: string) => void;
-  /** Create a request; `type` selects the protocol (defaults to HTTP). */
-  onAddRequest: (collectionId: string, type?: string) => void;
+  /** Create a request; `type` selects the protocol (defaults to HTTP), `folderId`
+   *  places it inside a folder (omitted → collection root). */
+  onAddRequest: (collectionId: string, type?: string, folderId?: string) => void;
   /** Create a folder in this collection; `parentId` is null for a root folder. */
   onAddFolder: (collectionId: string, parentId: string | null) => void;
   onRenameCollection: (id: string, name: string) => void;
@@ -241,6 +242,10 @@ export function CollectionNode({
           onAddFolder={(parentId) => {
             onAddFolder(collection.id, parentId);
             if (parentId) expandFolder(parentId);
+          }}
+          onAddRequest={(folderId, type) => {
+            onAddRequest(collection.id, type, folderId);
+            expandFolder(folderId);
           }}
           onDeleteFolder={onDeleteFolder}
           onDeleteRequest={onDeleteRequest}
