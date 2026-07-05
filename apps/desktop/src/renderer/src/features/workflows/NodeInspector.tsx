@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ExternalLink, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ChevronDown,
+  ExternalLink,
+  GripVertical,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-react';
 import { cn } from '../../lib/cn';
 import type { HttpPayload, ProtocolResponse } from '@shared/protocol';
 import type {
@@ -30,6 +38,27 @@ const fieldClass =
 const smallField =
   'rounded-md border border-border bg-bg px-2 py-1 text-xs outline-none focus:border-accent';
 const labelClass = 'block text-[11px] font-medium uppercase tracking-wide text-muted';
+
+/** Cycled per card so adjacent mapping/field cards are easy to tell apart at a glance. */
+const CARD_TINTS = [
+  { edge: 'border-l-sky-400/70', tint: 'bg-sky-400/10' },
+  { edge: 'border-l-emerald-400/70', tint: 'bg-emerald-400/10' },
+  { edge: 'border-l-violet-400/70', tint: 'bg-violet-400/10' },
+  { edge: 'border-l-amber-400/70', tint: 'bg-amber-400/10' },
+  { edge: 'border-l-rose-400/70', tint: 'bg-rose-400/10' },
+];
+const cardTint = (i: number): (typeof CARD_TINTS)[number] => CARD_TINTS[i % CARD_TINTS.length];
+
+/** Nearest ancestor that actually scrolls vertically (the inspector pane), if any. */
+function scrollableAncestor(el: HTMLElement | null): HTMLElement | null {
+  for (let node = el?.parentElement ?? null; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) {
+      return node;
+    }
+  }
+  return null;
+}
 
 const METHOD_COLOR: Record<string, string> = {
   GET: 'text-success',
@@ -521,8 +550,12 @@ function ExtractEditor({
         {rules.length === 0 && <p className="text-[11px] text-muted">No mappings yet.</p>}
         {rules.map((rule, i) => {
           const preview = response ? extractFromResponse(response, rule) : null;
+          const tint = cardTint(i);
           return (
-            <div key={i} className="flex flex-col gap-1 rounded-md border border-border p-1.5">
+            <div
+              key={i}
+              className={`flex flex-col gap-1 rounded-md border border-border border-l-2 p-1.5 ${tint.edge}`}
+            >
               <div className="flex flex-wrap items-center gap-1">
                 <input
                   value={rule.variable}
@@ -600,9 +633,22 @@ function UserInputFieldsEditor({
   suggestions: VariableSuggestion[];
   variableContext?: VariableContext;
 }): JSX.Element {
+  // Each card keeps a stable color id so its tint travels with it when the
+  // list is reordered (a position-based tint would repaint cards on move).
+  // Fields carry no persistent id, so the ids live here, mirroring every
+  // add/remove/reorder; a length mismatch means the list changed from outside
+  // (e.g. another node selected) and the ids are rebuilt.
+  const [colorIds, setColorIds] = useState<number[]>(() => fields.map((_, i) => i));
+  useEffect(() => {
+    setColorIds((cur) =>
+      cur.length === fields.length ? cur : Array.from({ length: fields.length }, (_, i) => i),
+    );
+  }, [fields.length]);
+
   const update = (i: number, patch: Partial<UserInputField>): void =>
     onChange(fields.map((f, j) => (j === i ? { ...f, ...patch } : f)));
-  const add = (): void =>
+  const add = (): void => {
+    setColorIds((cur) => [...cur, Math.max(-1, ...cur) + 1]);
     onChange([
       ...fields,
       {
@@ -616,14 +662,94 @@ function UserInputFieldsEditor({
         required: false,
       },
     ]);
-  const remove = (i: number): void => onChange(fields.filter((_, j) => j !== i));
+  };
+  const remove = (i: number): void => {
+    setColorIds((cur) => cur.filter((_, j) => j !== i));
+    onChange(fields.filter((_, j) => j !== i));
+  };
+
+  // Drag-to-reorder: a card is only draggable while its grip handle is pressed
+  // (`armedIndex`), so text selection inside the card's inputs keeps working.
+  const [armedIndex, setArmedIndex] = useState<number | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+
+  // Edge auto-scroll: while a drag is live, an rAF loop scrolls the inspector
+  // pane when the pointer sits near its top/bottom edge, so long field lists
+  // can be reordered across the fold. Refs (not state) feed the loop to avoid
+  // re-render churn on every dragover.
+  const listRef = useRef<HTMLDivElement>(null);
+  const pointerY = useRef(0);
+  const rafRef = useRef<number | null>(null);
+  // Document-level so the pointer keeps being tracked even when the drag
+  // leaves the fields list (e.g. hovering other sections while the pane scrolls).
+  const trackPointer = useRef((e: DragEvent): void => {
+    pointerY.current = e.clientY;
+  }).current;
+  const stopAutoScroll = (): void => {
+    document.removeEventListener('dragover', trackPointer);
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  };
+  const autoScrollStep = (): void => {
+    const pane = scrollableAncestor(listRef.current);
+    if (pane) {
+      const rect = pane.getBoundingClientRect();
+      const margin = 36;
+      const maxSpeed = 14;
+      const y = pointerY.current;
+      if (y < rect.top + margin) {
+        pane.scrollTop -= maxSpeed * Math.min(1, (rect.top + margin - y) / margin);
+      } else if (y > rect.bottom - margin) {
+        pane.scrollTop += maxSpeed * Math.min(1, (y - (rect.bottom - margin)) / margin);
+      }
+    }
+    rafRef.current = requestAnimationFrame(autoScrollStep);
+  };
+  const startAutoScroll = (y: number): void => {
+    pointerY.current = y;
+    document.addEventListener('dragover', trackPointer);
+    if (rafRef.current === null) rafRef.current = requestAnimationFrame(autoScrollStep);
+  };
+  useEffect(
+    () => (): void => {
+      document.removeEventListener('dragover', trackPointer);
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    },
+    [trackPointer],
+  );
+
+  const resetDrag = (): void => {
+    setArmedIndex(null);
+    setDragIndex(null);
+    setOverIndex(null);
+    stopAutoScroll();
+  };
+  /** Moves the dragged field to the drop slot; the prompt shows fields in array order. */
+  const reorder = (from: number, to: number): void => {
+    if (from !== to) {
+      const next = [...fields];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      setColorIds((cur) => {
+        const ids = [...cur];
+        const [movedId] = ids.splice(from, 1);
+        ids.splice(to, 0, movedId);
+        return ids;
+      });
+      onChange(next);
+    }
+    resetDrag();
+  };
 
   return (
     <details open className="rounded-md border border-border">
       <summary className="cursor-pointer px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
         Fields (prompt → variables)
       </summary>
-      <div className="flex flex-col gap-2 border-t border-border p-2.5">
+      <div ref={listRef} className="flex flex-col gap-2 border-t border-border p-2.5">
         {fields.length === 0 && (
           <p className="text-[11px] text-muted">
             No fields — the node is a Continue/Cancel checkpoint.
@@ -631,124 +757,183 @@ function UserInputFieldsEditor({
         )}
         {fields.map((field, i) => {
           const kind = field.kind ?? 'string';
+          const tint = cardTint(colorIds[i] ?? i);
           return (
-            <div key={i} className="flex flex-col gap-1 rounded-md border border-border p-1.5">
-              <div className="flex items-center gap-1">
+            <div
+              key={colorIds[i] ?? i}
+              draggable={armedIndex === i}
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = 'move';
+                setDragIndex(i);
+                startAutoScroll(e.clientY);
+              }}
+              onDragOver={(e) => {
+                if (dragIndex === null) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (overIndex !== i) setOverIndex(i);
+              }}
+              onDragLeave={() => {
+                if (overIndex === i) setOverIndex(null);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragIndex !== null) reorder(dragIndex, i);
+              }}
+              onDragEnd={resetDrag}
+              className={cn(
+                `overflow-hidden rounded-md border border-border border-l-2 ${tint.edge}`,
+                dragIndex === i && 'opacity-40',
+                overIndex === i && dragIndex !== i && 'border-accent ring-1 ring-accent',
+              )}
+            >
+              <div className={`flex items-center gap-1.5 border-b border-border p-1.5 ${tint.tint}`}>
+                <button
+                  type="button"
+                  aria-label={`Drag to reorder field ${i + 1}`}
+                  title="Drag to reorder (fields appear in this order in the prompt)"
+                  onMouseDown={() => setArmedIndex(i)}
+                  onMouseUp={() => setArmedIndex(null)}
+                  className="shrink-0 cursor-grab text-muted hover:text-fg active:cursor-grabbing"
+                >
+                  <GripVertical size={13} />
+                </button>
                 <input
                   value={field.variable}
                   onChange={(e) => update(i, { variable: e.target.value })}
                   placeholder="variable"
-                  className={`${smallField} w-28 font-mono`}
+                  className={`${smallField} w-0 flex-1 font-mono`}
                 />
                 <input
                   value={field.label}
                   onChange={(e) => update(i, { label: e.target.value })}
                   placeholder="Label"
-                  className={`${smallField} min-w-0 flex-1`}
+                  className={`${smallField} w-0 flex-1`}
                 />
                 <button
                   type="button"
                   aria-label="Remove field"
                   onClick={() => remove(i)}
-                  className="ml-auto text-muted hover:text-rose-400"
+                  className="shrink-0 rounded p-0.5 text-muted hover:text-rose-400"
                 >
                   <Trash2 size={13} />
                 </button>
               </div>
-              <select
-                value={kind}
-                onChange={(e) =>
-                  update(i, { kind: e.target.value as UserInputFieldKind, filledAtRuntime: false })
-                }
-                aria-label="Field kind"
-                className={`${smallField} w-full`}
-              >
-                <option value="string">Text</option>
-                <option value="secret">Secret (masked)</option>
-                <option value="number">Number</option>
-                <option value="boolean">Yes / No</option>
-                <option value="select">Dropdown / List</option>
-                <option value="keyvalue">Key–value grid</option>
-              </select>
-              {kind !== 'boolean' && (
-                <label className="flex items-center gap-1.5 text-[11px] text-muted">
-                  <input
-                    type="checkbox"
-                    checked={field.required ?? false}
-                    onChange={(e) => update(i, { required: e.target.checked })}
-                  />
-                  Required (the prompt refuses submission while empty)
-                </label>
-              )}
-              {(kind === 'string' ||
-                kind === 'secret' ||
-                kind === 'number' ||
-                (kind === 'select' && !field.filledAtRuntime)) && (
-                <VariableField
-                  value={field.default}
-                  onChange={(value) => update(i, { default: value })}
-                  suggestions={suggestions}
-                  variableContext={variableContext}
-                  aria-label="Default (template)"
-                  placeholder={
-                    kind === 'number'
-                      ? 'Default (template, e.g. 42)'
-                      : 'Default (template, e.g. {{token}})'
-                  }
-                  className={`${smallField} w-full font-mono`}
-                />
-              )}
-              {kind === 'boolean' && (
-                <label className="flex items-center gap-1.5 text-[11px] text-muted">
-                  <input
-                    type="checkbox"
-                    checked={(field.default ?? '').trim().toLowerCase() === 'true'}
-                    onChange={(e) => update(i, { default: e.target.checked ? 'true' : '' })}
-                  />
-                  Default to Yes
-                </label>
-              )}
-              {(kind === 'select' || kind === 'keyvalue') && (
-                <>
-                  <label className="flex items-center gap-1.5 text-[11px] text-muted">
-                    <input
-                      type="checkbox"
-                      checked={field.filledAtRuntime ?? false}
-                      onChange={(e) => update(i, { filledAtRuntime: e.target.checked })}
-                    />
-                    Filled at run time
-                  </label>
-                  {(field.filledAtRuntime ?? false) ? (
-                    <p className="text-[11px] text-muted">
-                      The user builds the {kind === 'select' ? 'list of items' : 'key–value grid'}{' '}
-                      in the prompt; stored in the variable as JSON.
-                    </p>
-                  ) : kind === 'select' ? (
-                    <div>
-                      <span className="text-[11px] text-muted">
-                        Choices (shown as a dropdown at run time)
-                      </span>
-                      <StringListEditor
-                        label={`${field.label || field.variable || `Field ${i + 1}`} choices`}
-                        value={field.options ?? []}
-                        placeholder="e.g. staging"
-                        onChange={(options) => update(i, { options })}
+              <div className="flex flex-col gap-2 p-2">
+                <div className="flex items-center gap-2">
+                  <select
+                    value={kind}
+                    onChange={(e) =>
+                      update(i, {
+                        kind: e.target.value as UserInputFieldKind,
+                        filledAtRuntime: false,
+                      })
+                    }
+                    aria-label="Field kind"
+                    className={`${smallField} min-w-0 flex-1`}
+                  >
+                    <option value="string">Text</option>
+                    <option value="secret">Secret (masked)</option>
+                    <option value="number">Number</option>
+                    <option value="boolean">Yes / No</option>
+                    <option value="select">Dropdown / List</option>
+                    <option value="keyvalue">Key–value grid</option>
+                  </select>
+                  {kind !== 'boolean' && (
+                    <label
+                      className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[11px] text-muted"
+                      title="The prompt refuses submission while this field is empty"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={field.required ?? false}
+                        onChange={(e) => update(i, { required: e.target.checked })}
                       />
-                    </div>
-                  ) : (
-                    <div>
-                      <span className="text-[11px] text-muted">
-                        Entries (dropdown at run time: key = label, value = stored)
-                      </span>
-                      <KeyValueGrid
-                        label={`${field.label || field.variable || `Field ${i + 1}`} entries`}
-                        value={field.entries ?? {}}
-                        onChange={(entries) => update(i, { entries })}
-                      />
-                    </div>
+                      Required
+                    </label>
                   )}
-                </>
-              )}
+                  {kind === 'boolean' && (
+                    <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[11px] text-muted">
+                      <input
+                        type="checkbox"
+                        checked={(field.default ?? '').trim().toLowerCase() === 'true'}
+                        onChange={(e) => update(i, { default: e.target.checked ? 'true' : '' })}
+                      />
+                      Default to Yes
+                    </label>
+                  )}
+                </div>
+                {(kind === 'string' ||
+                  kind === 'secret' ||
+                  kind === 'number' ||
+                  (kind === 'select' && !field.filledAtRuntime)) && (
+                  <VariableField
+                    value={field.default}
+                    onChange={(value) => update(i, { default: value })}
+                    suggestions={suggestions}
+                    variableContext={variableContext}
+                    aria-label="Default (template)"
+                    placeholder={
+                      kind === 'number'
+                        ? 'Default (template, e.g. 42)'
+                        : 'Default (template, e.g. {{token}})'
+                    }
+                    className={`${smallField} w-full font-mono`}
+                  />
+                )}
+                {(kind === 'select' || kind === 'keyvalue') && (
+                  <>
+                    <label
+                      className="flex w-fit cursor-pointer items-center gap-1.5 text-[11px] text-muted"
+                      title={`The user builds the ${
+                        kind === 'select' ? 'list of items' : 'key–value grid'
+                      } in the prompt; stored in the variable as JSON`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={field.filledAtRuntime ?? false}
+                        onChange={(e) => update(i, { filledAtRuntime: e.target.checked })}
+                      />
+                      Filled at run time
+                    </label>
+                    {(field.filledAtRuntime ?? false) ? (
+                      <p className="rounded-md bg-surface-2/60 px-2 py-1.5 text-[11px] leading-relaxed text-muted">
+                        The user builds the {kind === 'select' ? 'list of items' : 'key–value grid'}{' '}
+                        in the prompt; stored in the variable as JSON.
+                      </p>
+                    ) : kind === 'select' ? (
+                      <div className="flex flex-col gap-1">
+                        <span
+                          className="text-[10px] font-medium uppercase tracking-wide text-muted"
+                          title="Shown as a dropdown at run time"
+                        >
+                          Choices
+                        </span>
+                        <StringListEditor
+                          label={`${field.label || field.variable || `Field ${i + 1}`} choices`}
+                          value={field.options ?? []}
+                          placeholder="e.g. staging"
+                          onChange={(options) => update(i, { options })}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        <span
+                          className="text-[10px] font-medium uppercase tracking-wide text-muted"
+                          title="Shown as a dropdown at run time — the key is the label, the value is what's stored"
+                        >
+                          Entries <span className="normal-case">(key = label, value = stored)</span>
+                        </span>
+                        <KeyValueGrid
+                          label={`${field.label || field.variable || `Field ${i + 1}`} entries`}
+                          value={field.entries ?? {}}
+                          onChange={(entries) => update(i, { entries })}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           );
         })}
