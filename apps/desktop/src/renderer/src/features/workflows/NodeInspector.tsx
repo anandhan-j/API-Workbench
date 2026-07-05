@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ExternalLink,
@@ -721,6 +721,44 @@ function UserInputFieldsEditor({
     [trackPointer],
   );
 
+  // FLIP animation: after each render, compare every card's position (relative
+  // to the list, so pane scrolling doesn't skew the delta) with where it was on
+  // the previous render, and slide moved cards from the old spot into the new
+  // one. Cards seen for the first time (just added) fade/slide in instead.
+  const cardTops = useRef(new Map<string, number>());
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const listTop = list.getBoundingClientRect().top;
+    const seen = new Set<string>();
+    for (const el of list.querySelectorAll<HTMLElement>('[data-card-id]')) {
+      const id = el.dataset.cardId as string;
+      seen.add(id);
+      const top = el.getBoundingClientRect().top - listTop;
+      const prevTop = cardTops.current.get(id);
+      if (typeof el.animate === 'function') {
+        if (prevTop === undefined) {
+          el.animate(
+            [
+              { opacity: 0, transform: 'translateY(4px)' },
+              { opacity: 1, transform: 'translateY(0)' },
+            ],
+            { duration: 150, easing: 'ease-out' },
+          );
+        } else if (Math.abs(prevTop - top) > 1) {
+          el.animate(
+            [{ transform: `translateY(${prevTop - top}px)` }, { transform: 'translateY(0)' }],
+            { duration: 180, easing: 'ease-out' },
+          );
+        }
+      }
+      cardTops.current.set(id, top);
+    }
+    for (const id of [...cardTops.current.keys()]) {
+      if (!seen.has(id)) cardTops.current.delete(id);
+    }
+  });
+
   const resetDrag = (): void => {
     setArmedIndex(null);
     setDragIndex(null);
@@ -761,6 +799,7 @@ function UserInputFieldsEditor({
           return (
             <div
               key={colorIds[i] ?? i}
+              data-card-id={colorIds[i] ?? i}
               draggable={armedIndex === i}
               onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = 'move';
@@ -783,6 +822,7 @@ function UserInputFieldsEditor({
               onDragEnd={resetDrag}
               className={cn(
                 `overflow-hidden rounded-md border border-border border-l-2 ${tint.edge}`,
+                'transition-[opacity,box-shadow,border-color] duration-150',
                 dragIndex === i && 'opacity-40',
                 overIndex === i && dragIndex !== i && 'border-accent ring-1 ring-accent',
               )}
