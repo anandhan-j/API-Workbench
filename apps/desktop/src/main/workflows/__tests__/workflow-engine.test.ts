@@ -218,6 +218,42 @@ describe('WorkflowEngine', () => {
     expect(result.finalVariables).not.toHaveProperty('x');
   });
 
+  it('extracts a field from a stream (WebSocket/SSE) response body into a variable', async () => {
+    // WS/SSE collect mode returns the received messages as a JSON array body,
+    // so existing jsonpath extraction reaches an event field with no changes.
+    const streamResponse: ProtocolResponse = {
+      type: 'websocket',
+      ok: true,
+      summary: { label: '1 message', tone: 'success' },
+      metadata: {},
+      body: JSON.stringify([{ token: 'abc' }]),
+      bodyKind: 'json',
+      prettyBody: JSON.stringify([{ token: 'abc' }], null, 2),
+      contentType: 'application/json',
+      sizeBytes: 20,
+      timings: { startedAt: 0, totalMs: 5 },
+      protocol: { events: [{ at: 0, direction: 'received', kind: 'text', data: '{"token":"abc"}' }] },
+    };
+    const executeRequest = vi.fn(async () => streamResponse);
+    const wsNode: WorkflowNode = {
+      id: 'ws',
+      kind: 'request',
+      name: 'ws',
+      position: pos,
+      config: {
+        type: 'websocket',
+        payload: { url: 'wss://echo.test', headers: {}, subprotocols: [], messages: [], collect: {} },
+        extract: [{ variable: 'tok', source: 'body', engine: 'jsonpath', expression: '$[0].token' }],
+      },
+    };
+    const wf = linearWorkflow('w', [start(), wsNode, end()]);
+    const result = await new WorkflowEngine(makePorts({ executeRequest })).run(wf);
+
+    expect(result.status).toBe('success');
+    expect(result.nodeResults[1].variablesSet).toMatchObject({ tok: 'abc' });
+    expect(result.finalVariables).toMatchObject({ tok: 'abc' });
+  });
+
   it('treats a non-2xx HTTP status as a completed (not failed) node', async () => {
     const executeRequest = vi.fn(async () => okResponse(404));
     const wf = linearWorkflow('w', [start(), request('r'), end()]);

@@ -264,6 +264,7 @@ export class CollectionExplorer {
           parentId,
           name: request.name,
           depth,
+          requestType: request.type,
           method: request.method,
           url: request.url,
           favorite: request.favorite,

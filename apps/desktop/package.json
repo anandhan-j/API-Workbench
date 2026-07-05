@@ -27,6 +27,8 @@
     "build:example-plugins": "node ../../plugins/examples/build.mjs"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/proto-loader": "^0.7.15",
     "@tanstack/react-query": "^5.51.1",
     "ajv": "^8.17.1",
     "better-sqlite3": "^12.11.1",
@@ -44,6 +46,7 @@
     "semver": "^7.8.5",
     "tailwind-merge": "^2.4.0",
     "undici": "^6.27.0",
+    "ws": "^8.21.0",
     "yaml": "^2.4.5",
     "yauzl": "^3.4.0",
     "zod": "^3.23.8",
@@ -61,6 +64,7 @@
     "@types/react-window": "^1.8.8",
     "@types/semver": "^7.7.1",
     "@types/sql.js": "^1.4.9",
+    "@types/ws": "^8.18.1",
     "@types/yauzl": "^3.4.0",
     "@types/yazl": "^3.3.1",
     "@typescript-eslint/eslint-plugin": "^7.16.0",

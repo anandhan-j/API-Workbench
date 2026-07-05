@@ -27,6 +27,7 @@ import { usePluginContributions } from '../plugins/use-plugins';
 import { RequestEditor } from '../runner/RequestEditor';
 import type { FlowNode } from './graph-mapping';
 import { getNodeMeta } from './node-meta';
+import { getRequestTypeMeta } from '../runner/request-type-meta';
 import type { ProjectRequestRef } from './use-project-requests';
 import { draftToNodeConfig, nodeConfigToDraft } from './request-node-draft';
 import type { VariableContext } from '@shared/variable';
@@ -38,6 +39,28 @@ const fieldClass =
 const smallField =
   'rounded-md border border-border bg-bg px-2 py-1 text-xs outline-none focus:border-accent';
 const labelClass = 'block text-[11px] font-medium uppercase tracking-wide text-muted';
+
+/** The badge + target shown on a request node, for any protocol (ADR-0009). */
+function requestNodeSummary(
+  config: Record<string, unknown>,
+  pluginTypes: ReturnType<typeof usePluginContributions>['requestTypes'],
+): { badge: string; target: string } {
+  const type = (config.type as string | undefined) ?? 'http';
+  const payload = (config.payload ?? {}) as Record<string, unknown>;
+  if (type === 'http') {
+    const http = payload as Partial<HttpPayload>;
+    return { badge: http.method ?? 'GET', target: http.url ?? '' };
+  }
+  const meta = getRequestTypeMeta(type);
+  if (meta) return { badge: meta.badge, target: meta.targetOf(payload) };
+  const contribution = pluginTypes.find(
+    (rt) => qualifiedContributionId(rt.pluginId, rt.type) === type,
+  );
+  return {
+    badge: contribution?.summary.badge ?? 'REQ',
+    target: contribution ? String(payload[contribution.summary.targetKey] ?? '') : '',
+  };
+}
 
 /** Cycled per card so adjacent mapping/field cards are easy to tell apart at a glance. */
 const CARD_TINTS = [
@@ -178,10 +201,10 @@ export function NodeInspector({
             >
               <span className="flex min-w-0 items-center gap-2">
                 <span className="font-mono text-xs font-semibold text-accent">
-                  {(config.payload as Partial<HttpPayload> | undefined)?.method ?? 'GET'}
+                  {requestNodeSummary(config, contributions.requestTypes).badge}
                 </span>
                 <span className="truncate text-muted">
-                  {(config.payload as Partial<HttpPayload> | undefined)?.url || 'Configure…'}
+                  {requestNodeSummary(config, contributions.requestTypes).target || 'Configure…'}
                 </span>
               </span>
               <SlidersHorizontal size={14} className="shrink-0 text-muted" />

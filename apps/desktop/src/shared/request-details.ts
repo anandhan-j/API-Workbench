@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { HttpMethod } from './collection';
+import { MethodBadge } from './collection';
 import { WireAuthConfig } from './auth';
 
 /**
@@ -72,9 +72,11 @@ export const RequestDetails = z.object({
   postResponseScript: z.string().default(''),
   description: z.string().optional(),
   /**
-   * Editor values for a plugin request type (ADR-0009), captured by its
-   * schema-driven form. Unused (absent) for HTTP requests, whose editable
-   * definition is the structured fields above.
+   * Editor values for any non-HTTP request type (ADR-0009): a built-in
+   * protocol (GraphQL/gRPC/WebSocket/SSE) or a plugin type. Holds the payload
+   * fields the protocol's editor (or a plugin's schema-driven form) captures.
+   * Unused (absent) for HTTP requests, whose editable definition is the
+   * structured fields above.
    */
   pluginPayload: z.record(z.unknown()).optional(),
 });
@@ -93,7 +95,8 @@ export const RequestDetailFull = z.object({
   name: z.string(),
   /** Request type (ADR-0009): 'http' or `plugin:<pluginId>/<type>`. */
   type: z.string().default('http'),
-  method: HttpMethod,
+  /** HTTP method, or the provider's display badge for non-HTTP types. */
+  method: MethodBadge,
   url: z.string(),
   favorite: z.boolean(),
   details: RequestDetails,
@@ -106,7 +109,7 @@ export const SaveRequestInput = z.object({
   name: z.string().min(1).optional(),
   /** Request type (ADR-0009): 'http' or `plugin:<pluginId>/<type>`. Omitted leaves it unchanged. */
   type: z.string().optional(),
-  method: HttpMethod.optional(),
+  method: MethodBadge.optional(),
   url: z.string().optional(),
   details: RequestDetails,
 });

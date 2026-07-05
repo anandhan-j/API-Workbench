@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
-import { HttpProtocolExtras, statusOf, type ProtocolResponse } from '@shared/protocol';
+import {
+  GraphqlProtocolExtras,
+  GrpcProtocolExtras,
+  HttpProtocolExtras,
+  StreamProtocolExtras,
+  statusOf,
+  type ProtocolResponse,
+} from '@shared/protocol';
 import { cn } from '../../lib/cn';
+import { StreamEventLog } from './StreamEventLog';
 
 export interface ResponseViewerProps {
   response: ProtocolResponse | null;
@@ -85,6 +93,12 @@ export function ResponseViewer({ response, loading }: ResponseViewerProps): JSX.
   const isBinary = response.bodyKind === 'binary';
   const bodyText = isBinary ? '' : (response.prettyBody ?? response.body ?? '');
 
+  // Protocol-specific extras, shown above the body when present.
+  const graphql = GraphqlProtocolExtras.safeParse(response.protocol);
+  const grpc = GrpcProtocolExtras.safeParse(response.protocol);
+  const stream = StreamProtocolExtras.safeParse(response.protocol);
+  const graphqlErrors = graphql.success ? graphql.data.graphqlErrors : [];
+
   return (
     <div className="rounded-md border border-border bg-surface">
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2 text-sm">
@@ -119,6 +133,50 @@ export function ResponseViewer({ response, loading }: ResponseViewerProps): JSX.
           </tbody>
         </table>
       </details>
+
+      {/* GraphQL: the operation's top-level errors. */}
+      {graphqlErrors.length > 0 && (
+        <div className="border-b border-border px-4 py-2">
+          <p className="mb-1 text-xs font-semibold text-danger">
+            GraphQL errors ({graphqlErrors.length})
+          </p>
+          <ul className="space-y-1 font-mono text-xs">
+            {graphqlErrors.map((err, i) => (
+              <li key={i} className="text-danger">
+                {err.message}
+                {err.path ? <span className="text-muted"> @ {err.path.join('.')}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* gRPC: status code/name and any trailers. */}
+      {grpc.success && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2 text-xs">
+          <span className={cn('font-semibold', grpc.data.statusCode === 0 ? 'text-success' : 'text-danger')}>
+            {grpc.data.statusCode} {grpc.data.statusName}
+          </span>
+          {Object.entries(grpc.data.trailers).map(([k, v]) => (
+            <span key={k} className="text-muted">
+              {k}: <span className="font-mono">{v}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* WebSocket/SSE: the directional event timeline. */}
+      {stream.success && (
+        <details open className="border-b border-border px-4 py-2 text-sm">
+          <summary className="cursor-pointer text-muted">
+            Events ({stream.data.events.length}){stream.data.truncated ? ' · truncated' : ''}
+            {stream.data.closeCode !== undefined ? ` · closed ${stream.data.closeCode}` : ''}
+          </summary>
+          <div className="mt-2 max-h-72 overflow-auto rounded-md border border-border">
+            <StreamEventLog events={stream.data.events} />
+          </div>
+        </details>
+      )}
 
       <div className="relative">
         {!isBinary && bodyText !== '' && (

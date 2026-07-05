@@ -5,11 +5,13 @@ import type { ExtractRule, RequestNodeConfig } from '@shared/workflow';
 import {
   buildRequestEnvelope,
   defaultDraft,
+  defaultProtocolPayload,
   newRow,
   type KeyValue,
   type RawType,
   type RequestDraft,
 } from '../runner/build-request';
+import { isBuiltinProtocol } from '../runner/request-type-meta';
 
 /**
  * Bridges a workflow request node's config and the runner's {@link RequestDraft},
@@ -89,6 +91,28 @@ function bodyToDraft(body: RequestBody): BodyDraft {
 }
 
 export function nodeConfigToDraft(config: RequestNodeConfig): RequestDraft {
+  const type = config.type ?? HTTP_REQUEST_TYPE;
+  const options = {
+    timeoutMs: config.options?.timeoutMs ?? 30_000,
+    maxRetries: config.options?.maxRetries ?? 0,
+    followRedirects: config.options?.followRedirects ?? true,
+  };
+
+  // Non-HTTP types keep their whole payload in the plugin/protocol bag; the
+  // dedicated editor (or plugin form) edits it, mirroring the runner.
+  if (type !== HTTP_REQUEST_TYPE) {
+    const seeded = isBuiltinProtocol(type)
+      ? { ...defaultProtocolPayload(type), ...((config.payload ?? {}) as Record<string, unknown>) }
+      : ((config.payload ?? {}) as Record<string, unknown>);
+    return {
+      ...defaultDraft('GET', ''),
+      requestType: type,
+      pluginPayload: seeded,
+      auth: config.auth ?? { type: 'none' },
+      options,
+    };
+  }
+
   const payload = (config.payload ?? {}) as Partial<HttpPayload>;
   const method = (payload.method ?? 'GET') as HttpMethod;
   const url = payload.url ?? '';
@@ -101,11 +125,7 @@ export function nodeConfigToDraft(config: RequestNodeConfig): RequestDraft {
     params: recordToRows(payload.query ?? {}),
     auth: config.auth ?? { type: 'none' },
     ...bodyToDraft(payload.body ?? { type: 'none' }),
-    options: {
-      timeoutMs: config.options?.timeoutMs ?? 30_000,
-      maxRetries: config.options?.maxRetries ?? 0,
-      followRedirects: config.options?.followRedirects ?? true,
-    },
+    options,
   };
 }
 
@@ -116,7 +136,7 @@ export function draftToNodeConfig(
 ): RequestNodeConfig {
   const envelope = buildRequestEnvelope(draft);
   return {
-    type: HTTP_REQUEST_TYPE,
+    type: envelope.type,
     payload: envelope.payload,
     ...(envelope.auth ? { auth: envelope.auth } : {}),
     ...(envelope.options ? { options: envelope.options } : {}),

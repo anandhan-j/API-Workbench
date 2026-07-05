@@ -16,7 +16,17 @@ import { ImportService, SyncService, builtinOpenApiImporters, DEFAULT_IMPORTER_I
 import { VersioningService } from './versioning';
 import { VariableService, SafeStorageEncryptor } from './variables';
 import { AuthService } from './auth';
-import { ExecutionService, FetchTransport, createHttpProvider } from './execution';
+import {
+  ExecutionService,
+  FetchTransport,
+  createHttpProvider,
+  createGraphqlProvider,
+  createGrpcProvider,
+  createGrpcInvoker,
+  createWebSocketProvider,
+  createSseProvider,
+  createSseStreamer,
+} from './execution';
 import { TestRunner } from './testing';
 import { WorkflowService, BUILTIN_NODE_EXECUTORS } from './workflows';
 import {
@@ -89,10 +99,18 @@ function initServices(): Services {
   // The transport reads the "verify TLS certificates" preference per request, so
   // toggling it in Settings takes effect immediately for both the runner and
   // workflow request nodes (which share this transport).
-  const transport = new FetchTransport(() =>
-    service.preferences.getOrDefault<boolean>(PREF_VERIFY_SSL, true),
-  );
-  const requestTypes = new RequestTypeRegistry([createHttpProvider(transport)]);
+  const verifySsl = (): boolean => service.preferences.getOrDefault<boolean>(PREF_VERIFY_SSL, true);
+  const transport = new FetchTransport(verifySsl);
+  // Built-in request-type providers (ADR-0009). HTTP is #1; the rest add
+  // GraphQL, gRPC unary, and WebSocket/SSE (the streams run in one-shot
+  // collect mode). Each takes an injected transport/client port.
+  const requestTypes = new RequestTypeRegistry([
+    createHttpProvider(transport),
+    createGraphqlProvider(transport),
+    createGrpcProvider(createGrpcInvoker()),
+    createWebSocketProvider(),
+    createSseProvider(createSseStreamer(verifySsl)),
+  ]);
 
   const auth = new AuthService(service, new SafeStorageEncryptor(), authProviders);
   const execution = new ExecutionService(transport, {

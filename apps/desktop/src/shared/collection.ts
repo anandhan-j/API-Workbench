@@ -17,6 +17,16 @@ export const HttpMethod = z.enum([
 ]);
 export type HttpMethod = z.infer<typeof HttpMethod>;
 
+/**
+ * The `method` column as it appears in list/tree/history DTOs (ADR-0009). For
+ * HTTP requests it's an {@link HttpMethod}; for other request types it carries
+ * the provider's display badge (`GQL`, `gRPC`, `WS`, `SSE`, or a plugin badge),
+ * so it can't be the HTTP enum on the wire. The runner's own draft keeps the
+ * strict {@link HttpMethod} — only these display DTOs widen.
+ */
+export const MethodBadge = z.string();
+export type MethodBadge = z.infer<typeof MethodBadge>;
+
 export const Collection = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -51,7 +61,7 @@ export const RequestSummary = z.object({
   /** Request type (ADR-0009): 'http' or `plugin:<pluginId>/<type>`. For
    *  non-HTTP types, `method`/`url` carry the provider's badge/target. */
   type: z.string().default('http'),
-  method: HttpMethod,
+  method: MethodBadge,
   url: z.string(),
   favorite: z.boolean(),
   position: z.number(),
@@ -75,7 +85,11 @@ export const TreeNode = z.discriminatedUnion('type', [
     parentId: z.string().nullable(),
     name: z.string(),
     depth: z.number(),
-    method: HttpMethod,
+    /** Request type (ADR-0009) so the tree can pick a badge/color per protocol.
+     *  Absent is treated as 'http'. */
+    requestType: z.string().optional(),
+    /** HTTP method, or the provider's display badge for non-HTTP types. */
+    method: MethodBadge,
     url: z.string(),
     favorite: z.boolean(),
   }),
@@ -99,7 +113,7 @@ export const RequestHistoryEntry = z.object({
   id: z.string(),
   requestId: z.string(),
   name: z.string(),
-  method: HttpMethod,
+  method: MethodBadge,
   url: z.string(),
   openedAt: z.number(),
 });
@@ -124,7 +138,9 @@ export const CreateRequestInput = z.object({
   collectionId: z.string(),
   folderId: z.string().nullable().optional(),
   name: z.string().min(1),
-  method: HttpMethod.optional(),
+  /** Request type to create (ADR-0009). Defaults to 'http'. */
+  type: z.string().optional(),
+  method: MethodBadge.optional(),
   url: z.string().optional(),
 });
 export type CreateRequestInput = z.infer<typeof CreateRequestInput>;

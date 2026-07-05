@@ -13,7 +13,7 @@ import { cn } from '../../lib/cn';
 import { RequestEditor } from '../runner/RequestEditor';
 import { RequestVariablesUsedPanel } from './RequestVariablesUsedPanel';
 import { detailToDraft, draftToDetails, type RequestDraft } from '../runner/build-request';
-import { HTTP_REQUEST_TYPE } from '@shared/protocol';
+import { getRequestTypeMeta, persistedIdentity } from '../runner/request-type-meta';
 import { Modal } from '../../components/menu/Modal';
 import { ImportPanel } from './ImportPanel';
 import { SyncPanel } from './SyncPanel';
@@ -46,11 +46,13 @@ export function CollectionsPage(): JSX.Element {
   const mutations = useCollectionMutations(projectId);
   const importer = useImport(projectId);
   const syncer = useSync(projectId);
+  const contributions = usePluginContributions();
   // Plugin importers for the import dialog's format select (empty → hidden).
-  const pluginImporters = usePluginContributions().importers.map((imp) => ({
+  const pluginImporters = contributions.importers.map((imp) => ({
     id: qualifiedContributionId(imp.pluginId, imp.id),
     label: imp.label,
   }));
+  const pluginRequestTypes = contributions.requestTypes;
   const confirm = useConfirm();
   const toast = useToast();
   const qc = useQueryClient();
@@ -338,9 +340,16 @@ export function CollectionsPage(): JSX.Element {
                   setSelectedCollection({ id, name });
                 }}
                 onToggleFavorite={(id) => mutations.toggleFavorite.mutate(id)}
-                onAddRequest={(colId) =>
-                  mutations.createRequest.mutate({ collectionId: colId, name: 'New request' })
-                }
+                onAddRequest={(colId, type) => {
+                  const meta = type ? getRequestTypeMeta(type) : undefined;
+                  mutations.createRequest.mutate({
+                    collectionId: colId,
+                    name: 'New request',
+                    ...(type && type !== 'http'
+                      ? { type, ...(meta ? { method: meta.badge } : {}) }
+                      : {}),
+                  });
+                }}
                 onAddFolder={(colId, parentId) =>
                   mutations.createFolder.mutate({
                     collectionId: colId,
@@ -495,9 +504,9 @@ export function CollectionsPage(): JSX.Element {
                         .mutateAsync({
                           id: selectedRequest.id,
                           name: selectedRequest.name,
-                          type: draft.requestType ?? HTTP_REQUEST_TYPE,
-                          method: draft.method,
-                          url: draft.url,
+                          // Non-HTTP types store the provider's badge/target in
+                          // the method/url columns (ADR-0009).
+                          ...persistedIdentity(draft, pluginRequestTypes),
                           details: draftToDetails(draft),
                         })
                         .then(() => toast('Request saved'))

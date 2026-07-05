@@ -9,7 +9,7 @@ import {
   Star,
   Trash2,
 } from 'lucide-react';
-import type { HttpMethod, TreeNode } from '@shared/collection';
+import type { TreeNode } from '@shared/collection';
 import { cn } from '../../lib/cn';
 import { ContextMenu, type MenuItem } from '../../components/menu/ContextMenu';
 import { endpointLabel } from './request-label';
@@ -68,7 +68,8 @@ export function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
 export interface OpenedRequest {
   id: string;
   name: string;
-  method: HttpMethod;
+  /** HTTP method or a non-HTTP provider's display badge. */
+  method: string;
   url: string;
 }
 
@@ -80,6 +81,11 @@ const METHOD_COLOR: Record<string, string> = {
   DELETE: 'text-danger',
   HEAD: 'text-muted',
   OPTIONS: 'text-muted',
+  // Non-HTTP protocol badges (ADR-0009).
+  GQL: 'text-pink-400',
+  gRPC: 'text-cyan-400',
+  WS: 'text-violet-400',
+  SSE: 'text-amber-400',
 };
 
 export interface CollectionTreeViewProps {

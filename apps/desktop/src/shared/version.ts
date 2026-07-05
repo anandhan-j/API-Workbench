@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { HttpMethod } from './collection';
+import { MethodBadge } from './collection';
 import { WireAuthConfig } from './auth';
 import { RequestSource } from './sync';
 
@@ -28,7 +28,7 @@ export const VersionRequest = z.object({
   name: z.string(),
   /** Request type (ADR-0009); snapshots from before Phase 16 default to 'http'. */
   type: z.string().default('http'),
-  method: HttpMethod,
+  method: MethodBadge,
   url: z.string(),
   favorite: z.boolean(),
   source: RequestSource.nullable(),
@@ -67,7 +67,7 @@ export type RequestFieldChange = z.infer<typeof RequestFieldChange>;
 export const DiffRequest = z.object({
   id: z.string(),
   name: z.string(),
-  method: HttpMethod,
+  method: MethodBadge,
   url: z.string(),
 });
 export type DiffRequest = z.infer<typeof DiffRequest>;

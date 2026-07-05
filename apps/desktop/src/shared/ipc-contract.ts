@@ -14,7 +14,7 @@ import {
   RequestSummary,
   TreeNode,
   RequestHistoryEntry,
-  HttpMethod,
+  MethodBadge,
   CollectionSourceInfo,
   CreateCollectionInput,
   CreateFolderInput,
@@ -24,7 +24,12 @@ import { RequestDetailFull, SaveRequestInput } from './request-details';
 import { ImportRequest, ImportResult } from './openapi';
 import { SyncRequest, SyncResult } from './sync';
 import { CredentialMeta, SaveCredentialInput, WireAuthConfig } from './auth';
-import { RequestEnvelope, ProtocolResponse } from './protocol';
+import {
+  RequestEnvelope,
+  ProtocolResponse,
+  ConnectionEvent,
+  ConnectionStateEvent,
+} from './protocol';
 import {
   Capability,
   InstalledPlugin,
@@ -194,7 +199,7 @@ export const IpcChannels = {
     request: z.object({
       id: z.string(),
       name: z.string().optional(),
-      method: HttpMethod.optional(),
+      method: MethodBadge.optional(),
       url: z.string().optional(),
     }),
     response: RequestSummary,
@@ -237,6 +242,19 @@ export const IpcChannels = {
     }),
   },
 
+  // --- Native path picker (for gRPC .proto files: path, not content) ---
+  'dialog.openPath': {
+    request: z.object({
+      filters: z
+        .array(z.object({ name: z.string(), extensions: z.array(z.string()) }))
+        .optional(),
+    }),
+    response: z.object({
+      canceled: z.boolean(),
+      path: z.string().optional(),
+    }),
+  },
+
   // --- OpenAPI import / sync ---
   'openapi.import': { request: ImportRequest, response: ImportResult },
   'openapi.sync': { request: SyncRequest, response: SyncResult },
@@ -255,6 +273,20 @@ export const IpcChannels = {
     response: ProtocolResponse,
   },
   'request.cancel': { request: z.object({ id: z.string() }), response: z.object({}).strict() },
+
+  // --- Interactive connection sessions (Phase 7: live WebSocket/SSE) ---
+  'connection.open': {
+    request: z.object({ sessionId: z.string(), request: RequestEnvelope }),
+    response: z.object({}).strict(),
+  },
+  'connection.send': {
+    request: z.object({ sessionId: z.string(), data: z.string() }),
+    response: z.object({}).strict(),
+  },
+  'connection.close': {
+    request: z.object({ sessionId: z.string() }),
+    response: z.object({}).strict(),
+  },
 
   // --- Testing & assertions (Phase 11) ---
   'test.run': { request: RunTestsRequest, response: TestReport },
@@ -371,6 +403,8 @@ export const IpcEvents = {
   'workflow.nodeProgress': WorkflowProgressEvent,
   'plugins.changed': PluginsChangedEvent,
   'plugin.dialogRequest': PluginDialogRequest,
+  'connection.event': ConnectionEvent,
+  'connection.state': ConnectionStateEvent,
 } as const;
 
 export type IpcEventName = keyof typeof IpcEvents;
@@ -386,4 +420,6 @@ export interface WorkbenchApi {
   onWorkflowNodeProgress(listener: (event: WorkflowProgressEvent) => void): () => void;
   onPluginsChanged(listener: (event: PluginsChangedEvent) => void): () => void;
   onPluginDialogRequest(listener: (event: PluginDialogRequest) => void): () => void;
+  onConnectionEvent(listener: (event: ConnectionEvent) => void): () => void;
+  onConnectionState(listener: (event: ConnectionStateEvent) => void): () => void;
 }

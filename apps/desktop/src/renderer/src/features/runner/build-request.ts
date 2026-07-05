@@ -1,5 +1,17 @@
 import type { RequestBody } from '@shared/execution';
-import { HTTP_REQUEST_TYPE, type HttpPayload, type RequestEnvelope } from '@shared/protocol';
+import {
+  GRAPHQL_REQUEST_TYPE,
+  GRPC_REQUEST_TYPE,
+  GraphqlPayload,
+  GrpcPayload,
+  HTTP_REQUEST_TYPE,
+  SSE_REQUEST_TYPE,
+  SsePayload,
+  WEBSOCKET_REQUEST_TYPE,
+  WebSocketPayload,
+  type HttpPayload,
+  type RequestEnvelope,
+} from '@shared/protocol';
 import type { AuthConfig } from '@shared/auth';
 import type { HttpMethod } from '@shared/collection';
 import type { VariableContext } from '@shared/variable';
@@ -150,17 +162,25 @@ function fromRows(rows: KeyValue[]): KeyValueEntry[] {
     }));
 }
 
+const HTTP_METHODS = new Set<string>(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+
 /** Builds editor state from a persisted request definition. */
 export function detailToDraft(detail: RequestDetailFull): RequestDraft {
   const d = detail.details;
+  const isProtocol = Boolean(detail.type && detail.type !== HTTP_REQUEST_TYPE);
+  // Non-HTTP rows store a badge in `method`; the draft's method is HTTP-only.
+  const method = (HTTP_METHODS.has(detail.method) ? detail.method : 'GET') as HttpMethod;
+  // Seed a built-in protocol's default payload when none was persisted yet.
+  const pluginPayload =
+    d.pluginPayload ?? (isProtocol ? defaultProtocolPayload(detail.type) : undefined);
   return {
-    method: detail.method,
+    method,
     url: detail.url,
     params: toRows(d.params),
     headers: toRows(d.headers),
     auth: d.auth,
-    ...(detail.type && detail.type !== HTTP_REQUEST_TYPE ? { requestType: detail.type } : {}),
-    ...(d.pluginPayload ? { pluginPayload: d.pluginPayload } : {}),
+    ...(isProtocol ? { requestType: detail.type } : {}),
+    ...(pluginPayload ? { pluginPayload } : {}),
     bodyMode: d.body.mode,
     rawType: d.body.rawType,
     rawBody: d.body.rawBody,
@@ -244,9 +264,27 @@ export function buildHttpPayload(draft: RequestDraft): HttpPayload {
   };
 }
 
-/** Whether the draft edits a plugin request type rather than plain HTTP. */
+/** Whether the draft edits any non-HTTP request type (built-in protocol or plugin). */
 export function isPluginDraft(draft: RequestDraft): boolean {
   return Boolean(draft.requestType && draft.requestType !== HTTP_REQUEST_TYPE);
+}
+
+/** The default payload for a freshly-selected built-in protocol request type. */
+export function defaultProtocolPayload(type: string): Record<string, unknown> {
+  // `url`/gRPC identity fields are required (no schema default) so a real send
+  // must fill them; seed empty strings so the editor starts from a valid shape.
+  switch (type) {
+    case GRAPHQL_REQUEST_TYPE:
+      return GraphqlPayload.parse({ url: '' });
+    case GRPC_REQUEST_TYPE:
+      return GrpcPayload.parse({ target: '', protoFile: '', service: '', method: '' });
+    case WEBSOCKET_REQUEST_TYPE:
+      return WebSocketPayload.parse({ url: '' });
+    case SSE_REQUEST_TYPE:
+      return SsePayload.parse({ url: '' });
+    default:
+      return {};
+  }
 }
 
 /** Converts editor state into the {@link RequestEnvelope} the engine runs. */
@@ -257,10 +295,16 @@ export function buildRequestEnvelope(
 ): RequestEnvelope {
   const hasContext = context && Object.keys(context).length > 0;
   const plugin = isPluginDraft(draft);
+  const type = plugin ? (draft.requestType as string) : HTTP_REQUEST_TYPE;
+  // Built-in protocols merge their defaults so required fields (e.g. gRPC's
+  // target/service) are always present even before the editor is touched.
+  const payload = plugin
+    ? { ...defaultProtocolPayload(type), ...(draft.pluginPayload ?? {}) }
+    : buildHttpPayload(draft);
   return {
     ...(id ? { id } : {}),
-    type: plugin ? (draft.requestType as string) : HTTP_REQUEST_TYPE,
-    payload: plugin ? (draft.pluginPayload ?? {}) : buildHttpPayload(draft),
+    type,
+    payload,
     ...(draft.auth.type !== 'none' ? { auth: draft.auth as AuthConfig } : {}),
     ...(hasContext ? { variableContext: context } : {}),
     options: draft.options,

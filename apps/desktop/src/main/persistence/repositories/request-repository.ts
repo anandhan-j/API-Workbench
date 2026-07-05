@@ -16,7 +16,7 @@ function toDto(row: RequestRow): RequestSummary {
     folderId: row.folderId,
     name: row.name,
     type: row.type,
-    method: row.method as HttpMethod,
+    method: row.method,
     url: row.url,
     favorite: row.favorite,
     position: row.position,
@@ -32,7 +32,7 @@ function toFull(row: RequestRow): RequestDetailFull {
     folderId: row.folderId,
     name: row.name,
     type: row.type,
-    method: row.method as HttpMethod,
+    method: row.method,
     url: row.url,
     favorite: row.favorite,
     details: RequestDetails.parse(row.details ?? {}),
@@ -45,7 +45,8 @@ export interface CreateRequestRow {
   name: string;
   /** Request type (ADR-0009); defaults to 'http'. */
   type?: string;
-  method?: HttpMethod;
+  /** HTTP method or a non-HTTP provider's display badge. */
+  method?: string;
   url?: string;
   details?: RequestDetails | null;
 }
@@ -127,7 +128,7 @@ export class RequestRepository {
   /** Persists an edited request: identity patch plus the full definition. */
   save(
     id: string,
-    input: { name?: string; type?: string; method?: HttpMethod; url?: string; details: RequestDetails },
+    input: { name?: string; type?: string; method?: string; url?: string; details: RequestDetails },
   ): RequestSummary {
     return this.patch(id, {
       ...(input.name !== undefined ? { name: input.name } : {}),

@@ -63,4 +63,58 @@ describe('<ResponseViewer />', () => {
     render(<ResponseViewer response={generic} />);
     expect(screen.getByText('DELIVERED')).toBeInTheDocument();
   });
+
+  it('renders the GraphQL errors section when the operation returned errors', () => {
+    const gql: ProtocolResponse = {
+      ...res({ ok: false }),
+      type: 'graphql',
+      summary: { label: '200 OK · 1 GraphQL error', tone: 'error', code: '200' },
+      protocol: {
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        redirects: [],
+        retries: 0,
+        graphqlErrors: [{ message: 'field missing', path: ['user', 'id'] }],
+      },
+    };
+    render(<ResponseViewer response={gql} />);
+    expect(screen.getByText('GraphQL errors (1)')).toBeInTheDocument();
+    expect(screen.getByText('field missing')).toBeInTheDocument();
+    expect(screen.getByText('@ user.id')).toBeInTheDocument();
+  });
+
+  it('renders the gRPC status strip', () => {
+    const grpc: ProtocolResponse = {
+      ...res(),
+      type: 'grpc',
+      summary: { label: '5 NOT_FOUND', tone: 'error', code: '5' },
+      protocol: { statusCode: 5, statusName: 'NOT_FOUND', metadata: {}, trailers: { 'grpc-message': 'nope' } },
+    };
+    render(<ResponseViewer response={grpc} />);
+    // "5 NOT_FOUND" shows in both the summary chip and the gRPC strip.
+    expect(screen.getAllByText('5 NOT_FOUND').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('grpc-message:')).toBeInTheDocument();
+  });
+
+  it('renders the stream event timeline for WebSocket/SSE responses', () => {
+    const stream: ProtocolResponse = {
+      ...res(),
+      type: 'websocket',
+      summary: { label: 'Closed 1000 · 1 message', tone: 'success' },
+      body: '["pong"]',
+      prettyBody: '["pong"]',
+      protocol: {
+        events: [
+          { at: 0, direction: 'sent', kind: 'text', data: 'ping' },
+          { at: 1, direction: 'received', kind: 'text', data: 'pong' },
+        ],
+        closeCode: 1000,
+      },
+    };
+    render(<ResponseViewer response={stream} />);
+    expect(screen.getByText(/Events \(2\)/)).toBeInTheDocument();
+    expect(screen.getByText('ping')).toBeInTheDocument();
+    expect(screen.getByText('pong')).toBeInTheDocument();
+  });
 });

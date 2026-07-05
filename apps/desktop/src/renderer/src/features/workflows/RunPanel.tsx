@@ -7,7 +7,8 @@ import {
   Loader2,
   XCircle,
 } from 'lucide-react';
-import type { ProtocolResponse } from '@shared/protocol';
+import { StreamProtocolExtras, type ProtocolResponse } from '@shared/protocol';
+import { StreamEventLog } from '../runner/StreamEventLog';
 import type { NodeRunResult, WorkflowRunResult } from '@shared/workflow';
 import { cn } from '../../lib/cn';
 import { formatBytes } from '../../lib/pick-file';
@@ -361,6 +362,7 @@ function ResponseSection({
   const headers = Object.entries(response.metadata);
   const isBinary = response.bodyKind === 'binary';
   const body = response.prettyBody ?? response.body;
+  const stream = StreamProtocolExtras.safeParse(response.protocol);
   return (
     <div className="flex flex-col gap-1.5 rounded border border-border p-1.5">
       <div className="flex items-center gap-2">
@@ -385,6 +387,12 @@ function ResponseSection({
       </div>
 
       {response.error && <p className="text-[11px] text-rose-400">{response.error}</p>}
+
+      {stream.success && (
+        <div className="max-h-40 overflow-auto rounded border border-border">
+          <StreamEventLog events={stream.data.events} />
+        </div>
+      )}
 
       <div>
         <button

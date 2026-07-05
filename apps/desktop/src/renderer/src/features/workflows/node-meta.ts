@@ -50,7 +50,7 @@ export const NODE_META: Record<WorkflowNodeKind, NodeKindMeta> = {
   request: {
     kind: 'request',
     label: 'Request',
-    description: 'Send an HTTP request.',
+    description: 'Send a request (HTTP, GraphQL, gRPC, WebSocket, SSE).',
     icon: Send,
     accent: 'bg-sky-500/15 text-sky-400',
     addable: true,

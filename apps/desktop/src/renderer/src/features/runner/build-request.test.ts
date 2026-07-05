@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import {
+  GRAPHQL_REQUEST_TYPE,
+  GRPC_REQUEST_TYPE,
+  GrpcPayload,
+  SSE_REQUEST_TYPE,
+  WEBSOCKET_REQUEST_TYPE,
+} from '@shared/protocol';
 import type { RequestDetailFull } from '@shared/request-details';
 import {
   applyParamsToUrl,
   buildHttpPayload,
   buildRequestEnvelope,
   defaultDraft,
+  defaultProtocolPayload,
   detailToDraft,
   draftToDetails,
   newRow,
@@ -184,6 +192,55 @@ describe('parseQueryParams / applyParamsToUrl', () => {
   it('round-trips url -> params -> url', () => {
     const url = 'https://api.test/pets?status=available&limit=10';
     expect(applyParamsToUrl(url, parseQueryParams(url))).toBe(url);
+  });
+});
+
+describe('non-HTTP protocol round-trips (ADR-0009)', () => {
+  function protoDetail(
+    type: string,
+    pluginPayload: Record<string, unknown> | undefined,
+    method: string,
+  ): RequestDetailFull {
+    return {
+      ...detail,
+      type,
+      method,
+      url: 'display-target',
+      ...(pluginPayload ? { details: { ...detail.details, pluginPayload } } : {}),
+    };
+  }
+
+  it('round-trips a GraphQL request through detail -> draft -> envelope -> details', () => {
+    const d = protoDetail(
+      GRAPHQL_REQUEST_TYPE,
+      { url: 'https://api.test/graphql', query: '{ me { id } }' },
+      'GQL',
+    );
+    const draft = detailToDraft(d);
+    expect(draft.requestType).toBe(GRAPHQL_REQUEST_TYPE);
+    // The badge stored in the method column coerces to a valid HTTP draft method.
+    expect(draft.method).toBe('GET');
+    const envelope = buildRequestEnvelope(draft);
+    expect(envelope.type).toBe(GRAPHQL_REQUEST_TYPE);
+    expect(envelope.payload).toMatchObject({ query: '{ me { id } }' });
+    expect(draftToDetails(draft).pluginPayload).toMatchObject({ query: '{ me { id } }' });
+  });
+
+  it('merges gRPC defaults so required fields are always present', () => {
+    // A gRPC request created but never edited has no persisted payload.
+    const draft = detailToDraft(protoDetail(GRPC_REQUEST_TYPE, undefined, 'gRPC'));
+    const envelope = buildRequestEnvelope(draft);
+    expect(envelope.type).toBe(GRPC_REQUEST_TYPE);
+    // GrpcPayload.parse would throw if target/service/method were missing.
+    expect(() => GrpcPayload.parse(envelope.payload)).not.toThrow();
+  });
+
+  it('seeds default payloads for WebSocket and SSE', () => {
+    for (const type of [WEBSOCKET_REQUEST_TYPE, SSE_REQUEST_TYPE]) {
+      const draft = detailToDraft(protoDetail(type, undefined, type === WEBSOCKET_REQUEST_TYPE ? 'WS' : 'SSE'));
+      expect(draft.pluginPayload).toEqual(defaultProtocolPayload(type));
+      expect(buildRequestEnvelope(draft).type).toBe(type);
+    }
   });
 });
 

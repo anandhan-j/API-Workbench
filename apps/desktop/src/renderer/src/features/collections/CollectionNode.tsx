@@ -6,6 +6,7 @@ import { usePersistentState } from '../../lib/use-persistent-state';
 import { ContextMenu, type MenuItem } from '../../components/menu/ContextMenu';
 import { useTree } from './use-collections';
 import { CollectionTreeView, type OpenedRequest } from './CollectionTreeView';
+import { BUILTIN_PROTOCOL_TYPES, getRequestTypeMeta } from '../runner/request-type-meta';
 
 export interface CollectionNodeProps {
   collection: Collection;
@@ -22,7 +23,8 @@ export interface CollectionNodeProps {
   searchNodes?: TreeNode[];
   onOpenRequest: (request: OpenedRequest, collectionId: string) => void;
   onToggleFavorite: (id: string) => void;
-  onAddRequest: (collectionId: string) => void;
+  /** Create a request; `type` selects the protocol (defaults to HTTP). */
+  onAddRequest: (collectionId: string, type?: string) => void;
   /** Create a folder in this collection; `parentId` is null for a root folder. */
   onAddFolder: (collectionId: string, parentId: string | null) => void;
   onRenameCollection: (id: string, name: string) => void;
@@ -96,6 +98,11 @@ export function CollectionNode({
 
   const menuItems: MenuItem[] = [
     { label: 'Add request', icon: <Plus size={13} />, onSelect: () => onAddRequest(collection.id) },
+    ...BUILTIN_PROTOCOL_TYPES.map((t) => ({
+      label: `Add ${getRequestTypeMeta(t)?.label ?? t} request`,
+      icon: <Plus size={13} />,
+      onSelect: () => onAddRequest(collection.id, t),
+    })),
     {
       label: 'Add folder',
       icon: <FolderPlus size={13} />,

@@ -13,7 +13,13 @@ import type { ImportService, SyncService } from '../openapi';
 import type { VersioningService } from '../versioning';
 import type { VariableService } from '../variables';
 import { type AuthService, resolveInheritedAuth, type InheritanceLookups } from '../auth';
-import type { ExecutionService } from '../execution';
+import {
+  type ExecutionService,
+  ConnectionSessionManager,
+  createWsConnector,
+  createSseStreamer,
+} from '../execution';
+import { PREF_VERIFY_SSL } from '@shared/persistence';
 import type { TestRunner } from '../testing';
 import { type WorkflowService, RunController } from '../workflows';
 import type { PluginService } from '../plugins';
@@ -174,6 +180,20 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     collectionAuth: (id) => persistence.collections.findById(id)?.auth,
   };
 
+  // Live WebSocket/SSE sessions (Phase 7). Reuses the variable engine and auth
+  // resolver; frames/state are pushed to the renderer over the event channels.
+  const connections = new ConnectionSessionManager({
+    wsConnector: createWsConnector(),
+    sseStreamer: createSseStreamer(() =>
+      persistence.preferences.getOrDefault<boolean>(PREF_VERIFY_SSL, true),
+    ),
+    evaluate: (template, ctx) => variables.evaluate({ template, context: ctx }),
+    resolveArtifacts: (source, ctx, evaluate) => auth.resolveArtifacts(source, ctx, evaluate),
+    emitEvent: (payload) => sendToRenderer('connection.event', payload),
+    emitState: (payload) => sendToRenderer('connection.state', payload),
+  });
+  app.on('before-quit', () => connections.closeAll());
+
   const handlers: { [C in IpcChannelName]: Handler<C> } = {
     'app.getInfo': () => ({
       name: app.getName(),
@@ -296,6 +316,20 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
       };
     },
 
+    'dialog.openPath': async (request) => {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const options = {
+        properties: ['openFile' as const],
+        ...(request.filters ? { filters: request.filters } : {}),
+      };
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+      const filePath = result.filePaths[0];
+      if (result.canceled || !filePath) return { canceled: true };
+      return { canceled: false, path: filePath };
+    },
+
     'openapi.import': async (request) => {
       const result = await imports.import(request);
       // Auto-snapshot the freshly imported collection as a baseline version.
@@ -370,6 +404,19 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     },
     'request.cancel': (payload) => {
       inflightExecutions.get(payload.id)?.abort();
+      return {};
+    },
+
+    'connection.open': async (payload) => {
+      await connections.open(payload.sessionId, payload.request);
+      return {};
+    },
+    'connection.send': (payload) => {
+      connections.send(payload.sessionId, payload.data);
+      return {};
+    },
+    'connection.close': (payload) => {
+      connections.close(payload.sessionId);
       return {};
     },
 
