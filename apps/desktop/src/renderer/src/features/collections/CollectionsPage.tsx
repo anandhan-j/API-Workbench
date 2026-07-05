@@ -13,7 +13,7 @@ import { cn } from '../../lib/cn';
 import { RequestEditor } from '../runner/RequestEditor';
 import { RequestVariablesUsedPanel } from './RequestVariablesUsedPanel';
 import { detailToDraft, draftToDetails, type RequestDraft } from '../runner/build-request';
-import { getRequestTypeMeta, persistedIdentity } from '../runner/request-type-meta';
+import { persistedIdentity, requestTypeBadge } from '../runner/request-type-meta';
 import { Modal } from '../../components/menu/Modal';
 import { ImportPanel } from './ImportPanel';
 import { SyncPanel } from './SyncPanel';
@@ -341,12 +341,12 @@ export function CollectionsPage(): JSX.Element {
                 }}
                 onToggleFavorite={(id) => mutations.toggleFavorite.mutate(id)}
                 onAddRequest={(colId, type) => {
-                  const meta = type ? getRequestTypeMeta(type) : undefined;
+                  const badge = type ? requestTypeBadge(type, pluginRequestTypes) : undefined;
                   mutations.createRequest.mutate({
                     collectionId: colId,
                     name: 'New request',
                     ...(type && type !== 'http'
-                      ? { type, ...(meta ? { method: meta.badge } : {}) }
+                      ? { type, ...(badge ? { method: badge } : {}) }
                       : {}),
                   });
                 }}

@@ -1,9 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import type { ConnectionEvent, ConnectionStateEvent } from '@shared/protocol';
-import { ConnectionSessionManager } from '../streams/connection-sessions';
+import { ConnectionSessionManager, type PluginConnectionPort } from '../streams/connection-sessions';
 import type { WsCloseInfo, WsConnection, WsConnectOptions, WsConnector } from '../streams/ws-port';
 import type { SseStreamer } from '../streams/sse-port';
+import { RequestTypeRegistry } from '../../plugins/registries/request-type-registry';
+import { deepSubstitute } from '@shared/substitute';
 
 class FakeConnection implements WsConnection {
   private openHandler?: () => void;
@@ -144,5 +147,106 @@ describe('ConnectionSessionManager', () => {
     const h = harness();
     await h.manager.open('s1', { type: 'http', payload: { method: 'GET', url: 'http://x' } });
     expect(h.states.at(-1)?.state).toBe('error');
+  });
+});
+
+/** A fake plugin-host connection port that records calls and can push events. */
+class FakePluginPort implements PluginConnectionPort {
+  opened: Array<{ sessionId: string; pluginId: string; type: string; payload: Record<string, unknown> }> = [];
+  sent: Array<{ sessionId: string; pluginId: string; data: string }> = [];
+  closed: Array<{ sessionId: string; pluginId: string }> = [];
+  private eventHandlers: Array<(p: ConnectionEvent) => void> = [];
+  private stateHandlers: Array<(p: ConnectionStateEvent) => void> = [];
+  async openConnection(req: { sessionId: string; pluginId: string; type: string; payload: Record<string, unknown> }): Promise<void> {
+    this.opened.push(req);
+  }
+  async sendConnection(req: { sessionId: string; pluginId: string; data: string }): Promise<void> {
+    this.sent.push(req);
+  }
+  async closeConnection(req: { sessionId: string; pluginId: string }): Promise<void> {
+    this.closed.push(req);
+  }
+  onConnectionEvent(h: (p: ConnectionEvent) => void): () => void {
+    this.eventHandlers.push(h);
+    return () => undefined;
+  }
+  onConnectionState(h: (p: ConnectionStateEvent) => void): () => void {
+    this.stateHandlers.push(h);
+    return () => undefined;
+  }
+  pushEvent(p: ConnectionEvent): void {
+    this.eventHandlers.forEach((h) => h(p));
+  }
+  pushState(p: ConnectionStateEvent): void {
+    this.stateHandlers.forEach((h) => h(p));
+  }
+}
+
+function pluginHarness() {
+  const port = new FakePluginPort();
+  // A plugin request type registered as plugin:demo/chat.
+  const registry = new RequestTypeRegistry([]);
+  registry.registerPlugin('demo', {
+    type: 'chat',
+    payloadSchema: z.object({ room: z.string() }),
+    resolveVariables: (payload, evaluate) => deepSubstitute(payload, evaluate),
+    buildApplyContext: () => ({ url: 'chat://demo' }),
+    summarize: () => ({ badge: 'CHAT', target: 'demo' }),
+    execute: () => Promise.reject(new Error('use openConnection')),
+  });
+  const events: ConnectionEvent[] = [];
+  const states: ConnectionStateEvent[] = [];
+  const manager = new ConnectionSessionManager({
+    wsConnector: { connect: () => { throw new Error('unused'); } },
+    sseStreamer: { open: () => Promise.reject(new Error('unused')) },
+    evaluate: (t) => t.replace('{{room}}', 'general'),
+    resolveArtifacts: async () => ({ headers: { Authorization: 'Bearer x' }, query: {}, cookies: {} }),
+    requestTypes: registry,
+    pluginConnections: port,
+    emitEvent: (p) => events.push(p),
+    emitState: (p) => states.push(p),
+  });
+  return { manager, port, events, states };
+}
+
+describe('ConnectionSessionManager (plugin sessions, Phase 7)', () => {
+  it('opens a plugin session with resolved payload and auth artifacts', async () => {
+    const h = pluginHarness();
+    await h.manager.open('p1', {
+      type: 'plugin:demo/chat',
+      payload: { room: '{{room}}' },
+      auth: { type: 'bearer', token: 't' },
+    });
+    expect(h.port.opened).toHaveLength(1);
+    expect(h.port.opened[0]).toMatchObject({ sessionId: 'p1', pluginId: 'demo', type: 'chat', payload: { room: 'general' } });
+    expect(h.states.map((s) => s.state)).toContain('connecting');
+  });
+
+  it('forwards host-pushed frames and state for a plugin session', async () => {
+    const h = pluginHarness();
+    await h.manager.open('p1', { type: 'plugin:demo/chat', payload: { room: 'x' } });
+    h.port.pushState({ sessionId: 'p1', state: 'open' });
+    h.port.pushEvent({ sessionId: 'p1', event: { at: 1, direction: 'received', kind: 'text', data: 'hi' } });
+    expect(h.states.some((s) => s.state === 'open')).toBe(true);
+    expect(h.events.some((e) => e.event.data === 'hi')).toBe(true);
+  });
+
+  it('routes send and close to the plugin port', async () => {
+    const h = pluginHarness();
+    await h.manager.open('p1', { type: 'plugin:demo/chat', payload: { room: 'x' } });
+    h.manager.send('p1', 'ping');
+    expect(h.port.sent).toEqual([{ sessionId: 'p1', pluginId: 'demo', data: 'ping' }]);
+    // send also records a local 'sent' frame for the UI.
+    expect(h.events.some((e) => e.event.direction === 'sent' && e.event.data === 'ping')).toBe(true);
+    h.manager.close('p1');
+    expect(h.port.closed).toEqual([{ sessionId: 'p1', pluginId: 'demo' }]);
+  });
+
+  it('cleans up when the host reports the plugin session closed', async () => {
+    const h = pluginHarness();
+    await h.manager.open('p1', { type: 'plugin:demo/chat', payload: { room: 'x' } });
+    h.port.pushState({ sessionId: 'p1', state: 'closed', code: 1000 });
+    // The session is gone, so a later send throws.
+    expect(() => h.manager.send('p1', 'x')).toThrow(/not open/);
   });
 });

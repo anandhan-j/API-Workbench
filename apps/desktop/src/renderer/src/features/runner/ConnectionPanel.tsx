@@ -21,7 +21,8 @@ const STATE_STYLE: Record<SessionState, string> = {
 export function ConnectionPanel({ envelope }: { envelope: RequestEnvelope }): JSX.Element {
   const { state, events, error, open, send, close } = useConnection();
   const [message, setMessage] = useState('');
-  const isWebSocket = envelope.type === WEBSOCKET_REQUEST_TYPE;
+  // WebSocket and plugin protocols are bidirectional; SSE is receive-only.
+  const canSend = envelope.type === WEBSOCKET_REQUEST_TYPE || envelope.type.startsWith('plugin:');
   const connected = state === 'open';
   const target =
     (envelope.payload as Partial<WebSocketPayload & SsePayload> | undefined)?.url ?? '';
@@ -64,7 +65,7 @@ export function ConnectionPanel({ envelope }: { envelope: RequestEnvelope }): JS
         <StreamEventLog events={events} />
       </div>
 
-      {isWebSocket && (
+      {canSend && (
         <form
           onSubmit={(e) => {
             e.preventDefault();

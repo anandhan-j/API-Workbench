@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Capability, PluginManifest } from './plugins';
-import { ProtocolResponse } from './protocol';
+import { ConnectionState, ProtocolResponse, StreamEvent } from './protocol';
 import { AuthArtifacts } from './auth';
 import { NormalizedSpec } from './openapi';
 import { FormSchema } from './forms';
@@ -93,6 +93,50 @@ export const RequestExecuteResult = z.object({
 });
 export type RequestExecuteResult = z.infer<typeof RequestExecuteResult>;
 
+// --- Interactive connection sessions (Phase 7) ---
+
+/** main→host: open a live session for an interactive plugin request type. */
+export const ConnectionOpenParams = z.object({
+  pluginId: z.string(),
+  type: z.string(),
+  sessionId: z.string(),
+  payload: z.record(z.unknown()),
+  artifacts: AuthArtifacts.optional(),
+});
+export type ConnectionOpenParams = z.infer<typeof ConnectionOpenParams>;
+
+/** main→host: send a message on an open session. */
+export const ConnectionSendParams = z.object({
+  pluginId: z.string(),
+  sessionId: z.string(),
+  data: z.string(),
+});
+export type ConnectionSendParams = z.infer<typeof ConnectionSendParams>;
+
+/** main→host: close an open session. */
+export const ConnectionCloseParams = z.object({
+  pluginId: z.string(),
+  sessionId: z.string(),
+});
+export type ConnectionCloseParams = z.infer<typeof ConnectionCloseParams>;
+
+/** host→main event: one frame on a live session. */
+export const PluginConnectionEventPayload = z.object({
+  sessionId: z.string(),
+  event: StreamEvent,
+});
+export type PluginConnectionEventPayload = z.infer<typeof PluginConnectionEventPayload>;
+
+/** host→main event: a session lifecycle transition. */
+export const PluginConnectionStatePayload = z.object({
+  sessionId: z.string(),
+  state: ConnectionState,
+  code: z.number().optional(),
+  reason: z.string().optional(),
+  error: z.string().optional(),
+});
+export type PluginConnectionStatePayload = z.infer<typeof PluginConnectionStatePayload>;
+
 export const AuthApplyParams = z.object({
   pluginId: z.string(),
   type: z.string(),
@@ -184,6 +228,10 @@ export const RPC_TIMEOUTS: Record<string, number> = {
   // node.execute / request.execute use the caller's policy timeout; this is the backstop.
   'node.execute': 600_000,
   'request.execute': 600_000,
+  // Connection RPCs are quick control calls; the session then lives via events.
+  'connection.open': 30_000,
+  'connection.send': 10_000,
+  'connection.close': 10_000,
   // A dialog stays open until the user acts; backstop matches node.execute so a
   // dialog inside a node run cannot outlive the node call that spawned it.
   'cap.ui.showDialog': 600_000,

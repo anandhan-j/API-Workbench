@@ -6,6 +6,8 @@ import {
   ImporterDetectResult,
   ImporterParseResult as RpcImporterParseResult,
   NodeExecuteResult,
+  PluginConnectionEventPayload,
+  PluginConnectionStatePayload,
   RequestExecuteResult,
 } from '@shared/plugin-rpc';
 import { RpcEndpoint } from '@shared/plugin-rpc-endpoint';
@@ -64,9 +66,54 @@ export class PluginHostManager implements PluginHostPort {
   private readonly statuses = new Map<string, Status>();
   private restarts: number[] = [];
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly connectionEventHandlers = new Set<(p: PluginConnectionEventPayload) => void>();
+  private readonly connectionStateHandlers = new Set<(p: PluginConnectionStatePayload) => void>();
 
   constructor(private readonly deps: HostManagerDeps) {
     this.sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  }
+
+  // --- Interactive plugin connection port (Phase 7) ---
+  // The ConnectionSessionManager drives plugin sessions through these methods;
+  // host-pushed frames/state are delivered to subscribers registered below.
+
+  private call(method: string, params: unknown, opts?: { timeoutMs?: number; signal?: AbortSignal }): Promise<unknown> {
+    if (!this.endpoint) return Promise.reject(new Error('Plugin host is not running'));
+    return this.endpoint.call(method, params, opts);
+  }
+
+  async openConnection(req: {
+    sessionId: string;
+    pluginId: string;
+    type: string;
+    payload: Record<string, unknown>;
+    artifacts?: import('@shared/auth').AuthArtifacts;
+  }): Promise<void> {
+    await this.call('connection.open', {
+      pluginId: req.pluginId,
+      type: req.type,
+      sessionId: req.sessionId,
+      payload: req.payload,
+      ...(req.artifacts ? { artifacts: req.artifacts } : {}),
+    });
+  }
+
+  async sendConnection(req: { sessionId: string; pluginId: string; data: string }): Promise<void> {
+    await this.call('connection.send', req);
+  }
+
+  async closeConnection(req: { sessionId: string; pluginId: string }): Promise<void> {
+    await this.call('connection.close', req);
+  }
+
+  onConnectionEvent(handler: (p: PluginConnectionEventPayload) => void): () => void {
+    this.connectionEventHandlers.add(handler);
+    return () => this.connectionEventHandlers.delete(handler);
+  }
+
+  onConnectionState(handler: (p: PluginConnectionStatePayload) => void): () => void {
+    this.connectionStateHandlers.add(handler);
+    return () => this.connectionStateHandlers.delete(handler);
   }
 
   async activate(input: ActiveRecord): Promise<void> {
@@ -153,6 +200,14 @@ export class PluginHostManager implements PluginHostPort {
           return;
         }
         if (topic === 'plugin.log') this.deps.broker.handleLogEvent(payload);
+        if (topic === 'connection.event') {
+          const parsed = PluginConnectionEventPayload.safeParse(payload);
+          if (parsed.success) for (const h of this.connectionEventHandlers) h(parsed.data);
+        }
+        if (topic === 'connection.state') {
+          const parsed = PluginConnectionStatePayload.safeParse(payload);
+          if (parsed.success) for (const h of this.connectionStateHandlers) h(parsed.data);
+        }
       },
     });
 

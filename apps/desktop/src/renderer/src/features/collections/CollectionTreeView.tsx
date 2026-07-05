@@ -88,6 +88,13 @@ const METHOD_COLOR: Record<string, string> = {
   SSE: 'text-amber-400',
 };
 
+/** Badge color for a request row: known HTTP/built-in badge, plugin, or neutral. */
+function badgeColor(node: Extract<TreeNode, { type: 'request' }>): string {
+  if (METHOD_COLOR[node.method]) return METHOD_COLOR[node.method];
+  if (node.requestType?.startsWith('plugin:')) return 'text-teal-400';
+  return 'text-muted';
+}
+
 export interface CollectionTreeViewProps {
   nodes: TreeNode[];
   expandedFolders: Set<string>;
@@ -398,7 +405,7 @@ export function CollectionTreeView({
               <span
                 className={cn(
                   'w-12 shrink-0 text-[10px] font-bold tracking-wide',
-                  METHOD_COLOR[node.method] ?? 'text-muted',
+                  badgeColor(node),
                 )}
               >
                 {node.method}
@@ -417,7 +424,7 @@ export function CollectionTreeView({
               <span
                 className={cn(
                   'w-12 shrink-0 text-[10px] font-bold tracking-wide',
-                  METHOD_COLOR[node.method] ?? 'text-muted',
+                  badgeColor(node),
                 )}
               >
                 {node.method}

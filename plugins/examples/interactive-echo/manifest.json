@@ -1,0 +1,41 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.interactive-echo",
+  "name": "Interactive Echo",
+  "version": "1.0.0",
+  "description": "An interactive request type: opens a live session and echoes each message you send.",
+  "publisher": "API Workbench examples",
+  "license": "MIT",
+  "main": "dist/index.cjs",
+  "engines": { "sdk": "^1.0.0" },
+  "capabilities": [],
+  "contributes": {
+    "requestTypes": [
+      {
+        "type": "chat",
+        "label": "Interactive Echo",
+        "icon": "message-square",
+        "interactive": true,
+        "payloadSchema": {
+          "fields": [
+            {
+              "kind": "string",
+              "key": "room",
+              "label": "Room",
+              "description": "Logical destination, shown where HTTP shows the URL.",
+              "required": true,
+              "default": "general"
+            },
+            {
+              "kind": "string",
+              "key": "greeting",
+              "label": "Greeting",
+              "default": "welcome"
+            }
+          ]
+        },
+        "summary": { "badge": "CHAT", "targetKey": "room" }
+      }
+    ]
+  }
+}

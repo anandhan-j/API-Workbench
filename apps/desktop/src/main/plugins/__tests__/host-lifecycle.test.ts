@@ -535,6 +535,58 @@ describe('plugin host lifecycle', () => {
     await waitUntil(() => pluginSawAbort, 'plugin abort');
   });
 
+  it('runs an interactive plugin connection: open, receive, send, close (Phase 7)', async () => {
+    const id = 'com.acme.chat';
+    const manifest = makeManifest(id, {
+      contributes: {
+        requestTypes: [
+          {
+            type: 'chat',
+            label: 'Chat',
+            payloadSchema: { fields: [stringField('room', false)] },
+            summary: { badge: 'CHAT', targetKey: 'room' },
+            interactive: true,
+          },
+        ],
+      },
+    });
+    defineModule(id, (ctx) => {
+      ctx.registerRequestType('chat', {
+        execute: () => Promise.reject(new Error('use openConnection')),
+        openConnection: ({ payload, emit, setState }) => {
+          setState('open');
+          emit({ direction: 'info', kind: 'open', data: `connected to ${String(payload.room)}` });
+          return {
+            send: (data) => emit({ direction: 'received', kind: 'text', data: `echo:${data}` }),
+            close: () => setState('closed', { code: 1000 }),
+          };
+        },
+      });
+    });
+    await activate(id, manifest);
+
+    const events: Array<{ sessionId: string; event: { direction: string; data: string } }> = [];
+    const states: Array<{ sessionId: string; state: string; code?: number }> = [];
+    manager.onConnectionEvent((p) => events.push(p));
+    manager.onConnectionState((p) => states.push(p));
+
+    await manager.openConnection({
+      pluginId: id,
+      type: 'chat',
+      sessionId: 's1',
+      payload: { room: 'general' },
+    });
+    await waitUntil(() => states.some((s) => s.state === 'open'), 'open');
+    expect(events.some((e) => e.event.data === 'connected to general')).toBe(true);
+
+    await manager.sendConnection({ pluginId: id, sessionId: 's1', data: 'hi' });
+    await waitUntil(() => events.some((e) => e.event.data === 'echo:hi'), 'echo');
+
+    await manager.closeConnection({ pluginId: id, sessionId: 's1' });
+    await waitUntil(() => states.some((s) => s.state === 'closed'), 'closed');
+    expect(states.at(-1)).toMatchObject({ sessionId: 's1', state: 'closed', code: 1000 });
+  });
+
   it('crash rejects in-flight calls, marks host-failed, unregisters, then respawns and recovers', async () => {
     const id = 'com.acme.crashy';
     const manifest = makeManifest(id, {

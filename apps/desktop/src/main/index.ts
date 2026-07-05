@@ -26,6 +26,7 @@ import {
   createWebSocketProvider,
   createSseProvider,
   createSseStreamer,
+  type PluginConnectionPort,
 } from './execution';
 import { TestRunner } from './testing';
 import { WorkflowService, BUILTIN_NODE_EXECUTORS } from './workflows';
@@ -70,6 +71,8 @@ interface Services {
   workflows: WorkflowService;
   plugins: PluginService;
   pluginHost: PluginHostManager;
+  requestTypes: RequestTypeRegistry;
+  pluginConnections: PluginConnectionPort;
 }
 
 function initServices(): Services {
@@ -205,6 +208,8 @@ function initServices(): Services {
     workflows,
     plugins,
     pluginHost,
+    requestTypes,
+    pluginConnections: pluginHost,
   };
 }
 

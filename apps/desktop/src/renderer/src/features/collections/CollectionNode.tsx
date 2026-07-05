@@ -4,9 +4,11 @@ import type { Collection, TreeNode } from '@shared/collection';
 import { cn } from '../../lib/cn';
 import { usePersistentState } from '../../lib/use-persistent-state';
 import { ContextMenu, type MenuItem } from '../../components/menu/ContextMenu';
+import { qualifiedContributionId } from '@shared/plugins';
 import { useTree } from './use-collections';
 import { CollectionTreeView, type OpenedRequest } from './CollectionTreeView';
 import { BUILTIN_PROTOCOL_TYPES, getRequestTypeMeta } from '../runner/request-type-meta';
+import { usePluginContributions } from '../plugins/use-plugins';
 
 export interface CollectionNodeProps {
   collection: Collection;
@@ -96,12 +98,19 @@ export function CollectionNode({
   const expandFolder = (id: string): void =>
     setExpandedList((prev) => (prev.includes(id) ? prev : [...prev, id]));
 
+  const pluginRequestTypes = usePluginContributions().requestTypes;
   const menuItems: MenuItem[] = [
     { label: 'Add request', icon: <Plus size={13} />, onSelect: () => onAddRequest(collection.id) },
     ...BUILTIN_PROTOCOL_TYPES.map((t) => ({
       label: `Add ${getRequestTypeMeta(t)?.label ?? t} request`,
       icon: <Plus size={13} />,
       onSelect: () => onAddRequest(collection.id, t),
+    })),
+    // Plugin-contributed request types get the same create-time entry point.
+    ...pluginRequestTypes.map((rt) => ({
+      label: `Add ${rt.label} request`,
+      icon: <Plus size={13} />,
+      onSelect: () => onAddRequest(collection.id, qualifiedContributionId(rt.pluginId, rt.type)),
     })),
     {
       label: 'Add folder',

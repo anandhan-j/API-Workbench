@@ -89,6 +89,12 @@ export interface RequestTypeContribution {
    * value is shown where HTTP shows the URL.
    */
   summary: { badge: string; targetKey: string };
+  /**
+   * When true, the request editor offers a live interactive session for this
+   * type and the provider's `openConnection()` is used instead of `execute()`
+   * (Phase 7). Omit for one-shot request/response types.
+   */
+  interactive?: boolean;
 }
 
 /** A custom auth provider. Addressed at runtime as `plugin:<pluginId>/<type>`. */

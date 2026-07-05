@@ -124,6 +124,11 @@ export const RequestTypeContribution = z.object({
    * whose value fills the url column.
    */
   summary: z.object({ badge: z.string().min(1).max(10), targetKey: z.string() }),
+  /**
+   * When true, the request editor offers a live interactive session and the
+   * provider's `openConnection()` is used instead of `execute()` (Phase 7).
+   */
+  interactive: z.boolean().default(false),
 });
 export type RequestTypeContribution = z.infer<typeof RequestTypeContribution>;
 

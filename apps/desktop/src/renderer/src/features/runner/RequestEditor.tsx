@@ -267,9 +267,12 @@ export function RequestEditor({
   const activeTab: Tab = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
   // Protocols have no pre-request phase — force post so the panel is coherent.
   const effectivePhase: 'pre' | 'post' = builtinMeta ? 'post' : scriptPhase;
-  // WebSocket/SSE can run interactively (live connection) instead of one-shot.
+  // WebSocket/SSE and any plugin type that declares `interactive` can run a
+  // live session instead of one-shot execute.
   const supportsInteractive =
-    draft.requestType === WEBSOCKET_REQUEST_TYPE || draft.requestType === SSE_REQUEST_TYPE;
+    draft.requestType === WEBSOCKET_REQUEST_TYPE ||
+    draft.requestType === SSE_REQUEST_TYPE ||
+    Boolean(pluginType?.interactive);
   const showInteractive = supportsInteractive && interactive;
 
   return (

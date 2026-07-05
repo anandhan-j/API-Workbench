@@ -15,6 +15,7 @@ export { createWsConnector } from './streams/ws-connector';
 export {
   ConnectionSessionManager,
   type ConnectionSessionDeps,
+  type PluginConnectionPort,
 } from './streams/connection-sessions';
 export { buildPreparedRequest } from './builder';
 export { classifyBody } from './classify';

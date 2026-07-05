@@ -78,9 +78,46 @@ export interface RequestExecuteInput {
   signal: AbortSignal;
 }
 
+/** One frame a live connection reports to the session log (Phase 7). */
+export interface ConnectionEvent {
+  direction: 'sent' | 'received' | 'info' | 'error';
+  /** e.g. 'text', 'binary', 'open', or an SSE event name. Defaults to 'message'. */
+  kind?: string;
+  data: string;
+}
+
+/** Lifecycle a connection provider reports; 'closed'/'error' end the session. */
+export type ConnectionState = 'open' | 'closed' | 'error';
+
+export interface OpenConnectionInput {
+  /** Validated, variable-substituted values of the declared payload form. */
+  payload: Record<string, unknown>;
+  /** Artifacts produced by the request's auth config, if any. */
+  artifacts?: AuthArtifacts;
+  signal: AbortSignal;
+  /** Push a received/sent/info/error frame to the live session log. */
+  emit(event: ConnectionEvent): void;
+  /** Report a lifecycle change to the UI; 'closed'/'error' end the session. */
+  setState(state: ConnectionState, info?: { code?: number; reason?: string; error?: string }): void;
+}
+
+/** A live connection a provider returns from {@link RequestTypeProvider.openConnection}. */
+export interface PluginConnection {
+  /** Send a message on the connection (bidirectional protocols only). */
+  send?(data: string): void;
+  /** Close the connection and release resources. */
+  close(): void;
+}
+
 /** A custom request type's runtime. */
 export interface RequestTypeProvider {
   execute(input: RequestExecuteInput): Promise<ProtocolResult>;
+  /**
+   * Optional: open a live, interactive session instead of a one-shot execute
+   * (Phase 7). Only used when the request-type contribution declares
+   * `interactive: true`. Return a handle the host uses to send/close.
+   */
+  openConnection?(input: OpenConnectionInput): PluginConnection | Promise<PluginConnection>;
 }
 
 export interface AuthApplyInput {

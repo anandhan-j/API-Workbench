@@ -39,6 +39,10 @@ export type {
   ProtocolSummary,
   RequestExecuteInput,
   RequestTypeProvider,
+  ConnectionEvent,
+  ConnectionState,
+  OpenConnectionInput,
+  PluginConnection,
 } from './extension-points';
 export {
   definePlugin,

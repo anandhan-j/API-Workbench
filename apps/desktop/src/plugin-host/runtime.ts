@@ -2,6 +2,7 @@ import type {
   AuthProvider,
   Importer,
   NodeExecutor,
+  PluginConnection,
   PluginContext,
   RequestTypeProvider,
   WorkbenchPlugin,
@@ -9,6 +10,9 @@ import type {
 import {
   ActivatePluginParams,
   AuthApplyParams,
+  ConnectionCloseParams,
+  ConnectionOpenParams,
+  ConnectionSendParams,
   DeactivatePluginParams,
   ImporterDetectParams,
   ImporterParseParams,
@@ -49,9 +53,17 @@ function pluginError(code: string, message: string): RpcCallError {
   return new RpcCallError(code, message);
 }
 
+interface HostSession {
+  pluginId: string;
+  connection: PluginConnection;
+  abort: AbortController;
+}
+
 export class PluginHostRuntime {
   private readonly endpoint: RpcEndpoint;
   private readonly plugins = new Map<string, ActivePlugin>();
+  /** Live interactive sessions (Phase 7), keyed by the renderer's sessionId. */
+  private readonly sessions = new Map<string, HostSession>();
 
   constructor(private readonly options: HostRuntimeOptions) {
     this.endpoint = new RpcEndpoint(options.wire, {
@@ -89,6 +101,23 @@ export class PluginHostRuntime {
           options: p.options,
           signal,
         });
+      }
+      case 'connection.open':
+        return this.openConnection(ConnectionOpenParams.parse(params));
+      case 'connection.send': {
+        const p = ConnectionSendParams.parse(params);
+        const session = this.sessions.get(p.sessionId);
+        if (!session) throw pluginError('E_NO_SESSION', `No session "${p.sessionId}"`);
+        if (!session.connection.send) {
+          throw pluginError('E_NO_SEND', 'This connection does not support sending');
+        }
+        session.connection.send(p.data);
+        return {};
+      }
+      case 'connection.close': {
+        const p = ConnectionCloseParams.parse(params);
+        this.closeSession(p.sessionId);
+        return {};
       }
       case 'auth.apply': {
         const p = AuthApplyParams.parse(params);
@@ -128,6 +157,58 @@ export class PluginHostRuntime {
     const entry = this.plugins.get(pluginId);
     if (!entry) throw pluginError('E_PLUGIN_NOT_ACTIVE', `Plugin not active: ${pluginId}`);
     return entry;
+  }
+
+  private async openConnection(p: ConnectionOpenParams): Promise<Record<string, never>> {
+    const provider = this.active(p.pluginId).requestTypes.get(p.type);
+    if (!provider) {
+      throw pluginError('E_UNKNOWN_REQUEST_TYPE', `No provider for request type "${p.type}"`);
+    }
+    if (!provider.openConnection) {
+      throw pluginError('E_NO_INTERACTIVE', `Request type "${p.type}" has no interactive session`);
+    }
+    if (this.sessions.has(p.sessionId)) {
+      throw pluginError('E_SESSION_EXISTS', `Session "${p.sessionId}" is already open`);
+    }
+    const abort = new AbortController();
+    let ended = false;
+    const emit = (event: { direction: string; kind?: string; data: string }): void =>
+      this.endpoint.emit('connection.event', {
+        sessionId: p.sessionId,
+        event: { at: Date.now(), direction: event.direction, kind: event.kind ?? 'message', data: event.data },
+      });
+    const setState = (
+      state: string,
+      info?: { code?: number; reason?: string; error?: string },
+    ): void => {
+      this.endpoint.emit('connection.state', { sessionId: p.sessionId, state, ...(info ?? {}) });
+      if (state === 'closed' || state === 'error') {
+        ended = true;
+        this.sessions.delete(p.sessionId);
+      }
+    };
+    const connection = await provider.openConnection({
+      payload: p.payload,
+      ...(p.artifacts ? { artifacts: p.artifacts } : {}),
+      signal: abort.signal,
+      emit,
+      setState,
+    });
+    // Register only if the provider didn't already end the session during open.
+    if (!ended) this.sessions.set(p.sessionId, { pluginId: p.pluginId, connection, abort });
+    return {};
+  }
+
+  private closeSession(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    this.sessions.delete(sessionId);
+    session.abort.abort();
+    try {
+      session.connection.close();
+    } catch {
+      // best-effort close
+    }
   }
 
   private async activate(params: ActivatePluginParams): Promise<unknown> {
@@ -188,6 +269,10 @@ export class PluginHostRuntime {
     const entry = this.plugins.get(pluginId);
     if (!entry) return {};
     this.plugins.delete(pluginId);
+    // Tear down any live sessions the plugin owned.
+    for (const [sessionId, session] of this.sessions) {
+      if (session.pluginId === pluginId) this.closeSession(sessionId);
+    }
     try {
       await entry.plugin.deactivate?.();
     } catch {

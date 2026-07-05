@@ -12,6 +12,7 @@ the desktop app's plugin integration tests as fixtures:
 | [approval-dialog-node](./approval-dialog-node) | Workflow node | Gates the run behind a plugin-requested dialog (`ctx.ui.showDialog`, `ui:dialog` capability): approve/reject + comment |
 | [dropdown-dialog-node](./dropdown-dialog-node) | Workflow node | Turns a `keyvalue` config grid and a `list` field into dropdowns inside one runtime dialog and stores the selections in variables — an extensibility exercise using only the public SDK |
 | [echo-request-type](./echo-request-type) | Request type | Loopback protocol echoing its payload (and auth headers) back |
+| [interactive-echo](./interactive-echo) | Request type (interactive) | A live session (`interactive: true`, `openConnection`) that echoes each message you send |
 | [header-token-auth](./header-token-auth) | Auth provider | Sends a secret token in a configurable header |
 | [csv-importer](./csv-importer) | Importer | Builds a collection from `name,method,url,folder` CSV rows |
 

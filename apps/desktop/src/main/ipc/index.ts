@@ -16,9 +16,11 @@ import { type AuthService, resolveInheritedAuth, type InheritanceLookups } from 
 import {
   type ExecutionService,
   ConnectionSessionManager,
+  type PluginConnectionPort,
   createWsConnector,
   createSseStreamer,
 } from '../execution';
+import type { RequestTypeRegistry } from '../plugins/registries/request-type-registry';
 import { PREF_VERIFY_SSL } from '@shared/persistence';
 import type { TestRunner } from '../testing';
 import { type WorkflowService, RunController } from '../workflows';
@@ -46,6 +48,10 @@ export interface IpcContext {
   testRunner: TestRunner;
   workflows: WorkflowService;
   plugins: PluginService;
+  /** Request-type registry, for resolving interactive plugin sessions. */
+  requestTypes: RequestTypeRegistry;
+  /** Plugin-host connection port (interactive plugin request types, Phase 7). */
+  pluginConnections: PluginConnectionPort;
 }
 
 /** Extra, non-service dependencies the IPC layer needs. */
@@ -149,6 +155,8 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     testRunner,
     workflows,
     plugins,
+    requestTypes,
+    pluginConnections,
   } = context;
   const { logFilePath } = options;
 
@@ -189,6 +197,8 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     ),
     evaluate: (template, ctx) => variables.evaluate({ template, context: ctx }),
     resolveArtifacts: (source, ctx, evaluate) => auth.resolveArtifacts(source, ctx, evaluate),
+    requestTypes,
+    pluginConnections,
     emitEvent: (payload) => sendToRenderer('connection.event', payload),
     emitState: (payload) => sendToRenderer('connection.state', payload),
   });

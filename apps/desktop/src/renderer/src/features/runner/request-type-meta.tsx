@@ -96,6 +96,19 @@ export function getRequestTypeMeta(type: string | undefined): RequestTypeMeta | 
   return type ? BUILTIN_REQUEST_TYPE_META[type] : undefined;
 }
 
+/** The display badge for a request type — built-in meta or a plugin contribution. */
+export function requestTypeBadge(
+  type: string,
+  pluginTypes: PluginContributionIndex['requestTypes'],
+): string | undefined {
+  const meta = getRequestTypeMeta(type);
+  if (meta) return meta.badge;
+  const contribution = pluginTypes.find(
+    (rt) => qualifiedContributionId(rt.pluginId, rt.type) === type,
+  );
+  return contribution?.summary.badge;
+}
+
 /**
  * The identity a draft persists to the `type`/`method`/`url` columns. HTTP uses
  * its real method/URL; non-HTTP types store the provider's badge and display

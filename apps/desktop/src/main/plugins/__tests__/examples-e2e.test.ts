@@ -313,6 +313,44 @@ describe('example plugins end-to-end', () => {
     expect(response.metadata['X-Api-Token']).toBe('secret1');
   });
 
+  it('runs the interactive echo request type end-to-end (Phase 7)', async () => {
+    await service.install(join(EXAMPLES_ROOT, 'interactive-echo'), []);
+    const pluginId = 'com.example.interactive-echo';
+
+    const provider = requestTypes.resolve(`plugin:${pluginId}/chat`);
+    expect(provider.summarize({ room: 'general' })).toEqual({ badge: 'CHAT', target: 'general' });
+
+    const events: Array<{ sessionId: string; event: { data: string } }> = [];
+    const states: Array<{ sessionId: string; state: string; code?: number }> = [];
+    host.onConnectionEvent((p) => events.push(p));
+    host.onConnectionState((p) => states.push(p));
+
+    const waitFor = async (predicate: () => boolean, what: string): Promise<void> => {
+      const start = Date.now();
+      while (!predicate()) {
+        if (Date.now() - start > 3000) throw new Error(`Timed out: ${what}`);
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    };
+
+    await host.openConnection({
+      sessionId: 's1',
+      pluginId,
+      type: 'chat',
+      payload: { room: 'general', greeting: 'hello' },
+    });
+    await waitFor(() => states.some((s) => s.state === 'open'), 'open');
+    expect(events.some((e) => e.event.data === 'joined general')).toBe(true);
+    expect(events.some((e) => e.event.data === 'hello')).toBe(true);
+
+    await host.sendConnection({ sessionId: 's1', pluginId, data: 'ping' });
+    await waitFor(() => events.some((e) => e.event.data === 'echo:ping'), 'echo');
+
+    await host.closeConnection({ sessionId: 's1', pluginId });
+    await waitFor(() => states.some((s) => s.state === 'closed'), 'closed');
+    expect(states.at(-1)).toMatchObject({ state: 'closed', code: 1000 });
+  });
+
   it('imports a CSV through the plugin importer into a real collection', async () => {
     await service.install(join(EXAMPLES_ROOT, 'csv-importer'), []);
 

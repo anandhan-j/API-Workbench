@@ -12,11 +12,31 @@ import {
 } from '@shared/protocol';
 import { deepSubstitute } from '@shared/substitute';
 import type { EnvelopeAuthSource } from '../execution-service';
+import type { RequestTypeRegistry } from '../../plugins/registries/request-type-registry';
 import type { WsConnection, WsConnector } from './ws-port';
 import type { SseStreamer } from './sse-port';
 import { SseParser } from './sse-parser';
 
 const EMPTY_ARTIFACTS: AuthArtifacts = { headers: {}, query: {}, cookies: {} };
+
+/**
+ * The port the manager drives plugin sessions through; implemented by the
+ * plugin host manager. `open`/`send`/`close` call the host over RPC; `onEvent`/
+ * `onState` deliver frames/lifecycle the host pushes back for a live session.
+ */
+export interface PluginConnectionPort {
+  openConnection(req: {
+    sessionId: string;
+    pluginId: string;
+    type: string;
+    payload: Record<string, unknown>;
+    artifacts?: AuthArtifacts;
+  }): Promise<void>;
+  sendConnection(req: { sessionId: string; pluginId: string; data: string }): Promise<void>;
+  closeConnection(req: { sessionId: string; pluginId: string }): Promise<void>;
+  onConnectionEvent(handler: (p: ConnectionEvent) => void): () => void;
+  onConnectionState(handler: (p: ConnectionStateEvent) => void): () => void;
+}
 
 export interface ConnectionSessionDeps {
   wsConnector: WsConnector;
@@ -29,6 +49,10 @@ export interface ConnectionSessionDeps {
     ctx: ApplyContext,
     evaluate: (template: string) => string,
   ) => Promise<AuthArtifacts>;
+  /** Request-type registry, for resolving plugin providers' payload/auth. */
+  requestTypes?: RequestTypeRegistry;
+  /** Plugin-host connection port, for interactive plugin request types. */
+  pluginConnections?: PluginConnectionPort;
   /** Pushes an event/state transition to the renderer. */
   emitEvent: (payload: ConnectionEvent) => void;
   emitState: (payload: ConnectionStateEvent) => void;
@@ -37,7 +61,18 @@ export interface ConnectionSessionDeps {
 interface Session {
   ws?: WsConnection;
   sse?: AbortController;
+  /** Set for a plugin-host session; its owning plugin id for send/close routing. */
+  plugin?: { pluginId: string };
   closed: boolean;
+}
+
+/** Splits `plugin:<pluginId>/<type>` into its parts. */
+function parsePluginType(qualified: string): { pluginId: string; type: string } | null {
+  if (!qualified.startsWith('plugin:')) return null;
+  const rest = qualified.slice('plugin:'.length);
+  const slash = rest.indexOf('/');
+  if (slash === -1) return null;
+  return { pluginId: rest.slice(0, slash), type: rest.slice(slash + 1) };
 }
 
 /**
@@ -50,7 +85,19 @@ interface Session {
 export class ConnectionSessionManager {
   private readonly sessions = new Map<string, Session>();
 
-  constructor(private readonly deps: ConnectionSessionDeps) {}
+  constructor(private readonly deps: ConnectionSessionDeps) {
+    // Plugin sessions live in the host; forward its pushed frames/state here,
+    // filtering to sessions we own and cleaning up when the host ends one.
+    deps.pluginConnections?.onConnectionEvent((p) => {
+      if (this.sessions.get(p.sessionId)?.plugin) this.deps.emitEvent(p);
+    });
+    deps.pluginConnections?.onConnectionState((p) => {
+      const session = this.sessions.get(p.sessionId);
+      if (!session?.plugin) return;
+      this.deps.emitState(p);
+      if (p.state === 'closed' || p.state === 'error') this.sessions.delete(p.sessionId);
+    });
+  }
 
   async open(sessionId: string, request: unknown): Promise<void> {
     if (this.sessions.has(sessionId)) throw new Error(`Session "${sessionId}" is already open`);
@@ -66,6 +113,8 @@ export class ConnectionSessionManager {
         await this.openWebSocket(sessionId, session, envelope, evaluate);
       } else if (envelope.type === SSE_REQUEST_TYPE) {
         await this.openSse(sessionId, session, envelope, evaluate);
+      } else if (parsePluginType(envelope.type)) {
+        await this.openPlugin(sessionId, session, envelope, evaluate);
       } else {
         throw new Error(`Request type "${envelope.type}" does not support interactive sessions`);
       }
@@ -77,8 +126,22 @@ export class ConnectionSessionManager {
   send(sessionId: string, data: string): void {
     const session = this.sessions.get(sessionId);
     if (!session || session.closed) throw new Error(`Session "${sessionId}" is not open`);
-    if (!session.ws) throw new Error('This session does not support sending');
-    session.ws.send(data);
+    if (session.ws) {
+      session.ws.send(data);
+    } else if (session.plugin) {
+      void this.deps.pluginConnections
+        ?.sendConnection({ sessionId, pluginId: session.plugin.pluginId, data })
+        .catch((err: unknown) =>
+          this.emit(sessionId, {
+            at: Date.now(),
+            direction: 'error',
+            kind: 'error',
+            data: err instanceof Error ? err.message : String(err),
+          }),
+        );
+    } else {
+      throw new Error('This session does not support sending');
+    }
     this.emit(sessionId, { at: Date.now(), direction: 'sent', kind: 'text', data });
   }
 
@@ -89,6 +152,12 @@ export class ConnectionSessionManager {
     try {
       session.ws?.close(1000);
       session.sse?.abort();
+      if (session.plugin) {
+        void this.deps.pluginConnections?.closeConnection({
+          sessionId,
+          pluginId: session.plugin.pluginId,
+        });
+      }
     } catch {
       // best-effort
     }
@@ -125,6 +194,38 @@ export class ConnectionSessionManager {
       applyCtx,
       evaluate,
     );
+  }
+
+  private async openPlugin(
+    sessionId: string,
+    session: Session,
+    envelope: RequestEnvelope,
+    evaluate: (t: string) => string,
+  ): Promise<void> {
+    const parsed = parsePluginType(envelope.type)!;
+    const registry = this.deps.requestTypes;
+    const port = this.deps.pluginConnections;
+    if (!registry || !port) {
+      throw new Error('Interactive plugin sessions are unavailable');
+    }
+    // Resolve payload + auth exactly like ExecutionService.run, then hand the
+    // resolved values to the host — the plugin sees substituted values only.
+    const provider = registry.resolve(envelope.type);
+    const payload = provider.resolveVariables(
+      provider.payloadSchema.parse(envelope.payload ?? {}),
+      evaluate,
+    ) as Record<string, unknown>;
+    const applyCtx = provider.buildApplyContext(payload, evaluate);
+    const artifacts = await this.resolveArtifacts(envelope, applyCtx, evaluate);
+    session.plugin = { pluginId: parsed.pluginId };
+    await port.openConnection({
+      sessionId,
+      pluginId: parsed.pluginId,
+      type: parsed.type,
+      payload,
+      artifacts,
+    });
+    // The host drives lifecycle from here via onConnectionEvent/onConnectionState.
   }
 
   private async openWebSocket(

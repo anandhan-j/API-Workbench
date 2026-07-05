@@ -75,6 +75,7 @@ describe('persistedIdentity', () => {
       label: 'Echo',
       payloadSchema: { fields: [] },
       summary: { badge: 'ECHO', targetKey: 'target' },
+      interactive: false,
     },
   ];
 
