@@ -455,6 +455,7 @@ export function NodeInspector({
             />
           </Field>
           <UserInputFieldsEditor
+            key={node.id}
             fields={(config.fields as UserInputField[]) ?? []}
             onChange={(fields) => set({ fields })}
             suggestions={suggestions}
@@ -639,10 +640,16 @@ function UserInputFieldsEditor({
   // add/remove/reorder; a length mismatch means the list changed from outside
   // (e.g. another node selected) and the ids are rebuilt.
   const [colorIds, setColorIds] = useState<number[]>(() => fields.map((_, i) => i));
+  /** Last rendered top offset per card id, for the FLIP reorder animation below. */
+  const cardTops = useRef(new Map<string, number>());
   useEffect(() => {
-    setColorIds((cur) =>
-      cur.length === fields.length ? cur : Array.from({ length: fields.length }, (_, i) => i),
-    );
+    setColorIds((cur) => {
+      if (cur.length === fields.length) return cur;
+      // The list was replaced from outside — drop remembered card positions
+      // too, so the rebuilt cards don't play a phantom "moved" animation.
+      cardTops.current.clear();
+      return Array.from({ length: fields.length }, (_, i) => i);
+    });
   }, [fields.length]);
 
   const update = (i: number, patch: Partial<UserInputField>): void =>
@@ -721,14 +728,16 @@ function UserInputFieldsEditor({
     [trackPointer],
   );
 
-  // FLIP animation: after each render, compare every card's position (relative
-  // to the list, so pane scrolling doesn't skew the delta) with where it was on
-  // the previous render, and slide moved cards from the old spot into the new
-  // one. Cards seen for the first time (just added) fade/slide in instead.
-  const cardTops = useRef(new Map<string, number>());
+  // FLIP animation: positions (relative to the list, so pane scrolling doesn't
+  // skew the delta) are tracked every render, but cards only animate on the
+  // render caused by a drop — other layout shifts (typing, kind changes,
+  // toggles resizing a card) must not trigger slides.
+  const animateNextRender = useRef(false);
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list) return;
+    const shouldAnimate = animateNextRender.current;
+    animateNextRender.current = false;
     const listTop = list.getBoundingClientRect().top;
     const seen = new Set<string>();
     for (const el of list.querySelectorAll<HTMLElement>('[data-card-id]')) {
@@ -736,21 +745,16 @@ function UserInputFieldsEditor({
       seen.add(id);
       const top = el.getBoundingClientRect().top - listTop;
       const prevTop = cardTops.current.get(id);
-      if (typeof el.animate === 'function') {
-        if (prevTop === undefined) {
-          el.animate(
-            [
-              { opacity: 0, transform: 'translateY(4px)' },
-              { opacity: 1, transform: 'translateY(0)' },
-            ],
-            { duration: 150, easing: 'ease-out' },
-          );
-        } else if (Math.abs(prevTop - top) > 1) {
-          el.animate(
-            [{ transform: `translateY(${prevTop - top}px)` }, { transform: 'translateY(0)' }],
-            { duration: 180, easing: 'ease-out' },
-          );
-        }
+      if (
+        shouldAnimate &&
+        typeof el.animate === 'function' &&
+        prevTop !== undefined &&
+        Math.abs(prevTop - top) > 1
+      ) {
+        el.animate(
+          [{ transform: `translateY(${prevTop - top}px)` }, { transform: 'translateY(0)' }],
+          { duration: 180, easing: 'ease-out' },
+        );
       }
       cardTops.current.set(id, top);
     }
@@ -777,6 +781,7 @@ function UserInputFieldsEditor({
         ids.splice(to, 0, movedId);
         return ids;
       });
+      animateNextRender.current = true;
       onChange(next);
     }
     resetDrag();
@@ -812,8 +817,12 @@ function UserInputFieldsEditor({
                 e.dataTransfer.dropEffect = 'move';
                 if (overIndex !== i) setOverIndex(i);
               }}
-              onDragLeave={() => {
-                if (overIndex === i) setOverIndex(null);
+              onDragLeave={(e) => {
+                // dragleave also fires when the pointer crosses into a child of
+                // the card; only clear the highlight on a true exit.
+                if (overIndex === i && !e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                  setOverIndex(null);
+                }
               }}
               onDrop={(e) => {
                 e.preventDefault();
@@ -822,7 +831,6 @@ function UserInputFieldsEditor({
               onDragEnd={resetDrag}
               className={cn(
                 `overflow-hidden rounded-md border border-border border-l-2 ${tint.edge}`,
-                'transition-[opacity,box-shadow,border-color] duration-150',
                 dragIndex === i && 'opacity-40',
                 overIndex === i && dragIndex !== i && 'border-accent ring-1 ring-accent',
               )}
