@@ -1,8 +1,18 @@
-import type { ExecutionResponse } from '@shared/execution';
+import { useEffect, useRef, useState } from 'react';
+import { Check, Copy } from 'lucide-react';
+import {
+  GraphqlProtocolExtras,
+  GrpcProtocolExtras,
+  HttpProtocolExtras,
+  StreamProtocolExtras,
+  statusOf,
+  type ProtocolResponse,
+} from '@shared/protocol';
 import { cn } from '../../lib/cn';
+import { StreamEventLog } from './StreamEventLog';
 
 export interface ResponseViewerProps {
-  response: ExecutionResponse | null;
+  response: ProtocolResponse | null;
   loading?: boolean;
 }
 
@@ -13,12 +23,67 @@ function statusColor(status: number, ok: boolean): string {
   return 'bg-warning text-accent-fg';
 }
 
-/** Read-only response viewer: status, metrics, headers, and a pretty body. */
+/** Chip colour when no HTTP extras are available: fall back to the summary tone. */
+const TONE_COLOR: Record<ProtocolResponse['summary']['tone'], string> = {
+  success: 'bg-success text-accent-fg',
+  error: 'bg-danger text-accent-fg',
+  info: 'bg-warning text-accent-fg',
+};
+
+/**
+ * Read-only response viewer. The frame is protocol-agnostic — summary chip,
+ * timings, size, metadata table, and body panes render for any
+ * {@link ProtocolResponse} — with an HTTP-extras strip (redirects, retries)
+ * shown only when the response carries parseable HTTP extras.
+ */
 export function ResponseViewer({ response, loading }: ResponseViewerProps): JSX.Element {
+  const bodyRef = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Scope Ctrl/Cmd+A to the response body: when the user is interacting with it
+  // (it holds focus, or the caret/selection sits inside it), select only its
+  // contents instead of letting the browser select the entire app. A document
+  // listener is used because a click in the pane doesn't reliably move focus to
+  // it, so an element-level handler would never fire.
+  useEffect(() => {
+    const onKeyDown = (e: globalThis.KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || (e.key !== 'a' && e.key !== 'A')) return;
+      const el = bodyRef.current;
+      if (!el) return;
+      const active = document.activeElement;
+      // Leave real text inputs alone — their own select-all should still work.
+      if (
+        active instanceof HTMLElement &&
+        (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)
+      ) {
+        return;
+      }
+      const selection = window.getSelection();
+      const insideBody =
+        el.contains(active) || (!!selection?.anchorNode && el.contains(selection.anchorNode));
+      if (!insideBody || !selection) return;
+      e.preventDefault();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   if (loading) return <p className="p-4 text-sm text-muted">Sending…</p>;
   if (!response) return <p className="p-4 text-sm text-muted">No response yet.</p>;
 
-  if (response.error && response.status === 0) {
+  // Protocol-specific extras, shown above the body when present.
+  const graphql = GraphqlProtocolExtras.safeParse(response.protocol);
+  const grpc = GrpcProtocolExtras.safeParse(response.protocol);
+  const stream = StreamProtocolExtras.safeParse(response.protocol);
+  const graphqlErrors = graphql.success ? graphql.data.graphqlErrors : [];
+
+  // A bare transport error with nothing else to show collapses to one line;
+  // stream responses keep their event timeline even when they errored.
+  if (response.error && statusOf(response) === 0 && !stream.success) {
     return (
       <div className="rounded-md border border-border bg-surface p-4">
         <p className="text-sm text-danger" data-testid="response-error">
@@ -28,24 +93,40 @@ export function ResponseViewer({ response, loading }: ResponseViewerProps): JSX.
     );
   }
 
+  const extras = HttpProtocolExtras.safeParse(response.protocol);
+  const chipColor = extras.success
+    ? statusColor(extras.data.status, response.ok)
+    : TONE_COLOR[response.summary.tone];
+
+  const isBinary = response.bodyKind === 'binary';
+  const bodyText = isBinary ? '' : (response.prettyBody ?? response.body ?? '');
+
   return (
     <div className="rounded-md border border-border bg-surface">
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2 text-sm">
-        <span className={cn('rounded px-2 py-0.5 text-xs font-semibold', statusColor(response.status, response.ok))}>
-          {response.status} {response.statusText}
+        <span className={cn('rounded px-2 py-0.5 text-xs font-semibold', chipColor)}>
+          {response.summary.label}
         </span>
         <span className="text-muted">{response.timings.totalMs} ms</span>
         <span className="text-muted">{response.sizeBytes} B</span>
         <span className="text-muted">{response.bodyKind}</span>
-        {response.retries > 0 && <span className="text-muted">{response.retries} retries</span>}
-        {response.redirects.length > 0 && <span className="text-muted">{response.redirects.length} redirects</span>}
+        {extras.success && (
+          <>
+            {extras.data.retries > 0 && (
+              <span className="text-muted">{extras.data.retries} retries</span>
+            )}
+            {extras.data.redirects.length > 0 && (
+              <span className="text-muted">{extras.data.redirects.length} redirects</span>
+            )}
+          </>
+        )}
       </div>
 
       <details className="border-b border-border px-4 py-2 text-sm">
-        <summary className="cursor-pointer text-muted">Headers ({Object.keys(response.headers).length})</summary>
+        <summary className="cursor-pointer text-muted">Headers ({Object.keys(response.metadata).length})</summary>
         <table className="mt-2 w-full font-mono text-xs">
           <tbody>
-            {Object.entries(response.headers).map(([k, v]) => (
+            {Object.entries(response.metadata).map(([k, v]) => (
               <tr key={k}>
                 <td className="pr-3 align-top text-muted">{k}</td>
                 <td className="break-all">{v}</td>
@@ -55,11 +136,80 @@ export function ResponseViewer({ response, loading }: ResponseViewerProps): JSX.
         </table>
       </details>
 
-      <pre className="max-h-96 overflow-auto p-4 font-mono text-xs" data-testid="response-body">
-        {response.bodyKind === 'binary'
-          ? `[binary ${response.sizeBytes} bytes, base64]`
-          : (response.prettyBody ?? response.body)}
-      </pre>
+      {/* GraphQL: the operation's top-level errors. */}
+      {graphqlErrors.length > 0 && (
+        <div className="border-b border-border px-4 py-2">
+          <p className="mb-1 text-xs font-semibold text-danger">
+            GraphQL errors ({graphqlErrors.length})
+          </p>
+          <ul className="space-y-1 font-mono text-xs">
+            {graphqlErrors.map((err, i) => (
+              <li key={i} className="text-danger">
+                {err.message}
+                {err.path ? <span className="text-muted"> @ {err.path.join('.')}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* gRPC: status code/name and any trailers. */}
+      {grpc.success && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2 text-xs">
+          <span className={cn('font-semibold', grpc.data.statusCode === 0 ? 'text-success' : 'text-danger')}>
+            {grpc.data.statusCode} {grpc.data.statusName}
+          </span>
+          {Object.entries(grpc.data.trailers).map(([k, v]) => (
+            <span key={k} className="text-muted">
+              {k}: <span className="font-mono">{v}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* WebSocket/SSE: the directional event timeline. */}
+      {stream.success && (
+        <details open className="border-b border-border px-4 py-2 text-sm">
+          <summary className="cursor-pointer text-muted">
+            Events ({stream.data.events.length}){stream.data.truncated ? ' · truncated' : ''}
+            {stream.data.closeCode !== undefined ? ` · closed ${stream.data.closeCode}` : ''}
+          </summary>
+          <div className="mt-2 max-h-72 overflow-auto rounded-md border border-border">
+            <StreamEventLog events={stream.data.events} />
+          </div>
+        </details>
+      )}
+
+      <div className="relative">
+        {!isBinary && bodyText !== '' && (
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard
+                ?.writeText(bodyText)
+                .then(() => {
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1200);
+                })
+                .catch(() => undefined);
+            }}
+            aria-label="Copy response body"
+            title={copied ? 'Copied' : 'Copy response'}
+            className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded border border-border bg-surface px-1.5 py-0.5 text-[11px] text-muted shadow-sm hover:text-fg"
+          >
+            {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        )}
+        <pre
+          ref={bodyRef}
+          tabIndex={0}
+          className="max-h-96 overflow-auto p-4 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
+          data-testid="response-body"
+        >
+          {isBinary ? `[binary ${response.sizeBytes} bytes, base64]` : bodyText}
+        </pre>
+      </div>
     </div>
   );
 }

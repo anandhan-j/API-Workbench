@@ -1,4 +1,17 @@
-import type { ExecutionRequest, RequestBody } from '@shared/execution';
+import type { RequestBody } from '@shared/execution';
+import {
+  GRAPHQL_REQUEST_TYPE,
+  GRPC_REQUEST_TYPE,
+  GraphqlPayload,
+  GrpcPayload,
+  HTTP_REQUEST_TYPE,
+  SSE_REQUEST_TYPE,
+  SsePayload,
+  WEBSOCKET_REQUEST_TYPE,
+  WebSocketPayload,
+  type HttpPayload,
+  type RequestEnvelope,
+} from '@shared/protocol';
 import type { AuthConfig } from '@shared/auth';
 import type { HttpMethod } from '@shared/collection';
 import type { VariableContext } from '@shared/variable';
@@ -19,13 +32,29 @@ export interface KeyValue {
 export type BodyMode = 'none' | 'raw' | 'urlencoded' | 'formdata' | 'binary';
 export type RawType = 'json' | 'text' | 'xml';
 
+/**
+ * A plugin auth provider's config (ADR-0007): its fully-qualified type
+ * (`plugin:<pluginId>/<type>`) plus the values captured by its form schema.
+ */
+export type PluginAuthConfig = { type: string } & Record<string, unknown>;
+
+/** What the auth editor edits: a built-in scheme or a plugin provider config. */
+export type EditorAuthConfig = AuthConfig | PluginAuthConfig;
+
 /** Full editor state for one request. */
 export interface RequestDraft {
   method: HttpMethod;
   url: string;
   params: KeyValue[];
   headers: KeyValue[];
-  auth: AuthConfig;
+  auth: EditorAuthConfig;
+  /**
+   * Request type (ADR-0009): a qualified plugin type (`plugin:<pluginId>/<type>`)
+   * switches the editor to the contribution's payload form; absent = HTTP.
+   */
+  requestType?: string;
+  /** Values captured by a plugin request type's payload form. */
+  pluginPayload?: Record<string, unknown>;
   bodyMode: BodyMode;
   rawType: RawType;
   rawBody: string;
@@ -133,15 +162,25 @@ function fromRows(rows: KeyValue[]): KeyValueEntry[] {
     }));
 }
 
+const HTTP_METHODS = new Set<string>(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+
 /** Builds editor state from a persisted request definition. */
 export function detailToDraft(detail: RequestDetailFull): RequestDraft {
   const d = detail.details;
+  const isProtocol = Boolean(detail.type && detail.type !== HTTP_REQUEST_TYPE);
+  // Non-HTTP rows store a badge in `method`; the draft's method is HTTP-only.
+  const method = (HTTP_METHODS.has(detail.method) ? detail.method : 'GET') as HttpMethod;
+  // Seed a built-in protocol's default payload when none was persisted yet.
+  const pluginPayload =
+    d.pluginPayload ?? (isProtocol ? defaultProtocolPayload(detail.type) : undefined);
   return {
-    method: detail.method,
+    method,
     url: detail.url,
     params: toRows(d.params),
     headers: toRows(d.headers),
     auth: d.auth,
+    ...(isProtocol ? { requestType: detail.type } : {}),
+    ...(pluginPayload ? { pluginPayload } : {}),
     bodyMode: d.body.mode,
     rawType: d.body.rawType,
     rawBody: d.body.rawBody,
@@ -159,7 +198,8 @@ export function draftToDetails(draft: RequestDraft): RequestDetails {
   return {
     headers: fromRows(draft.headers),
     params: fromRows(draft.params),
-    auth: draft.auth,
+    auth: draft.auth as AuthConfig,
+    ...(isPluginDraft(draft) ? { pluginPayload: draft.pluginPayload ?? {} } : {}),
     body: {
       mode: draft.bodyMode,
       rawType: draft.rawType,
@@ -213,21 +253,59 @@ export function applyParamsToUrl(url: string, params: KeyValue[]): string {
   return (pairs.length > 0 ? `${base}?${pairs.join('&')}` : base) + fragment;
 }
 
-/** Converts editor state into the {@link ExecutionRequest} the engine runs. */
-export function buildExecutionRequest(
-  draft: RequestDraft,
-  id?: string,
-  context?: VariableContext,
-): ExecutionRequest {
-  const hasContext = context && Object.keys(context).length > 0;
+/** Converts editor state into the HTTP payload carried by a {@link RequestEnvelope}. */
+export function buildHttpPayload(draft: RequestDraft): HttpPayload {
   return {
-    ...(id ? { id } : {}),
     method: draft.method,
     url: draft.url,
     query: activePairs(draft.params),
     headers: activePairs(draft.headers),
     body: buildBody(draft),
-    ...(draft.auth.type !== 'none' ? { auth: draft.auth } : {}),
+  };
+}
+
+/** Whether the draft edits any non-HTTP request type (built-in protocol or plugin). */
+export function isPluginDraft(draft: RequestDraft): boolean {
+  return Boolean(draft.requestType && draft.requestType !== HTTP_REQUEST_TYPE);
+}
+
+/** The default payload for a freshly-selected built-in protocol request type. */
+export function defaultProtocolPayload(type: string): Record<string, unknown> {
+  // `url`/gRPC identity fields are required (no schema default) so a real send
+  // must fill them; seed empty strings so the editor starts from a valid shape.
+  switch (type) {
+    case GRAPHQL_REQUEST_TYPE:
+      return GraphqlPayload.parse({ url: '' });
+    case GRPC_REQUEST_TYPE:
+      return GrpcPayload.parse({ target: '', protoFile: '', service: '', method: '' });
+    case WEBSOCKET_REQUEST_TYPE:
+      return WebSocketPayload.parse({ url: '' });
+    case SSE_REQUEST_TYPE:
+      return SsePayload.parse({ url: '' });
+    default:
+      return {};
+  }
+}
+
+/** Converts editor state into the {@link RequestEnvelope} the engine runs. */
+export function buildRequestEnvelope(
+  draft: RequestDraft,
+  id?: string,
+  context?: VariableContext,
+): RequestEnvelope {
+  const hasContext = context && Object.keys(context).length > 0;
+  const plugin = isPluginDraft(draft);
+  const type = plugin ? (draft.requestType as string) : HTTP_REQUEST_TYPE;
+  // Built-in protocols merge their defaults so required fields (e.g. gRPC's
+  // target/service) are always present even before the editor is touched.
+  const payload = plugin
+    ? { ...defaultProtocolPayload(type), ...(draft.pluginPayload ?? {}) }
+    : buildHttpPayload(draft);
+  return {
+    ...(id ? { id } : {}),
+    type,
+    payload,
+    ...(draft.auth.type !== 'none' ? { auth: draft.auth as AuthConfig } : {}),
     ...(hasContext ? { variableContext: context } : {}),
     options: draft.options,
   };

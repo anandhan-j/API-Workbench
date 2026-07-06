@@ -5,7 +5,7 @@ import { GROUP_NODE_TYPE, isElementNode, toFlow, toGraph } from './graph-mapping
 const graph: WorkflowGraph = {
   nodes: [
     { id: 's', kind: 'start', name: 'Start', position: { x: 10, y: 20 }, config: {} },
-    { id: 'r', kind: 'request', name: 'Call', position: { x: 200, y: 20 }, config: { method: 'GET', url: '/x', headers: {}, query: {}, body: { type: 'none' }, extract: [] } },
+    { id: 'r', kind: 'request', name: 'Call', position: { x: 200, y: 20 }, config: { type: 'http', payload: { method: 'GET', url: '/x', headers: {}, query: {}, body: { type: 'none' } }, extract: [] } },
   ],
   edges: [{ id: 'e1', source: 's', target: 'r' }],
   groups: [],
@@ -37,7 +37,7 @@ describe('graph-mapping', () => {
   it('renders a group as a parent node and round-trips absolute positions', () => {
     const grouped: WorkflowGraph = {
       nodes: [
-        { id: 'a', kind: 'request', name: 'A', position: { x: 100, y: 100 }, config: { method: 'GET', url: '', headers: {}, query: {}, body: { type: 'none' }, extract: [] } },
+        { id: 'a', kind: 'request', name: 'A', position: { x: 100, y: 100 }, config: { type: 'http', payload: { method: 'GET', url: '', headers: {}, query: {}, body: { type: 'none' } }, extract: [] } },
         { id: 'b', kind: 'set-variable', name: 'B', position: { x: 300, y: 100 }, config: { key: 'k', value: 'v' } },
       ],
       edges: [],

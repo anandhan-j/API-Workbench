@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ExecutionResponse } from './execution';
+import { ProtocolResponse } from './protocol';
 import { VariableContext } from './variable';
 
 /**
@@ -28,7 +28,7 @@ export type ScriptTestResult = z.infer<typeof ScriptTestResult>;
 
 export const ScriptRunRequest = z.object({
   script: z.string(),
-  response: ExecutionResponse,
+  response: ProtocolResponse,
   context: VariableContext.optional(),
 });
 export type ScriptRunRequest = z.infer<typeof ScriptRunRequest>;

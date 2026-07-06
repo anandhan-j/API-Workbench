@@ -12,6 +12,7 @@ api-workbench/
 │   ├── desktop/                # Electron app: main, preload, renderer entry, packaging
 │   └── docs-site/              # (optional) static docs site build
 ├── packages/
+│   ├── plugin-sdk/             # @api-workbench/plugin-sdk — public plugin contract (Phase 16)
 │   ├── domain/                 # Entities, value objects, domain events, invariants
 │   ├── application/            # Use cases, services, ports (interfaces), DI tokens
 │   ├── infrastructure/         # Port implementations: db, http, parser, crypto, fs
@@ -27,7 +28,7 @@ api-workbench/
 │       ├── workflows/
 │       └── versioning/
 ├── plugins/
-│   └── sdk/                    # Plugin SDK + example plugins
+│   └── examples/               # One example plugin per extension point (test fixtures + docs)
 ├── docs/                       # Architecture docs, ADRs, guides (this folder)
 ├── tooling/
 │   ├── eslint-config/          # Shared ESLint config
@@ -53,6 +54,8 @@ apps/desktop/
 │   │   ├── workers/            # Utility-process / worker-thread entry points
 │   │   └── index.ts
 │   ├── preload/                # contextBridge: exposes allowlisted IPC channels only
+│   │   └── index.ts
+│   ├── plugin-host/            # Plugin host utility-process bundle (unprivileged; ADR-0010)
 │   │   └── index.ts
 │   └── renderer/               # Renderer process (sandboxed React app)
 │       ├── app/                # Router, providers (React Query, theme), error boundary

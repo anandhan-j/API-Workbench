@@ -3,9 +3,12 @@ import type {
   IpcChannelName,
   IpcRequest,
   IpcResponse,
+  PluginsChangedEvent,
   WorkbenchApi,
 } from '@shared/ipc-contract';
 import type { WorkflowInputRequest, WorkflowProgressEvent } from '@shared/workflow';
+import type { PluginDialogRequest } from '@shared/plugins';
+import type { ConnectionEvent, ConnectionStateEvent } from '@shared/protocol';
 
 /**
  * Renderer-side IPC client. Wraps the preload bridge and provides a safe fallback
@@ -24,6 +27,18 @@ const fallback: WorkbenchApi = {
     return () => undefined;
   },
   onWorkflowNodeProgress(_listener: (event: WorkflowProgressEvent) => void): () => void {
+    return () => undefined;
+  },
+  onPluginsChanged(_listener: (event: PluginsChangedEvent) => void): () => void {
+    return () => undefined;
+  },
+  onPluginDialogRequest(_listener: (event: PluginDialogRequest) => void): () => void {
+    return () => undefined;
+  },
+  onConnectionEvent(_listener: (event: ConnectionEvent) => void): () => void {
+    return () => undefined;
+  },
+  onConnectionState(_listener: (event: ConnectionStateEvent) => void): () => void {
     return () => undefined;
   },
 };
@@ -57,4 +72,22 @@ export function onWorkflowNodeProgress(
   listener: (event: WorkflowProgressEvent) => void,
 ): () => void {
   return getBridge().onWorkflowNodeProgress(listener);
+}
+
+export function onPluginsChanged(listener: (event: PluginsChangedEvent) => void): () => void {
+  return getBridge().onPluginsChanged(listener);
+}
+
+export function onPluginDialogRequest(
+  listener: (event: PluginDialogRequest) => void,
+): () => void {
+  return getBridge().onPluginDialogRequest(listener);
+}
+
+export function onConnectionEvent(listener: (event: ConnectionEvent) => void): () => void {
+  return getBridge().onConnectionEvent(listener);
+}
+
+export function onConnectionState(listener: (event: ConnectionStateEvent) => void): () => void {
+  return getBridge().onConnectionState(listener);
 }

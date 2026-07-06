@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { IpcChannels, type DispatchEvent, type IpcChannelName } from '@shared/ipc-contract';
 import type { WorkflowInputRequest, WorkflowInputResult } from '@shared/workflow';
+import type { PluginDialogRequest, PluginDialogResult } from '@shared/plugins';
 import { logger } from '../services/logger';
 import type { PersistenceService } from '../persistence';
 import type { WorkspaceManager } from '../workspace';
@@ -11,10 +12,19 @@ import type { CollectionExplorer } from '../collections';
 import type { ImportService, SyncService } from '../openapi';
 import type { VersioningService } from '../versioning';
 import type { VariableService } from '../variables';
-import type { AuthService } from '../auth';
-import type { ExecutionService } from '../execution';
+import { type AuthService, resolveInheritedAuth, type InheritanceLookups } from '../auth';
+import {
+  type ExecutionService,
+  ConnectionSessionManager,
+  type PluginConnectionPort,
+  createWsConnector,
+  createSseStreamer,
+} from '../execution';
+import type { RequestTypeRegistry } from '../plugins/registries/request-type-registry';
+import { PREF_VERIFY_SSL } from '@shared/persistence';
 import type { TestRunner } from '../testing';
 import { type WorkflowService, RunController } from '../workflows';
+import type { PluginService } from '../plugins';
 import { runPostResponseScript, runPreRequestScript } from '../scripting';
 
 /**
@@ -37,6 +47,11 @@ export interface IpcContext {
   execution: ExecutionService;
   testRunner: TestRunner;
   workflows: WorkflowService;
+  plugins: PluginService;
+  /** Request-type registry, for resolving interactive plugin sessions. */
+  requestTypes: RequestTypeRegistry;
+  /** Plugin-host connection port (interactive plugin request types, Phase 7). */
+  pluginConnections: PluginConnectionPort;
 }
 
 /** Extra, non-service dependencies the IPC layer needs. */
@@ -60,6 +75,39 @@ const pendingInputs = new Map<string, (result: WorkflowInputResult) => void>();
 function sendToRenderer(channel: string, payload: unknown): void {
   const window = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
   window?.webContents.send(channel, payload);
+}
+
+/** Pushes a `plugins.changed` event so renderer queries refetch (Phase 16). */
+export function notifyPluginsChanged(reason: string): void {
+  sendToRenderer('plugins.changed', { reason });
+}
+
+/**
+ * Resolvers for plugin dialogs currently open in the renderer, keyed by
+ * dialog id. `plugin.dialogRespond` settles them, unblocking the capability
+ * broker's `cap.ui.showDialog` call.
+ */
+const pendingDialogs = new Map<string, (result: PluginDialogResult) => void>();
+
+/**
+ * Pushes a plugin-requested dialog to the renderer and resolves once the user
+ * replies via `plugin.dialogRespond`. Resolves cancelled when no window can
+ * show it. The capability broker has already verified the `ui:dialog` grant.
+ */
+export function requestPluginDialog(
+  request: Omit<PluginDialogRequest, 'dialogId'>,
+): Promise<PluginDialogResult> {
+  const window = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+  if (!window) return Promise.resolve({ values: {}, cancelled: true });
+
+  const dialogId = randomUUID();
+  return new Promise<PluginDialogResult>((resolve) => {
+    pendingDialogs.set(dialogId, (result) => {
+      pendingDialogs.delete(dialogId);
+      resolve(result);
+    });
+    window.webContents.send('plugin.dialogRequest', { ...request, dialogId });
+  });
 }
 
 /**
@@ -106,6 +154,9 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     execution,
     testRunner,
     workflows,
+    plugins,
+    requestTypes,
+    pluginConnections,
   } = context;
   const { logFilePath } = options;
 
@@ -122,6 +173,44 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
       return map;
     },
   };
+
+  // Folder/request lookups the inheritance resolver walks to turn an `inherit`
+  // request auth into the effective config from its parent folder chain (ADR-0009).
+  const inheritanceLookups: InheritanceLookups = {
+    folder: (id) => {
+      const f = persistence.folders.findById(id);
+      return f ? { parentId: f.parentId, auth: f.auth } : undefined;
+    },
+    request: (id) => {
+      const r = persistence.requests.findById(id);
+      return r ? { folderId: r.folderId, collectionId: r.collectionId } : undefined;
+    },
+    collectionAuth: (id) => persistence.collections.findById(id)?.auth,
+  };
+
+  // Live WebSocket/SSE sessions (Phase 7). Reuses the variable engine and auth
+  // resolver; frames/state are pushed to the renderer over the event channels.
+  const connections = new ConnectionSessionManager({
+    wsConnector: createWsConnector(),
+    sseStreamer: createSseStreamer(() =>
+      persistence.preferences.getOrDefault<boolean>(PREF_VERIFY_SSL, true),
+    ),
+    evaluate: (template, ctx) => variables.evaluate({ template, context: ctx }),
+    resolveArtifacts: (source, ctx, evaluate) => auth.resolveArtifacts(source, ctx, evaluate),
+    requestTypes,
+    pluginConnections,
+    emitEvent: (payload) => sendToRenderer('connection.event', payload),
+    emitState: (payload) => sendToRenderer('connection.state', payload),
+  });
+  // Tear live sessions down on app quit, window close (macOS keeps the app
+  // running), and renderer reload (fresh sessionIds would orphan the old ones).
+  app.on('before-quit', () => connections.closeAll());
+  const wireWindowTeardown = (win: BrowserWindow): void => {
+    win.on('closed', () => connections.closeAll());
+    win.webContents.on('did-start-loading', () => connections.closeAll());
+  };
+  BrowserWindow.getAllWindows().forEach(wireWindowTeardown);
+  app.on('browser-window-created', (_event, win) => wireWindowTeardown(win));
 
   const handlers: { [C in IpcChannelName]: Handler<C> } = {
     'app.getInfo': () => ({
@@ -180,7 +269,11 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
 
     'collection.list': (request) => collections.listCollections(request.projectId),
     'collection.create': (request) => collections.createCollection(request),
+    'collection.get': (request) => collections.getCollection(request.id),
     'collection.rename': (request) => collections.renameCollection(request.id, request.name),
+    'collection.updateAuth': (request) => collections.updateCollectionAuth(request.id, request.auth),
+    'collection.applyAuthToChildren': (request) =>
+      collections.applyCollectionAuthToChildren(request.id),
     'collection.delete': (request) => {
       collections.deleteCollection(request.id);
       return {};
@@ -189,8 +282,11 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     'collection.source': (request) => collections.getSource(request.collectionId),
 
     'folder.create': (request) => collections.createFolder(request),
+    'folder.get': (request) => collections.getFolder(request.id),
     'folder.rename': (request) => collections.renameFolder(request.id, request.name),
     'folder.move': (request) => collections.moveFolder(request.id, request.parentId),
+    'folder.updateAuth': (request) => collections.updateFolderAuth(request.id, request.auth),
+    'folder.applyAuthToChildren': (request) => collections.applyAuthToChildren(request.id),
     'folder.delete': (request) => {
       collections.deleteFolder(request.id);
       return {};
@@ -238,6 +334,20 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
       };
     },
 
+    'dialog.openPath': async (request) => {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const options = {
+        properties: ['openFile' as const],
+        ...(request.filters ? { filters: request.filters } : {}),
+      };
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+      const filePath = result.filePaths[0];
+      if (result.canceled || !filePath) return { canceled: true };
+      return { canceled: false, path: filePath };
+    },
+
     'openapi.import': async (request) => {
       const result = await imports.import(request);
       // Auto-snapshot the freshly imported collection as a baseline version.
@@ -279,9 +389,27 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     },
 
     'request.execute': async (payload) => {
+      // Stored credentials are resolved inside the execution dispatcher via the
+      // AuthService port (ADR-0009), so the envelope passes through as-is.
       let req = payload.request;
-      if (req.credentialId && !req.auth) {
-        req = { ...req, auth: auth.getConfig(req.credentialId) };
+      // Folder-auth inheritance: an `inherit` request takes its effective auth
+      // from the nearest ancestor folder. Resolve it here (main owns the folder
+      // chain) before the envelope reaches execution; a `none` result drops auth.
+      if (req.auth?.type === 'inherit') {
+        const resolved = resolveInheritedAuth(
+          {
+            ...(req.variableContext?.requestId ? { requestId: req.variableContext.requestId } : {}),
+            ...(req.variableContext?.folderId !== undefined
+              ? { folderId: req.variableContext.folderId }
+              : {}),
+            ...(req.variableContext?.collectionId
+              ? { collectionId: req.variableContext.collectionId }
+              : {}),
+          },
+          inheritanceLookups,
+        );
+        const { auth: _inherit, ...rest } = req;
+        req = resolved.type === 'none' ? rest : { ...rest, auth: resolved };
       }
       const id = req.id;
       const controller = id ? new AbortController() : undefined;
@@ -294,6 +422,19 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     },
     'request.cancel': (payload) => {
       inflightExecutions.get(payload.id)?.abort();
+      return {};
+    },
+
+    'connection.open': async (payload) => {
+      await connections.open(payload.sessionId, payload.request);
+      return {};
+    },
+    'connection.send': (payload) => {
+      connections.send(payload.sessionId, payload.data);
+      return {};
+    },
+    'connection.close': (payload) => {
+      connections.close(payload.sessionId);
       return {};
     },
 
@@ -399,6 +540,13 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
       });
       return {};
     },
+    'plugin.dialogRespond': (request) => {
+      pendingDialogs.get(request.dialogId)?.({
+        values: request.values,
+        cancelled: request.cancelled,
+      });
+      return {};
+    },
 
     'preferences.get': (request) => ({ value: persistence.preferences.get(request.key) ?? null }),
     'preferences.set': (request) => {
@@ -406,6 +554,30 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
       return {};
     },
     'preferences.list': () => persistence.preferences.list(),
+
+    'plugins.list': () => ({ plugins: plugins.list() }),
+    'plugins.inspect': (request) => plugins.inspect(request.path),
+    'plugins.install': async (request) => {
+      const installed = await plugins.install(request.path, request.grantedCapabilities);
+      notifyPluginsChanged('installed');
+      return installed;
+    },
+    'plugins.installDev': async (request) => {
+      const installed = await plugins.installDev(request.path, request.grantedCapabilities);
+      notifyPluginsChanged('installed');
+      return installed;
+    },
+    'plugins.uninstall': async (request) => {
+      await plugins.uninstall(request.id);
+      notifyPluginsChanged('uninstalled');
+      return {};
+    },
+    'plugins.setEnabled': async (request) => {
+      const updated = await plugins.setEnabled(request.id, request.enabled);
+      notifyPluginsChanged(request.enabled ? 'enabled' : 'disabled');
+      return updated;
+    },
+    'plugins.contributions': () => plugins.contributions(),
 
     'backup.create': () => persistence.createBackup(),
     'backup.list': () => persistence.listBackups(),

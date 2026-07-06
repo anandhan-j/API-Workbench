@@ -4,6 +4,7 @@ import type {
   ApplyContext,
   CredentialMeta,
   SaveCredentialInput,
+  WireAuthConfig,
 } from '@shared/auth';
 import { AuthConfig as AuthConfigSchema } from '@shared/auth';
 import type { PersistenceService } from '../persistence';
@@ -12,6 +13,16 @@ import type { AuthConfigRow } from '../persistence/schema';
 import type { Encryptor } from '../variables/encryptor';
 import { applyAuth } from './applier';
 import { refreshOAuth2, isOAuth2Expired, type TokenFetcher } from './token-manager';
+import {
+  isBuiltinAuthType,
+  type AuthProviderRegistry,
+} from '../plugins/registries/auth-provider-registry';
+
+/** A request-like carrier of auth: an inline config and/or a stored credential id. */
+export interface AuthSource {
+  auth?: WireAuthConfig;
+  credentialId?: string;
+}
 
 function rowToMeta(row: AuthConfigRow): CredentialMeta {
   return {
@@ -26,7 +37,10 @@ function rowToMeta(row: AuthConfigRow): CredentialMeta {
 }
 
 /** Recursively substitutes variables in every string field of a config. */
-function substitute(config: AuthConfig, evaluate: (template: string) => string): AuthConfig {
+function substitute<T extends WireAuthConfig>(
+  config: T,
+  evaluate: (template: string) => string,
+): T {
   const walk = (value: unknown): unknown => {
     if (typeof value === 'string') return evaluate(value);
     if (Array.isArray(value)) return value.map(walk);
@@ -35,7 +49,7 @@ function substitute(config: AuthConfig, evaluate: (template: string) => string):
     }
     return value;
   };
-  return walk(config) as AuthConfig;
+  return walk(config) as T;
 }
 
 /**
@@ -52,7 +66,45 @@ export class AuthService {
   constructor(
     private readonly persistence: PersistenceService,
     private readonly encryptor: Encryptor,
+    private readonly providers?: AuthProviderRegistry,
   ) {}
+
+  /**
+   * Resolves the effective auth config on a request-like input: an inline
+   * config wins; otherwise a stored credential is decrypted and attached.
+   * Single home for the credential-resolution rule previously duplicated in
+   * the IPC layer and the workflow wiring.
+   */
+  resolveRequestAuth<T extends AuthSource>(request: T): T & Pick<AuthSource, 'auth'> {
+    if (request.credentialId && !request.auth) {
+      return { ...request, auth: this.getConfig(request.credentialId) };
+    }
+    return request;
+  }
+
+  /**
+   * Resolves an auth source to concrete artifacts: decrypts a stored
+   * credential if needed, substitutes `{{variables}}`, then dispatches —
+   * built-in types through the pure synchronous applier, plugin types
+   * through the provider registry (async, RPC-backed). The async facade the
+   * protocol-agnostic execution path calls (ADR-0007).
+   */
+  async resolveArtifacts(
+    source: AuthSource,
+    ctx: ApplyContext,
+    evaluate: (template: string) => string = (t) => t,
+  ): Promise<AuthArtifacts> {
+    const config = source.auth ?? (source.credentialId ? this.getConfig(source.credentialId) : undefined);
+    if (!config) return { headers: {}, query: {}, cookies: {} };
+    const resolved = substitute(config, evaluate);
+    const type: string = resolved.type;
+    if (!isBuiltinAuthType(type)) {
+      const provider = this.providers?.resolve(type);
+      if (!provider) throw new PersistenceError(`Unknown auth provider: ${type}`);
+      return provider.apply(resolved as unknown as Record<string, unknown>, ctx);
+    }
+    return applyAuth(resolved as AuthConfig, ctx);
+  }
 
   save(input: SaveCredentialInput): CredentialMeta {
     const json = JSON.stringify(input.config);

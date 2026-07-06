@@ -1,13 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import type { ExecutionResponse } from '@shared/execution';
+import { toProtocolResponse, type ProtocolResponse } from '@shared/protocol';
 import type { WorkflowDetail, WorkflowEdge, WorkflowNode } from '@shared/workflow';
 import { WorkflowEngine, type WorkflowEnginePorts, type RunContext } from '../workflow-engine';
 
 const pos = { x: 0, y: 0 };
 
-function jsonResponse(body: string): ExecutionResponse {
-  return {
+function jsonResponse(body: string): ProtocolResponse {
+  return toProtocolResponse({
     ok: true,
     status: 200,
     statusText: 'OK',
@@ -19,7 +19,7 @@ function jsonResponse(body: string): ExecutionResponse {
     timings: { startedAt: 0, totalMs: 1 },
     redirects: [],
     retries: 0,
-  };
+  });
 }
 
 function evaluate(template: string, ctx: RunContext): string {
@@ -58,11 +58,14 @@ describe('WorkflowEngine — mapping', () => {
       name: 'login',
       position: pos,
       config: {
-        method: 'POST',
-        url: '/login',
-        headers: {},
-        query: {},
-        body: { type: 'none' },
+        type: 'http',
+        payload: {
+          method: 'POST',
+          url: '/login',
+          headers: {},
+          query: {},
+          body: { type: 'none' },
+        },
         extract: [
           { variable: 'tok', source: 'body', engine: 'jsonpath', expression: '$.token' },
           { variable: 'firstId', source: 'body', engine: 'jmespath', expression: 'items[0].id' },

@@ -5,9 +5,12 @@ import {
   type IpcChannelName,
   type IpcRequest,
   type IpcResponse,
+  type PluginsChangedEvent,
   type WorkbenchApi,
 } from '@shared/ipc-contract';
 import type { WorkflowInputRequest, WorkflowProgressEvent } from '@shared/workflow';
+import type { PluginDialogRequest } from '@shared/plugins';
+import type { ConnectionEvent, ConnectionStateEvent } from '@shared/protocol';
 
 /**
  * Preload bridge. Exposes ONLY the enumerated invoke channels plus a single
@@ -46,6 +49,30 @@ const api: WorkbenchApi = {
     const handler = (_event: IpcRendererEvent, payload: WorkflowProgressEvent): void => listener(payload);
     ipcRenderer.on('workflow.nodeProgress', handler);
     return () => ipcRenderer.off('workflow.nodeProgress', handler);
+  },
+
+  onPluginsChanged(listener: (event: PluginsChangedEvent) => void): () => void {
+    const handler = (_event: IpcRendererEvent, payload: PluginsChangedEvent): void => listener(payload);
+    ipcRenderer.on('plugins.changed', handler);
+    return () => ipcRenderer.off('plugins.changed', handler);
+  },
+
+  onPluginDialogRequest(listener: (event: PluginDialogRequest) => void): () => void {
+    const handler = (_event: IpcRendererEvent, payload: PluginDialogRequest): void => listener(payload);
+    ipcRenderer.on('plugin.dialogRequest', handler);
+    return () => ipcRenderer.off('plugin.dialogRequest', handler);
+  },
+
+  onConnectionEvent(listener: (event: ConnectionEvent) => void): () => void {
+    const handler = (_event: IpcRendererEvent, payload: ConnectionEvent): void => listener(payload);
+    ipcRenderer.on('connection.event', handler);
+    return () => ipcRenderer.off('connection.event', handler);
+  },
+
+  onConnectionState(listener: (event: ConnectionStateEvent) => void): () => void {
+    const handler = (_event: IpcRendererEvent, payload: ConnectionStateEvent): void => listener(payload);
+    ipcRenderer.on('connection.state', handler);
+    return () => ipcRenderer.off('connection.state', handler);
   },
 };
 

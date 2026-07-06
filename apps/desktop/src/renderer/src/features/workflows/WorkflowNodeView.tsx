@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { cn } from '../../lib/cn';
-import { NODE_META } from './node-meta';
+import { getNodeMeta } from './node-meta';
 import type { FlowNodeData, GroupNodeData } from './graph-mapping';
 
 /**
@@ -54,7 +54,7 @@ export const WorkflowNodeView = memo(function WorkflowNodeView({
   data,
   selected,
 }: NodeProps<FlowNodeData>): JSX.Element {
-  const meta = NODE_META[data.kind];
+  const meta = getNodeMeta(data.kind);
   const Icon = meta.icon;
   const handles = sourceHandles(data);
   // The ring conveys run status (or a plain border when idle); selection is shown
@@ -188,8 +188,8 @@ function GroupNameEditor({
 function summarize(data: FlowNodeData): string {
   switch (data.kind) {
     case 'request': {
-      const c = data.config as { method?: string; url?: string };
-      return `${c.method ?? 'GET'} ${c.url || '—'}`;
+      const c = data.config as { payload?: { method?: string; url?: string } };
+      return `${c.payload?.method ?? 'GET'} ${c.payload?.url || '—'}`;
     }
     case 'set-variable': {
       const c = data.config as { key?: string; value?: string };

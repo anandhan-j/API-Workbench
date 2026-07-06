@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { HttpMethod } from './collection';
-import { AuthConfig } from './auth';
+import { MethodBadge } from './collection';
+import { WireAuthConfig } from './auth';
 
 /**
  * Persisted request definition (Phase: request persistence).
@@ -63,7 +63,7 @@ const DEFAULT_OPTIONS: RequestOptionsDef = { timeoutMs: 30_000, maxRetries: 0, f
 export const RequestDetails = z.object({
   headers: z.array(KeyValueEntry).default([]),
   params: z.array(KeyValueEntry).default([]),
-  auth: AuthConfig.default({ type: 'none' }),
+  auth: WireAuthConfig.default({ type: 'none' }),
   body: RequestBodyDef.default(DEFAULT_BODY),
   options: RequestOptionsDef.default(DEFAULT_OPTIONS),
   /** Pre-request script run before the request is sent. */
@@ -71,6 +71,14 @@ export const RequestDetails = z.object({
   /** Post-response (Postman "Tests") script run after a successful send. */
   postResponseScript: z.string().default(''),
   description: z.string().optional(),
+  /**
+   * Editor values for any non-HTTP request type (ADR-0009): a built-in
+   * protocol (GraphQL/gRPC/WebSocket/SSE) or a plugin type. Holds the payload
+   * fields the protocol's editor (or a plugin's schema-driven form) captures.
+   * Unused (absent) for HTTP requests, whose editable definition is the
+   * structured fields above.
+   */
+  pluginPayload: z.record(z.unknown()).optional(),
 });
 export type RequestDetails = z.infer<typeof RequestDetails>;
 
@@ -85,7 +93,10 @@ export const RequestDetailFull = z.object({
   collectionId: z.string(),
   folderId: z.string().nullable(),
   name: z.string(),
-  method: HttpMethod,
+  /** Request type (ADR-0009): 'http' or `plugin:<pluginId>/<type>`. */
+  type: z.string().default('http'),
+  /** HTTP method, or the provider's display badge for non-HTTP types. */
+  method: MethodBadge,
   url: z.string(),
   favorite: z.boolean(),
   details: RequestDetails,
@@ -96,7 +107,9 @@ export type RequestDetailFull = z.infer<typeof RequestDetailFull>;
 export const SaveRequestInput = z.object({
   id: z.string(),
   name: z.string().min(1).optional(),
-  method: HttpMethod.optional(),
+  /** Request type (ADR-0009): 'http' or `plugin:<pluginId>/<type>`. Omitted leaves it unchanged. */
+  type: z.string().optional(),
+  method: MethodBadge.optional(),
   url: z.string().optional(),
   details: RequestDetails,
 });

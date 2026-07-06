@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { Collection } from '@shared/collection';
+import type { WireAuthConfig } from '@shared/auth';
 import type { AppDatabase } from '../types';
 import { NotFoundError } from '../types';
 import { collections } from '../schema';
@@ -11,6 +12,7 @@ function toDto(row: CollectionRow): Collection {
     id: row.id,
     projectId: row.projectId,
     name: row.name,
+    auth: row.auth ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -26,6 +28,7 @@ export class CollectionRepository {
       id: randomUUID(),
       projectId: input.projectId,
       name: input.name,
+      auth: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -56,6 +59,14 @@ export class CollectionRepository {
   rename(id: string, name: string): Collection {
     const existing = this.get(id);
     const next: CollectionRow = { ...existing, name, updatedAt: Date.now() };
+    this.db.update(collections).set(next).where(eq(collections.id, id)).run();
+    return toDto(next);
+  }
+
+  /** Sets the collection's own auth config (top of the inheritance chain). */
+  updateAuth(id: string, auth: WireAuthConfig | null): Collection {
+    const existing = this.get(id);
+    const next: CollectionRow = { ...existing, auth, updatedAt: Date.now() };
     this.db.update(collections).set(next).where(eq(collections.id, id)).run();
     return toDto(next);
   }

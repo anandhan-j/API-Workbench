@@ -6,13 +6,15 @@ import {
   FolderPlus,
   MoreHorizontal,
   Pencil,
+  Plus,
   Star,
   Trash2,
 } from 'lucide-react';
-import type { HttpMethod, TreeNode } from '@shared/collection';
+import type { TreeNode } from '@shared/collection';
 import { cn } from '../../lib/cn';
 import { ContextMenu, type MenuItem } from '../../components/menu/ContextMenu';
 import { endpointLabel } from './request-label';
+import { BUILTIN_PROTOCOL_TYPES, getRequestTypeMeta } from '../runner/request-type-meta';
 
 const DRAG_TYPE = 'application/x-awb-request';
 
@@ -68,7 +70,8 @@ export function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
 export interface OpenedRequest {
   id: string;
   name: string;
-  method: HttpMethod;
+  /** HTTP method or a non-HTTP provider's display badge. */
+  method: string;
   url: string;
 }
 
@@ -80,7 +83,19 @@ const METHOD_COLOR: Record<string, string> = {
   DELETE: 'text-danger',
   HEAD: 'text-muted',
   OPTIONS: 'text-muted',
+  // Non-HTTP protocol badges (ADR-0009).
+  GQL: 'text-pink-400',
+  gRPC: 'text-cyan-400',
+  WS: 'text-violet-400',
+  SSE: 'text-amber-400',
 };
+
+/** Badge color for a request row: known HTTP/built-in badge, plugin, or neutral. */
+function badgeColor(node: Extract<TreeNode, { type: 'request' }>): string {
+  if (METHOD_COLOR[node.method]) return METHOD_COLOR[node.method];
+  if (node.requestType?.startsWith('plugin:')) return 'text-teal-400';
+  return 'text-muted';
+}
 
 export interface CollectionTreeViewProps {
   nodes: TreeNode[];
@@ -88,8 +103,12 @@ export interface CollectionTreeViewProps {
   /** When true, every folder renders expanded regardless of `expandedFolders` (used while searching). */
   forceExpand?: boolean;
   selectedId?: string | null;
+  /** The currently selected folder (its auth panel is open), highlighted in the tree. */
+  selectedFolderId?: string | null;
   baseDepth?: number;
   onToggleFolder: (id: string) => void;
+  /** Select a folder to open its authorization panel. Falls back to expand when absent. */
+  onOpenFolder?: (id: string, name: string) => void;
   onOpenRequest: (request: OpenedRequest) => void;
   onToggleFavorite?: (id: string) => void;
   onDeleteFolder?: (id: string, name: string) => void;
@@ -101,6 +120,8 @@ export interface CollectionTreeViewProps {
   onMoveRequest?: (id: string, folderId: string | null) => void;
   /** Create a subfolder under `parentId` (a folder in this collection). */
   onAddFolder?: (parentId: string) => void;
+  /** Create a request inside `folderId`; `type` selects the protocol (default HTTP). */
+  onAddRequest?: (folderId: string, type?: string) => void;
 }
 
 const ICON = 13;
@@ -116,8 +137,10 @@ export function CollectionTreeView({
   expandedFolders,
   forceExpand = false,
   selectedId,
+  selectedFolderId,
   baseDepth = 1,
   onToggleFolder,
+  onOpenFolder,
   onOpenRequest,
   onToggleFavorite,
   onDeleteFolder,
@@ -127,6 +150,7 @@ export function CollectionTreeView({
   onDuplicateRequest,
   onMoveRequest,
   onAddFolder,
+  onAddRequest,
 }: CollectionTreeViewProps): JSX.Element {
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | 'root' | null>(null);
@@ -174,6 +198,20 @@ export function CollectionTreeView({
   );
 
   const folderMenu = (node: Extract<TreeNode, { type: 'folder' }>): MenuItem[] => [
+    ...(onAddRequest
+      ? [
+          {
+            label: 'Add request',
+            icon: <Plus size={ICON} />,
+            onSelect: () => onAddRequest(node.id),
+          },
+          ...BUILTIN_PROTOCOL_TYPES.map((t) => ({
+            label: `Add ${getRequestTypeMeta(t)?.label ?? t} request`,
+            icon: <Plus size={ICON} />,
+            onSelect: () => onAddRequest(node.id, t),
+          })),
+        ]
+      : []),
     ...(onAddFolder
       ? [
           {
@@ -293,6 +331,7 @@ export function CollectionTreeView({
             }}
             className={cn(
               'group flex items-center pr-1 text-sm text-fg hover:bg-surface-2',
+              node.id === selectedFolderId && 'bg-surface-2',
               dropTarget === node.id && 'bg-accent/20 ring-1 ring-inset ring-accent',
             )}
           >
@@ -312,7 +351,9 @@ export function CollectionTreeView({
             ) : (
               <button
                 type="button"
-                onClick={() => onToggleFolder(node.id)}
+                onClick={() =>
+                  onOpenFolder ? onOpenFolder(node.id, node.name) : onToggleFolder(node.id)
+                }
                 className="ml-1.5 min-w-0 flex-1 truncate py-1 text-left"
               >
                 {node.name}
@@ -383,7 +424,7 @@ export function CollectionTreeView({
               <span
                 className={cn(
                   'w-12 shrink-0 text-[10px] font-bold tracking-wide',
-                  METHOD_COLOR[node.method] ?? 'text-muted',
+                  badgeColor(node),
                 )}
               >
                 {node.method}
@@ -402,7 +443,7 @@ export function CollectionTreeView({
               <span
                 className={cn(
                   'w-12 shrink-0 text-[10px] font-bold tracking-wide',
-                  METHOD_COLOR[node.method] ?? 'text-muted',
+                  badgeColor(node),
                 )}
               >
                 {node.method}

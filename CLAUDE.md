@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 API Workbench is an Electron desktop app for API testing and visual workflow automation — an offline-first Postman alternative that keeps OpenAPI-imported collections in sync, executes REST requests, and runs drag-and-drop API workflows. Everything is stored locally in SQLite; there is no mandatory cloud dependency.
 
-The repo is an npm-workspaces monorepo, but currently the only real package is `apps/desktop` (`@api-workbench/desktop`). Root scripts delegate into that workspace.
+The repo is an npm-workspaces monorepo: `apps/desktop` (`@api-workbench/desktop`, the app) and `packages/plugin-sdk` (`@api-workbench/plugin-sdk`, the public types-only contract plugin authors compile against; built by its `prepare` script on install). `plugins/examples/` holds one example plugin per extension point (not workspaces; bundled via `npm run build:example-plugins --workspace @api-workbench/desktop`, used as integration-test fixtures). Root scripts delegate into the desktop workspace.
 
 ## Commands
 
@@ -39,6 +39,7 @@ Code is split by Electron process under `apps/desktop/src/`, and the split is en
 - `renderer/` — the React UI (Vite + React 18 + Tailwind/shadcn + Zustand + React Query + React Router via **hash** routing). Has no Node access.
 - `preload/` — the only bridge between the two. Exposes `window.workbench` via `contextBridge` with an **allowlist** of channels and a single typed event subscription — there is no generic "invoke any channel" escape hatch.
 - `shared/` — isomorphic code imported by all three sides, chiefly the **IPC contract** and its Zod schemas/DTOs.
+- `plugin-host/` — the **unprivileged** plugin host bundle, forked as an Electron utility process (ADR-0010). All third-party plugin code runs there; an ESLint fence forbids importing `@main` or `electron` from it, and it talks to main only over the Zod-validated RPC in `shared/plugin-rpc*.ts`.
 
 Path aliases (configured in `electron.vite.config.ts` and `vitest.config.ts`): `@shared`, `@main`, `@renderer`. Use these rather than long relative paths.
 
@@ -68,6 +69,7 @@ Each feature module under `main/` is a self-contained unit with a barrel `index.
 - `workflows/` — the workflow engine (see below).
 - `versioning/` — snapshot / diff / restore of collections. Note the IPC layer **auto-snapshots** around import and around sync so a merge can be rolled back.
 - `testing/`, `scripting/` — assertion/test runner and the pre-request / post-response script sandbox.
+- `plugins/` — the Plugin SDK's privileged side (Phase 16, ADR-0007/0009/0010): the four extension registries (workflow nodes, auth providers, importers, request types — built-ins seeded at the composition root, plugin entries added per activation under `plugin:<pluginId>/<key>` ids), the package loader/validator, install lifecycle, the utility-process host manager, and the capability broker that enforces user-confirmed grants on every host→main call. Execution is protocol-agnostic (`RequestEnvelope`/`ProtocolResponse` in `shared/protocol.ts`); HTTP is built-in provider #1.
 
 ### Cross-cutting wiring to know
 

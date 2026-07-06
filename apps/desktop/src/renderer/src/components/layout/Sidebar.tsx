@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Activity, Boxes, Braces, FolderKanban, House, PanelLeftClose, PanelLeft, Send, Settings, Workflow } from 'lucide-react';
+import { Activity, Boxes, Braces, FolderKanban, House, PanelLeftClose, PanelLeft, Puzzle, Send, Settings, Workflow } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useUiStore } from '../../stores/ui-store';
 
@@ -16,7 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/variables', label: 'Variables', icon: Braces },
   { to: '/runner', label: 'Run', icon: Send },
   { to: '/workflows', label: 'Workflows', icon: Workflow },
-  { to: '/dispatch', label: 'Dispatch Monitor', icon: Activity },
+  { to: '/plugins', label: 'Plugins', icon: Puzzle },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 

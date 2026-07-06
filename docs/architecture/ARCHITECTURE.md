@@ -92,7 +92,7 @@ Within a process, feature modules communicate through the Application layer's us
 
 ## Extensibility
 
-The plugin SDK ([Phase 16](../ROADMAP.md)) exposes a stable extension API surface: plugins can register custom workflow nodes, request types, authentication providers, and importers. Plugins run with constrained capabilities and communicate through the same validated contracts as the core, so a third-party plugin can extend behaviour without being granted unmediated access to the file system, database, or network. The architecture treats the extension API as a versioned public contract.
+The plugin SDK (Phase 16) exposes a stable extension API surface: plugins register custom workflow nodes, request types, authentication providers, and importers against four runtime registries seeded with the built-ins. The public contract is the semantically versioned `@api-workbench/plugin-sdk` package ([ADR-0007](../adr/0007-plugin-sdk-boundary.md)); the validation authority is the shared Zod manifest schema. Request types are possible because execution is protocol-agnostic — a request envelope dispatched to per-type providers, HTTP being built-in provider #1 ([ADR-0009](../adr/0009-protocol-abstraction.md)). Plugin code runs only in an isolated utility process behind a Zod-validated RPC bridge with per-call capability enforcement ([ADR-0010](../adr/0010-plugin-host-process.md)); the renderer consumes only declarative contribution metadata (labels, icons, form schemas) and renders plugin config UIs with a generic schema-driven form — no third-party code in the UI or main process.
 
 ## Testing strategy
 

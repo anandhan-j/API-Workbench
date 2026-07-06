@@ -17,6 +17,8 @@ Use the [template](./0000-template.md) for new records. Number them sequentially
 | [0006](./0006-secret-and-credential-storage.md) | Secret and credential storage via OS-backed encryption | Accepted |
 | [0007](./0007-plugin-sdk-boundary.md) | Plugin SDK as a versioned, capability-constrained contract | Accepted |
 | [0008](./0008-workflow-execution-context.md) | Workflow execution context as a propagated runtime variable map | Accepted |
+| [0009](./0009-protocol-abstraction.md) | Protocol-agnostic request execution | Accepted |
+| [0010](./0010-plugin-host-process.md) | Plugin host as a shared utility process with a brokered RPC bridge | Accepted |
 
 ## Conventions
 

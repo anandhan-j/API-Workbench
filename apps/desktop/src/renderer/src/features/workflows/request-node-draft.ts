@@ -1,13 +1,17 @@
 import type { RequestBody } from '@shared/execution';
+import type { HttpMethod } from '@shared/collection';
+import { HTTP_REQUEST_TYPE, type HttpPayload } from '@shared/protocol';
 import type { ExtractRule, RequestNodeConfig } from '@shared/workflow';
 import {
-  buildExecutionRequest,
+  buildRequestEnvelope,
   defaultDraft,
+  defaultProtocolPayload,
   newRow,
   type KeyValue,
   type RawType,
   type RequestDraft,
 } from '../runner/build-request';
+import { isBuiltinProtocol } from '../runner/request-type-meta';
 
 /**
  * Bridges a workflow request node's config and the runner's {@link RequestDraft},
@@ -87,20 +91,41 @@ function bodyToDraft(body: RequestBody): BodyDraft {
 }
 
 export function nodeConfigToDraft(config: RequestNodeConfig): RequestDraft {
-  const base = defaultDraft(config.method, config.url);
+  const type = config.type ?? HTTP_REQUEST_TYPE;
+  const options = {
+    timeoutMs: config.options?.timeoutMs ?? 30_000,
+    maxRetries: config.options?.maxRetries ?? 0,
+    followRedirects: config.options?.followRedirects ?? true,
+  };
+
+  // Non-HTTP types keep their whole payload in the plugin/protocol bag; the
+  // dedicated editor (or plugin form) edits it, mirroring the runner.
+  if (type !== HTTP_REQUEST_TYPE) {
+    const seeded = isBuiltinProtocol(type)
+      ? { ...defaultProtocolPayload(type), ...((config.payload ?? {}) as Record<string, unknown>) }
+      : ((config.payload ?? {}) as Record<string, unknown>);
+    return {
+      ...defaultDraft('GET', ''),
+      requestType: type,
+      pluginPayload: seeded,
+      auth: config.auth ?? { type: 'none' },
+      options,
+    };
+  }
+
+  const payload = (config.payload ?? {}) as Partial<HttpPayload>;
+  const method = (payload.method ?? 'GET') as HttpMethod;
+  const url = payload.url ?? '';
+  const base = defaultDraft(method, url);
   return {
     ...base,
-    method: config.method,
-    url: config.url,
-    headers: recordToRows(config.headers ?? {}),
-    params: recordToRows(config.query ?? {}),
+    method,
+    url,
+    headers: recordToRows(payload.headers ?? {}),
+    params: recordToRows(payload.query ?? {}),
     auth: config.auth ?? { type: 'none' },
-    ...bodyToDraft(config.body ?? { type: 'none' }),
-    options: {
-      timeoutMs: config.options?.timeoutMs ?? 30_000,
-      maxRetries: config.options?.maxRetries ?? 0,
-      followRedirects: config.options?.followRedirects ?? true,
-    },
+    ...bodyToDraft(payload.body ?? { type: 'none' }),
+    options,
   };
 }
 
@@ -108,16 +133,19 @@ export function draftToNodeConfig(
   draft: RequestDraft,
   extract: ExtractRule[],
   requestId?: string,
+  /** A stored-credential reference to preserve when the editor uses no inline auth. */
+  credentialId?: string,
 ): RequestNodeConfig {
-  const exec = buildExecutionRequest(draft);
+  const envelope = buildRequestEnvelope(draft);
   return {
-    method: exec.method,
-    url: exec.url,
-    headers: exec.headers ?? {},
-    query: exec.query ?? {},
-    body: exec.body ?? { type: 'none' },
-    ...(exec.auth ? { auth: exec.auth } : {}),
-    ...(exec.options ? { options: exec.options } : {}),
+    type: envelope.type,
+    payload: envelope.payload,
+    ...(envelope.auth ? { auth: envelope.auth } : {}),
+    // The request editor edits inline auth only; keep a node's stored-credential
+    // reference intact when the draft added no inline auth, so saving doesn't
+    // silently drop it and run the node unauthenticated.
+    ...(!envelope.auth && credentialId ? { credentialId } : {}),
+    ...(envelope.options ? { options: envelope.options } : {}),
     extract,
     ...(requestId ? { requestId } : {}),
   };

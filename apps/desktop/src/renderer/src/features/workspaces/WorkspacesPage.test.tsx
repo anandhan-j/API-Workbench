@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { WorkspacesPage } from './WorkspacesPage';
 
 /** Minimal in-memory backend implementing the workspace IPC channels. */
@@ -72,7 +73,9 @@ function renderPage(): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   render(
     <QueryClientProvider client={client}>
-      <WorkspacesPage />
+      <MemoryRouter>
+        <WorkspacesPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }

@@ -1,18 +1,21 @@
-import type { ExecutionResponse } from '@shared/execution';
+import { httpViewOf, type HttpView, type ProtocolResponse } from '@shared/protocol';
 import type { Assertion, AssertionResult, TestReport } from '@shared/testing';
 import { evaluateSimple, tryParseJson } from './assertions';
 import { validateJsonSchema } from './schema-validator';
 import { runScript } from './script-runner';
 
 /**
- * Runs a set of assertions against an execution response and produces a report.
- * Each assertion is isolated: a thrown error in one becomes a failed result, not
- * a crash, so a report always covers every assertion.
+ * Runs a set of assertions against a protocol response and produces a report.
+ * Assertions see the flat HTTP-flavoured view (real HTTP fields for `'http'`,
+ * summary/metadata degradation for other types). Each assertion is isolated: a
+ * thrown error in one becomes a failed result, not a crash, so a report always
+ * covers every assertion.
  */
 export class TestRunner {
-  run(response: ExecutionResponse, assertions: Assertion[]): TestReport {
+  run(response: ProtocolResponse, assertions: Assertion[]): TestReport {
     const t0 = Date.now();
-    const results = assertions.map((a) => this.evaluate(a, response));
+    const view = httpViewOf(response);
+    const results = assertions.map((a) => this.evaluate(a, view));
     const passed = results.filter((r) => r.passed).length;
     return {
       total: results.length,
@@ -23,7 +26,7 @@ export class TestRunner {
     };
   }
 
-  private evaluate(assertion: Assertion, response: ExecutionResponse): AssertionResult {
+  private evaluate(assertion: Assertion, response: HttpView): AssertionResult {
     try {
       switch (assertion.type) {
         case 'status':

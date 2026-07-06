@@ -1,14 +1,14 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import type { ExecutionResponse } from '@shared/execution';
+import { toProtocolResponse, type ProtocolResponse } from '@shared/protocol';
 import type { WorkflowDetail, WorkflowEdge, WorkflowNode } from '@shared/workflow';
 import { WorkflowEngine, type WorkflowEnginePorts, type RunContext } from '../workflow-engine';
 import { RunController } from '../run-controller';
 
 const pos = { x: 0, y: 0 };
 
-function okResponse(error?: string): ExecutionResponse {
-  return {
+function okResponse(error?: string): ProtocolResponse {
+  return toProtocolResponse({
     ok: !error,
     status: error ? 0 : 200,
     statusText: error ? '' : 'OK',
@@ -21,7 +21,7 @@ function okResponse(error?: string): ExecutionResponse {
     redirects: [],
     retries: 0,
     ...(error ? { error } : {}),
-  };
+  });
 }
 
 function tickClock(): () => number {
@@ -53,7 +53,7 @@ function wf(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowDetail {
 const start = (): WorkflowNode => ({ id: 'start', kind: 'start', name: 'Start', position: pos, config: {} });
 const end = (id = 'end'): WorkflowNode => ({ id, kind: 'end', name: 'End', position: pos, config: {} });
 const setVar = (id: string, key: string, value: string, policy?: WorkflowNode['policy']): WorkflowNode => ({ id, kind: 'set-variable', name: id, position: pos, config: { key, value }, ...(policy ? { policy } : {}) });
-const req = (id: string, policy?: WorkflowNode['policy']): WorkflowNode => ({ id, kind: 'request', name: id, position: pos, config: { method: 'GET', url: '/x', headers: {}, query: {}, body: { type: 'none' }, extract: [] }, ...(policy ? { policy } : {}) });
+const req = (id: string, policy?: WorkflowNode['policy']): WorkflowNode => ({ id, kind: 'request', name: id, position: pos, config: { type: 'http', payload: { method: 'GET', url: '/x', headers: {}, query: {}, body: { type: 'none' } }, extract: [] }, ...(policy ? { policy } : {}) });
 const edge = (id: string, source: string, target: string, handle?: string): WorkflowEdge => ({ id, source, target, ...(handle ? { sourceHandle: handle } : {}) });
 
 describe('WorkflowEngine — control flow', () => {
@@ -125,7 +125,7 @@ describe('WorkflowEngine — control flow', () => {
   });
 
   it('times out a node that never settles', async () => {
-    const executeRequest = vi.fn(() => new Promise<ExecutionResponse>(() => undefined));
+    const executeRequest = vi.fn(() => new Promise<ProtocolResponse>(() => undefined));
     const workflow = wf([start(), req('r', { timeoutMs: 50 }), end()], [edge('e0', 'start', 'r'), edge('e1', 'r', 'end')]);
     const result = await new WorkflowEngine(makePorts({ executeRequest })).run(workflow);
     expect(result.status).toBe('failed');

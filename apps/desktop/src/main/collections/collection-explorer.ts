@@ -10,6 +10,7 @@ import type {
 } from '@shared/collection';
 import type { CollectionSourceInfo } from '@shared/collection';
 import type { RequestDetailFull, SaveRequestInput } from '@shared/request-details';
+import type { WireAuthConfig } from '@shared/auth';
 import type { PersistenceService } from '../persistence';
 import { PersistenceError } from '../persistence/types';
 
@@ -37,6 +38,23 @@ export class CollectionExplorer {
 
   renameCollection(id: string, name: string): Collection {
     return this.persistence.collections.rename(id, name);
+  }
+
+  /** A single collection, including its own auth config (top of the chain). */
+  getCollection(id: string): Collection {
+    return this.persistence.collections.get(id);
+  }
+
+  /** Sets the collection's own authorization config (null = no auth). */
+  updateCollectionAuth(id: string, auth: WireAuthConfig | null): Collection {
+    this.persistence.collections.get(id); // validate exists
+    return this.persistence.collections.updateAuth(id, auth);
+  }
+
+  /** Sets every folder and request in the collection to inherit from it. */
+  applyCollectionAuthToChildren(id: string): { folders: number; requests: number } {
+    this.persistence.collections.get(id); // validate exists
+    return this.persistence.applyCollectionAuthToChildren(id);
   }
 
   deleteCollection(id: string): void {
@@ -78,6 +96,23 @@ export class CollectionExplorer {
 
   renameFolder(id: string, name: string): Folder {
     return this.persistence.folders.rename(id, name);
+  }
+
+  /** A single folder, including its own auth config (null = inherit). */
+  getFolder(id: string): Folder {
+    return this.persistence.folders.get(id);
+  }
+
+  /** Sets a folder's own authorization config (null = inherit from parent). */
+  updateFolderAuth(id: string, auth: WireAuthConfig | null): Folder {
+    this.persistence.folders.get(id); // validate exists
+    return this.persistence.folders.updateAuth(id, auth);
+  }
+
+  /** Sets every descendant folder and request to inherit auth from this folder. */
+  applyAuthToChildren(id: string): { folders: number; requests: number } {
+    this.persistence.folders.get(id); // validate exists
+    return this.persistence.applyAuthToChildren(id);
   }
 
   /** Moves a folder under a new parent (or to the root), preventing cycles. */
@@ -229,6 +264,7 @@ export class CollectionExplorer {
           parentId,
           name: request.name,
           depth,
+          requestType: request.type,
           method: request.method,
           url: request.url,
           favorite: request.favorite,

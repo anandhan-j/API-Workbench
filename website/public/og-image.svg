@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a0a0c"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.1" r="0.8">
+      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <rect x="80" y="120" width="96" height="96" rx="24" fill="url(#brand)"/>
+  <path d="M104 176 L113 148 L122 176 M107.5 167 H118.5" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M132 148 L132 176 M132 148 H140 a8 8 0 0 1 0 16 H132" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <text x="80" y="310" font-family="Segoe UI, Arial, sans-serif" font-size="76" font-weight="800" fill="#fafafa">API Workbench</text>
+  <text x="80" y="380" font-family="Segoe UI, Arial, sans-serif" font-size="34" fill="#a1a1aa">Offline-first API testing &amp; visual workflow automation</text>
+  <text x="80" y="470" font-family="Segoe UI, Arial, sans-serif" font-size="26" fill="#6366f1">Open source · MIT · Windows / macOS / Linux</text>
+</svg>

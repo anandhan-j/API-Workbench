@@ -1,16 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Save, Send, X } from 'lucide-react';
 import type { HttpMethod } from '@shared/collection';
-import type { ExecutionResponse } from '@shared/execution';
+import { formDefaults } from '@shared/forms';
+import { qualifiedContributionId } from '@shared/plugins';
+import {
+  SSE_REQUEST_TYPE,
+  WEBSOCKET_REQUEST_TYPE,
+  statusOf,
+  type ProtocolResponse,
+} from '@shared/protocol';
 import type { ScriptRunResult } from '@shared/scripting';
 import type { VariableContext } from '@shared/variable';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '../../lib/cn';
 import { usePersistentState } from '../../lib/use-persistent-state';
 import { ResponseViewer } from './ResponseViewer';
+import { ConnectionPanel } from './ConnectionPanel';
 import { KeyValueEditor } from './KeyValueEditor';
 import { AuthEditor } from './AuthEditor';
 import { BodyEditor } from './BodyEditor';
+import { SchemaForm } from '../../components/forms/SchemaForm';
+import { usePluginContributions } from '../plugins/use-plugins';
 import { useExecute, useCancel } from './use-execution';
 import { useRunScript, useRunPreScript } from './use-script';
 import { ScriptEditor } from './ScriptEditor';
@@ -21,12 +31,20 @@ import type { VariableSuggestion } from '../variables/suggestion';
 import { useActiveSelection } from '../workspaces/use-workspaces';
 import {
   applyParamsToUrl,
-  buildExecutionRequest,
+  buildHttpPayload,
+  buildRequestEnvelope,
   defaultDraft,
+  defaultProtocolPayload,
+  isPluginDraft,
   parseQueryParams,
   type KeyValue,
   type RequestDraft,
 } from './build-request';
+import {
+  BUILTIN_PROTOCOL_TYPES,
+  getRequestTypeMeta,
+  isBuiltinProtocol,
+} from './request-type-meta';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 type Tab = 'params' | 'auth' | 'headers' | 'body' | 'variables' | 'scripts' | 'settings';
@@ -81,7 +99,8 @@ export function RequestEditor({
   );
   const [tab, setTab] = useState<Tab>('params');
   const [scriptPhase, setScriptPhase] = useState<'pre' | 'post'>('pre');
-  const [history, setHistory] = useState<{ at: number; response: ExecutionResponse }[]>([]);
+  const [interactive, setInteractive] = useState(false);
+  const [history, setHistory] = useState<{ at: number; response: ProtocolResponse }[]>([]);
   const [viewIndex, setViewIndex] = useState(0);
   const [respHeight, setRespHeight] = usePersistentState('awb.runner.responseHeight', 320);
   const execId = useRef<string | null>(null);
@@ -99,7 +118,40 @@ export function RequestEditor({
   const active = useActiveSelection();
   const qc = useQueryClient();
 
+  // Request types (ADR-0009): HTTP, the built-in protocols (GraphQL/gRPC/
+  // WebSocket/SSE), and any plugin-contributed types. Built-in protocols get a
+  // dedicated editor; plugin types get their schema-driven form.
+  const contributions = usePluginContributions();
+  const requestTypes = contributions.requestTypes;
+  const builtinMeta = getRequestTypeMeta(
+    isBuiltinProtocol(draft.requestType) ? draft.requestType : undefined,
+  );
+  const pluginType =
+    !builtinMeta && isPluginDraft(draft)
+      ? requestTypes.find(
+          (rt) => qualifiedContributionId(rt.pluginId, rt.type) === draft.requestType,
+        )
+      : undefined;
   const patch = (p: Partial<RequestDraft>): void => setDraft((d) => ({ ...d, ...p }));
+
+  const selectRequestType = (value: string): void => {
+    if (value === draft.requestType || (value === 'http' && !draft.requestType)) return;
+    if (value === 'http') {
+      patch({ requestType: undefined, pluginPayload: undefined });
+      return;
+    }
+    if (isBuiltinProtocol(value)) {
+      patch({ requestType: value, pluginPayload: defaultProtocolPayload(value) });
+      return;
+    }
+    const contribution = requestTypes.find(
+      (rt) => qualifiedContributionId(rt.pluginId, rt.type) === value,
+    );
+    patch({
+      requestType: value,
+      pluginPayload: contribution ? formDefaults(contribution.payloadSchema) : {},
+    });
+  };
 
   // Report the live draft upward (debounced) so a parent can show variables in use.
   useEffect(() => {
@@ -107,6 +159,12 @@ export function RequestEditor({
     const t = setTimeout(() => onDraftChange(draft), 250);
     return () => clearTimeout(t);
   }, [draft, onDraftChange]);
+
+  // Switching request type drops interactive mode so the ConnectionPanel
+  // unmounts and its live session is closed, rather than leaking across types.
+  useEffect(() => {
+    setInteractive(false);
+  }, [draft.requestType]);
 
   const onUrlChange = (url: string): void =>
     setDraft((d) => ({ ...d, url, params: parseQueryParams(url) }));
@@ -138,10 +196,10 @@ export function RequestEditor({
   /** Runs the pre-request script (manually or before send) against the current request. */
   const runPreAgainst = async (): Promise<void> => {
     if (!draft.preRequestScript.trim()) return;
-    const req = buildExecutionRequest(draft);
+    const payload = buildHttpPayload(draft);
     await runPreScript.mutateAsync({
       script: draft.preRequestScript,
-      request: { method: req.method, url: req.url, headers: req.headers },
+      request: { method: payload.method, url: payload.url, headers: payload.headers },
       context: scriptCtx(),
     });
     invalidateVars();
@@ -153,8 +211,9 @@ export function RequestEditor({
     runPreScript.reset();
     runScript.reset();
     // Pre-request script first — it may set variables the request resolves.
-    await runPreAgainst();
-    const response = await execute.mutateAsync(buildExecutionRequest(draft, id, scriptCtx()));
+    // (Skipped for plugin request types, whose payload is not HTTP-shaped.)
+    if (!isPluginDraft(draft)) await runPreAgainst();
+    const response = await execute.mutateAsync(buildRequestEnvelope(draft, id, scriptCtx()));
     setHistory((prev) => [{ at: Date.now(), response }, ...prev].slice(0, 25));
     setViewIndex(0);
     runScriptAgainst(response);
@@ -188,50 +247,125 @@ export function RequestEditor({
       ? history[Math.min(viewIndex, history.length - 1)].response
       : (execute.data ?? null);
 
-  const tabs: { id: Tab; label: string; badge?: number }[] = [
-    { id: 'params', label: 'Params', badge: activeCount(draft.params) },
-    { id: 'auth', label: 'Authorization' },
-    { id: 'headers', label: 'Headers', badge: activeCount(draft.headers) },
-    { id: 'body', label: 'Body' },
-    ...(scriptContext?.requestId ? [{ id: 'variables' as Tab, label: 'Variables' }] : []),
-    {
-      id: 'scripts',
-      label: 'Scripts',
-      badge: draft.preRequestScript.trim() || draft.postResponseScript.trim() ? 1 : 0,
-    },
-    { id: 'settings', label: 'Settings' },
-  ];
+  // Built-in protocols edit their whole payload (URL, query, headers…) in the
+  // dedicated editor above, so they show only the cross-cutting tabs.
+  const tabs: { id: Tab; label: string; badge?: number }[] = builtinMeta
+    ? [
+        { id: 'auth', label: 'Authorization' },
+        ...(scriptContext?.requestId ? [{ id: 'variables' as Tab, label: 'Variables' }] : []),
+        { id: 'scripts', label: 'Scripts', badge: draft.postResponseScript.trim() ? 1 : 0 },
+        { id: 'settings', label: 'Settings' },
+      ]
+    : [
+        { id: 'params', label: 'Params', badge: activeCount(draft.params) },
+        { id: 'auth', label: 'Authorization' },
+        { id: 'headers', label: 'Headers', badge: activeCount(draft.headers) },
+        { id: 'body', label: 'Body' },
+        ...(scriptContext?.requestId ? [{ id: 'variables' as Tab, label: 'Variables' }] : []),
+        {
+          id: 'scripts',
+          label: 'Scripts',
+          badge: draft.preRequestScript.trim() || draft.postResponseScript.trim() ? 1 : 0,
+        },
+        { id: 'settings', label: 'Settings' },
+      ];
+  // Keep a valid selection when the tab set changes (e.g. switching to a protocol).
+  const activeTab: Tab = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
+  // Protocols have no pre-request phase — force post so the panel is coherent.
+  const effectivePhase: 'pre' | 'post' = builtinMeta ? 'post' : scriptPhase;
+  // WebSocket/SSE and any plugin type that declares `interactive` can run a
+  // live session instead of one-shot execute.
+  const supportsInteractive =
+    draft.requestType === WEBSOCKET_REQUEST_TYPE ||
+    draft.requestType === SSE_REQUEST_TYPE ||
+    Boolean(pluginType?.interactive);
+  const showInteractive = supportsInteractive && interactive;
 
   return (
     <div className="flex h-full flex-col">
       {/* Address bar */}
       <div className="flex gap-2">
         <select
-          value={draft.method}
-          onChange={(e) => patch({ method: e.target.value as HttpMethod })}
-          aria-label="HTTP method"
-          className={cn(
-            'rounded-md border border-border bg-surface px-3 py-2 text-sm font-bold',
-            METHOD_COLOR[draft.method],
-          )}
+          value={draft.requestType ?? 'http'}
+          onChange={(e) => selectRequestType(e.target.value)}
+          aria-label="Request type"
+          className="rounded-md border border-border bg-surface px-2 py-2 text-sm"
         >
-          {METHODS.map((m) => (
-            <option key={m} value={m} className="text-fg">
-              {m}
-            </option>
-          ))}
+          <option value="http">HTTP</option>
+          <optgroup label="Protocols">
+            {BUILTIN_PROTOCOL_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {getRequestTypeMeta(t)?.label ?? t}
+              </option>
+            ))}
+          </optgroup>
+          {requestTypes.length > 0 && (
+            <optgroup label="Plugins">
+              {requestTypes.map((rt) => {
+                const qualified = qualifiedContributionId(rt.pluginId, rt.type);
+                return (
+                  <option key={qualified} value={qualified}>
+                    {rt.label}
+                  </option>
+                );
+              })}
+            </optgroup>
+          )}
         </select>
-        <div className="min-w-0 flex-1">
-          <VariableField
-            value={draft.url}
-            onChange={onUrlChange}
-            suggestions={suggestions}
-            {...(scriptContext ? { variableContext: scriptContext } : {})}
-            aria-label="Request URL"
-            placeholder="{{baseUrl}}/path  — supports variables"
-            className="w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm"
-          />
-        </div>
+        {builtinMeta ? (
+          <>
+            <span
+              className={cn(
+                'flex items-center rounded-md border border-border bg-surface px-3 py-2 text-sm font-bold',
+                builtinMeta.badgeColor,
+              )}
+            >
+              {builtinMeta.badge}
+            </span>
+            <div className="flex min-w-0 flex-1 items-center truncate rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm text-muted">
+              {builtinMeta.targetOf(draft.pluginPayload ?? {}) || builtinMeta.label}
+            </div>
+          </>
+        ) : pluginType ? (
+          <>
+            <span className="flex items-center rounded-md border border-border bg-surface px-3 py-2 text-sm font-bold text-accent">
+              {pluginType.summary.badge}
+            </span>
+            <div className="flex min-w-0 flex-1 items-center truncate rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm text-muted">
+              {String(draft.pluginPayload?.[pluginType.summary.targetKey] ?? '') ||
+                pluginType.label}
+            </div>
+          </>
+        ) : (
+          <>
+            <select
+              value={draft.method}
+              onChange={(e) => patch({ method: e.target.value as HttpMethod })}
+              aria-label="HTTP method"
+              className={cn(
+                'rounded-md border border-border bg-surface px-3 py-2 text-sm font-bold',
+                METHOD_COLOR[draft.method],
+              )}
+            >
+              {METHODS.map((m) => (
+                <option key={m} value={m} className="text-fg">
+                  {m}
+                </option>
+              ))}
+            </select>
+            <div className="min-w-0 flex-1">
+              <VariableField
+                value={draft.url}
+                onChange={onUrlChange}
+                suggestions={suggestions}
+                {...(scriptContext ? { variableContext: scriptContext } : {})}
+                aria-label="Request URL"
+                placeholder="{{baseUrl}}/path  — supports variables"
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm"
+              />
+            </div>
+          </>
+        )}
         {execute.isPending ? (
           <button
             type="button"
@@ -263,7 +397,31 @@ export function RequestEditor({
         )}
       </div>
 
+      {/* Built-in protocols: the dedicated payload editor for the type. */}
+      {builtinMeta && (
+        <div className="mt-3 max-w-3xl">
+          <builtinMeta.Editor
+            value={draft.pluginPayload ?? {}}
+            onChange={(pluginPayload) => patch({ pluginPayload })}
+            suggestions={suggestions}
+            {...(scriptContext ? { variableContext: scriptContext } : {})}
+          />
+        </div>
+      )}
+
+      {/* Plugin request types: the payload editor is the contribution's form. */}
+      {pluginType && (
+        <div className="mt-3 max-w-2xl">
+          <SchemaForm
+            schema={pluginType.payloadSchema}
+            value={draft.pluginPayload ?? {}}
+            onChange={(pluginPayload) => patch({ pluginPayload })}
+          />
+        </div>
+      )}
+
       {/* Tab bar */}
+      {!pluginType && (
       <div className="mt-3 flex gap-1 border-b border-border text-sm">
         {tabs.map((t) => (
           <button
@@ -272,7 +430,7 @@ export function RequestEditor({
             onClick={() => setTab(t.id)}
             className={cn(
               'border-b-2 px-3 py-2',
-              tab === t.id
+              activeTab === t.id
                 ? 'border-accent text-fg'
                 : 'border-transparent text-muted hover:text-fg',
             )}
@@ -282,10 +440,12 @@ export function RequestEditor({
           </button>
         ))}
       </div>
+      )}
 
       {/* Tab content */}
+      {!pluginType && (
       <div className="mt-3">
-        {tab === 'params' && (
+        {activeTab === 'params' && (
           <div className="rounded-md border border-border">
             <KeyValueEditor
               rows={draft.params}
@@ -294,7 +454,7 @@ export function RequestEditor({
             />
           </div>
         )}
-        {tab === 'headers' && (
+        {activeTab === 'headers' && (
           <div className="rounded-md border border-border">
             <KeyValueEditor
               rows={draft.headers}
@@ -304,17 +464,18 @@ export function RequestEditor({
             />
           </div>
         )}
-        {tab === 'variables' && scriptContext?.requestId && (
+        {activeTab === 'variables' && scriptContext?.requestId && (
           <RequestVariablesTab requestId={scriptContext.requestId} />
         )}
-        {tab === 'auth' && (
+        {activeTab === 'auth' && (
           <AuthEditor
             auth={draft.auth}
             onChange={(auth) => patch({ auth })}
             suggestions={suggestions}
+            allowInherit
           />
         )}
-        {tab === 'body' && (
+        {activeTab === 'body' && (
           <BodyEditor
             mode={draft.bodyMode}
             rawType={draft.rawType}
@@ -326,10 +487,11 @@ export function RequestEditor({
             onChange={patch}
           />
         )}
-        {tab === 'scripts' && (
+        {activeTab === 'scripts' && (
           <div className="flex gap-4">
             <div className="w-36 shrink-0 space-y-1">
-              {(['pre', 'post'] as const).map((p) => {
+              {/* Pre-request scripts are HTTP-only; protocols show post only. */}
+              {(builtinMeta ? (['post'] as const) : (['pre', 'post'] as const)).map((p) => {
                 const has = (
                   p === 'pre' ? draft.preRequestScript : draft.postResponseScript
                 ).trim();
@@ -340,7 +502,7 @@ export function RequestEditor({
                     onClick={() => setScriptPhase(p)}
                     className={cn(
                       'block w-full rounded-md px-3 py-1.5 text-left text-sm',
-                      scriptPhase === p ? 'bg-surface-2 text-fg' : 'text-muted hover:text-fg',
+                      effectivePhase === p ? 'bg-surface-2 text-fg' : 'text-muted hover:text-fg',
                     )}
                   >
                     {p === 'pre' ? 'Pre-request' : 'Post-response'}
@@ -351,7 +513,7 @@ export function RequestEditor({
             </div>
 
             <div className="min-w-0 flex-1 space-y-2">
-              {scriptPhase === 'pre' ? (
+              {effectivePhase === 'pre' ? (
                 <>
                   <p className="text-xs text-muted">
                     Runs <strong>before</strong> the request is sent. Set variables with{' '}
@@ -407,7 +569,7 @@ export function RequestEditor({
             </div>
           </div>
         )}
-        {tab === 'settings' && (
+        {activeTab === 'settings' && (
           <div className="grid max-w-md grid-cols-2 items-center gap-3 text-sm">
             <label htmlFor="timeout">Timeout (ms)</label>
             <input
@@ -441,6 +603,7 @@ export function RequestEditor({
           </div>
         )}
       </div>
+      )}
 
       {/* Response — dedicated, vertically resizable area with a history selector */}
       <div className="mt-4">
@@ -450,10 +613,27 @@ export function RequestEditor({
 
         <div className="mb-1 flex items-center justify-between">
           <span className="flex items-center gap-1.5 text-xs font-semibold text-muted">
-            Response
+            {showInteractive ? 'Connection' : 'Response'}
             {execute.isPending && <Loader2 size={12} className="animate-spin" />}
           </span>
-          {history.length > 0 && (
+          {supportsInteractive && (
+            <div className="flex overflow-hidden rounded-md border border-border text-xs">
+              {(['single', 'interactive'] as const).map((mode) => {
+                const on = (mode === 'interactive') === interactive;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setInteractive(mode === 'interactive')}
+                    className={cn('px-2 py-1', on ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg')}
+                  >
+                    {mode === 'single' ? 'Single-shot' : 'Interactive'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {!showInteractive && history.length > 0 && (
             <select
               value={viewIndex}
               onChange={(e) => setViewIndex(Number(e.target.value))}
@@ -462,7 +642,7 @@ export function RequestEditor({
             >
               {history.map((h, i) => (
                 <option key={h.at} value={i}>
-                  {new Date(h.at).toLocaleTimeString()} · {h.response.status}
+                  {new Date(h.at).toLocaleTimeString()} · {statusOf(h.response)}
                   {i === 0 ? ' (latest)' : ''}
                 </option>
               ))}
@@ -485,7 +665,11 @@ export function RequestEditor({
           style={{ height: respHeight }}
           className="overflow-auto rounded-md border border-border"
         >
-          <ResponseViewer response={shownResponse} loading={execute.isPending} />
+          {showInteractive ? (
+            <ConnectionPanel envelope={buildRequestEnvelope(draft, undefined, scriptCtx())} />
+          ) : (
+            <ResponseViewer response={shownResponse} loading={execute.isPending} />
+          )}
         </div>
       </div>
     </div>

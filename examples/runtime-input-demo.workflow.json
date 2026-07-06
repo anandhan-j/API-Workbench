@@ -1,0 +1,124 @@
+{
+  "formatVersion": 1,
+  "exportedAt": 1782864000000,
+  "appVersion": "0.1.0",
+  "rootId": "wf-deploy-notification",
+  "workflows": [
+    {
+      "id": "wf-deploy-notification",
+      "name": "Deploy Notification",
+      "description": "After shipping a release, run this to notify the deployment-tracking API. The run pauses and asks for the release version, the target environment (a dropdown whose choices map to base URLs), the components that went out (added as a list at run time), and any extra metadata (added as key-value pairs at run time) — then POSTs it all as one JSON payload. Uses httpbin.org so the response echoes exactly what was sent.",
+      "graph": {
+        "nodes": [
+          {
+            "id": "n-start",
+            "kind": "start",
+            "name": "Start",
+            "position": { "x": 60, "y": 220 },
+            "config": {}
+          },
+          {
+            "id": "n-input",
+            "kind": "user-input",
+            "name": "Release details",
+            "position": { "x": 280, "y": 220 },
+            "config": {
+              "message": "What did you ship, and where? Components and metadata grow as you add rows.",
+              "fields": [
+                {
+                  "kind": "string",
+                  "variable": "releaseName",
+                  "label": "Release version",
+                  "default": "",
+                  "options": [],
+                  "entries": {},
+                  "filledAtRuntime": false,
+                  "required": true
+                },
+                {
+                  "kind": "keyvalue",
+                  "variable": "baseUrl",
+                  "label": "Environment",
+                  "default": "",
+                  "options": [],
+                  "entries": {
+                    "Staging": "https://httpbin.org/anything/staging",
+                    "Production": "https://httpbin.org/anything/production"
+                  },
+                  "filledAtRuntime": false,
+                  "required": true
+                },
+                {
+                  "kind": "select",
+                  "variable": "components",
+                  "label": "Components deployed",
+                  "default": "",
+                  "options": [],
+                  "entries": {},
+                  "filledAtRuntime": true,
+                  "required": true
+                },
+                {
+                  "kind": "keyvalue",
+                  "variable": "metadata",
+                  "label": "Extra metadata (ticket, approver, …)",
+                  "default": "",
+                  "options": [],
+                  "entries": {},
+                  "filledAtRuntime": true,
+                  "required": false
+                }
+              ]
+            }
+          },
+          {
+            "id": "n-notify",
+            "kind": "request",
+            "name": "POST deploy notification",
+            "position": { "x": 520, "y": 220 },
+            "config": {
+              "type": "http",
+              "payload": {
+                "method": "POST",
+                "url": "{{baseUrl}}/deploy",
+                "headers": { "Content-Type": "application/json" },
+                "query": {},
+                "body": {
+                  "type": "json",
+                  "content": "{\n  \"release\": \"{{releaseName}}\",\n  \"components\": {{components}},\n  \"metadata\": {{metadata}}\n}"
+                }
+              },
+              "extract": []
+            }
+          },
+          {
+            "id": "n-summary",
+            "kind": "transform",
+            "name": "Summarize",
+            "position": { "x": 760, "y": 220 },
+            "config": {
+              "variable": "summary",
+              "engine": "template",
+              "input": "",
+              "expression": "Notified {{baseUrl}} that {{releaseName}} shipped with components {{components}}"
+            }
+          },
+          {
+            "id": "n-end",
+            "kind": "end",
+            "name": "End",
+            "position": { "x": 980, "y": 220 },
+            "config": {}
+          }
+        ],
+        "edges": [
+          { "id": "e-start-input", "source": "n-start", "target": "n-input" },
+          { "id": "e-input-notify", "source": "n-input", "target": "n-notify" },
+          { "id": "e-notify-summary", "source": "n-notify", "target": "n-summary" },
+          { "id": "e-summary-end", "source": "n-summary", "target": "n-end" }
+        ],
+        "groups": []
+      }
+    }
+  ]
+}

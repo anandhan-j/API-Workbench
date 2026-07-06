@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ExecutionResponse } from './execution';
+import { ProtocolResponse } from './protocol';
 
 /**
  * Transport DTOs for the Testing & Assertions engine (Phase 11).
@@ -77,7 +77,7 @@ export const TestReport = z.object({
 export type TestReport = z.infer<typeof TestReport>;
 
 export const RunTestsRequest = z.object({
-  response: ExecutionResponse,
+  response: ProtocolResponse,
   assertions: z.array(Assertion),
 });
 export type RunTestsRequest = z.infer<typeof RunTestsRequest>;

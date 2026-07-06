@@ -5,7 +5,6 @@ import type {
   WorkflowGraph,
   WorkflowGroup,
   WorkflowNode,
-  WorkflowNodeKind,
 } from '@shared/workflow';
 
 /**
@@ -24,7 +23,8 @@ import type {
 export type NodeDisplayStatus = NodeRunStatus | 'running';
 
 export interface FlowNodeData {
-  kind: WorkflowNodeKind;
+  /** A built-in {@link WorkflowNode} kind or a plugin kind (`plugin:...`). */
+  kind: string;
   name: string;
   config: WorkflowNode['config'];
   /** Reliability policy (Phase 14), edited via the inspector. */

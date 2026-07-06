@@ -1,11 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import type { ExecutionResponse } from './execution';
+import { toProtocolResponse, type ProtocolResponse } from './protocol';
 import type { ExtractRule } from './workflow';
 import { applyEngine, applyTransform, extractFromResponse, stringify } from './extract';
 
-function response(body: string, extra: Partial<ExecutionResponse> = {}): ExecutionResponse {
-  return {
+function response(body: string, extra: Partial<ExecutionResponse> = {}): ProtocolResponse {
+  return toProtocolResponse({
     ok: true,
     status: 200,
     statusText: 'OK',
@@ -18,7 +19,7 @@ function response(body: string, extra: Partial<ExecutionResponse> = {}): Executi
     redirects: [],
     retries: 0,
     ...extra,
-  };
+  });
 }
 
 const JSON_BODY = '{"data":{"id":5,"items":[{"id":7},{"id":8}]},"name":"ok"}';

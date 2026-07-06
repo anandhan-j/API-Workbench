@@ -1,20 +1,33 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ExternalLink, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  ChevronDown,
+  ExternalLink,
+  GripVertical,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-react';
 import { cn } from '../../lib/cn';
-import type { ExecutionResponse } from '@shared/execution';
+import type { HttpPayload, ProtocolResponse } from '@shared/protocol';
 import type {
   ExtractRule,
   NodePolicy,
   RequestNodeConfig,
   UserInputField,
+  UserInputFieldKind,
   Workflow,
   WorkflowNode,
 } from '@shared/workflow';
 import { extractFromResponse } from '@shared/extract';
+import { qualifiedContributionId } from '@shared/plugins';
 import { Modal } from '../../components/menu/Modal';
+import { KeyValueGrid, SchemaForm, StringListEditor } from '../../components/forms/SchemaForm';
+import { usePluginContributions } from '../plugins/use-plugins';
 import { RequestEditor } from '../runner/RequestEditor';
 import type { FlowNode } from './graph-mapping';
-import { NODE_META } from './node-meta';
+import { getNodeMeta } from './node-meta';
+import { getRequestTypeMeta } from '../runner/request-type-meta';
 import type { ProjectRequestRef } from './use-project-requests';
 import { draftToNodeConfig, nodeConfigToDraft } from './request-node-draft';
 import type { VariableContext } from '@shared/variable';
@@ -26,6 +39,49 @@ const fieldClass =
 const smallField =
   'rounded-md border border-border bg-bg px-2 py-1 text-xs outline-none focus:border-accent';
 const labelClass = 'block text-[11px] font-medium uppercase tracking-wide text-muted';
+
+/** The badge + target shown on a request node, for any protocol (ADR-0009). */
+function requestNodeSummary(
+  config: Record<string, unknown>,
+  pluginTypes: ReturnType<typeof usePluginContributions>['requestTypes'],
+): { badge: string; target: string } {
+  const type = (config.type as string | undefined) ?? 'http';
+  const payload = (config.payload ?? {}) as Record<string, unknown>;
+  if (type === 'http') {
+    const http = payload as Partial<HttpPayload>;
+    return { badge: http.method ?? 'GET', target: http.url ?? '' };
+  }
+  const meta = getRequestTypeMeta(type);
+  if (meta) return { badge: meta.badge, target: meta.targetOf(payload) };
+  const contribution = pluginTypes.find(
+    (rt) => qualifiedContributionId(rt.pluginId, rt.type) === type,
+  );
+  return {
+    badge: contribution?.summary.badge ?? 'REQ',
+    target: contribution ? String(payload[contribution.summary.targetKey] ?? '') : '',
+  };
+}
+
+/** Cycled per card so adjacent mapping/field cards are easy to tell apart at a glance. */
+const CARD_TINTS = [
+  { edge: 'border-l-sky-400/70', tint: 'bg-sky-400/10' },
+  { edge: 'border-l-emerald-400/70', tint: 'bg-emerald-400/10' },
+  { edge: 'border-l-violet-400/70', tint: 'bg-violet-400/10' },
+  { edge: 'border-l-amber-400/70', tint: 'bg-amber-400/10' },
+  { edge: 'border-l-rose-400/70', tint: 'bg-rose-400/10' },
+];
+const cardTint = (i: number): (typeof CARD_TINTS)[number] => CARD_TINTS[i % CARD_TINTS.length];
+
+/** Nearest ancestor that actually scrolls vertically (the inspector pane), if any. */
+function scrollableAncestor(el: HTMLElement | null): HTMLElement | null {
+  for (let node = el?.parentElement ?? null; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) {
+      return node;
+    }
+  }
+  return null;
+}
 
 const METHOD_COLOR: Record<string, string> = {
   GET: 'text-success',
@@ -40,7 +96,7 @@ interface NodeInspectorProps {
   node: FlowNode | null;
   workflows: Workflow[];
   /** The selected node's response from the last run, used for live preview. */
-  lastResponse?: ExecutionResponse;
+  lastResponse?: ProtocolResponse;
   /** Requests across the project's collections, for the request-node picker. */
   projectRequests?: ProjectRequestRef[];
   /** Imports a collection request's definition into the selected request node. */
@@ -75,6 +131,7 @@ export function NodeInspector({
   onDelete,
 }: NodeInspectorProps): JSX.Element {
   const [editorOpen, setEditorOpen] = useState(false);
+  const contributions = usePluginContributions();
   if (!node) {
     return (
       <div className="p-4 text-sm text-muted">
@@ -83,11 +140,15 @@ export function NodeInspector({
     );
   }
   const kind = node.data.kind;
-  const meta = NODE_META[kind];
+  const meta = getNodeMeta(kind);
   const Icon = meta.icon;
   const config = node.data.config as Record<string, unknown>;
   const set = (patch: Record<string, unknown>): void =>
     onConfig({ ...config, ...patch } as WorkflowNode['config']);
+  // A plugin node's editor is its contributed form schema (ADR-0007).
+  const pluginNode = kind.startsWith('plugin:')
+    ? contributions.nodes.find((c) => qualifiedContributionId(c.pluginId, c.kind) === kind)
+    : undefined;
 
   return (
     <div className="flex h-full flex-col gap-3 p-4">
@@ -107,6 +168,17 @@ export function NodeInspector({
             className={fieldClass}
           />
         </Field>
+      )}
+
+      {pluginNode && (
+        <>
+          <SchemaForm
+            schema={pluginNode.configSchema}
+            value={config}
+            onChange={(next) => onConfig(next as WorkflowNode['config'])}
+          />
+          <p className="text-[11px] text-muted">From plugin: {pluginNode.pluginName}</p>
+        </>
       )}
 
       {kind === 'request' && onImportRequest && (
@@ -129,10 +201,10 @@ export function NodeInspector({
             >
               <span className="flex min-w-0 items-center gap-2">
                 <span className="font-mono text-xs font-semibold text-accent">
-                  {(config.method as string) ?? 'GET'}
+                  {requestNodeSummary(config, contributions.requestTypes).badge}
                 </span>
                 <span className="truncate text-muted">
-                  {(config.url as string) || 'Configure…'}
+                  {requestNodeSummary(config, contributions.requestTypes).target || 'Configure…'}
                 </span>
               </span>
               <SlidersHorizontal size={14} className="shrink-0 text-muted" />
@@ -287,9 +359,11 @@ export function NodeInspector({
               className={fieldClass}
             />
           </Field>
-          <Field label="Cases (comma-separated)" id="node-cases">
-            <CasesField
-              cases={(config.cases as string[]) ?? []}
+          <Field label="Cases" id="node-cases">
+            <StringListEditor
+              label="Cases"
+              value={(config.cases as string[]) ?? []}
+              placeholder="e.g. free"
               onChange={(cases) => set({ cases })}
             />
           </Field>
@@ -404,6 +478,7 @@ export function NodeInspector({
             />
           </Field>
           <UserInputFieldsEditor
+            key={node.id}
             fields={(config.fields as UserInputField[]) ?? []}
             onChange={(fields) => set({ fields })}
             suggestions={suggestions}
@@ -463,6 +538,7 @@ export function NodeInspector({
                     draft,
                     (config.extract as ExtractRule[]) ?? [],
                     config.requestId as string | undefined,
+                    config.credentialId as string | undefined,
                   ),
                 );
                 setEditorOpen(false);
@@ -481,7 +557,7 @@ function ExtractEditor({
   onChange,
 }: {
   rules: ExtractRule[];
-  response?: ExecutionResponse;
+  response?: ProtocolResponse;
   onChange: (rules: ExtractRule[]) => void;
 }): JSX.Element {
   const update = (i: number, patch: Partial<ExtractRule>): void =>
@@ -499,8 +575,12 @@ function ExtractEditor({
         {rules.length === 0 && <p className="text-[11px] text-muted">No mappings yet.</p>}
         {rules.map((rule, i) => {
           const preview = response ? extractFromResponse(response, rule) : null;
+          const tint = cardTint(i);
           return (
-            <div key={i} className="flex flex-col gap-1 rounded-md border border-border p-1.5">
+            <div
+              key={i}
+              className={`flex flex-col gap-1 rounded-md border border-border border-l-2 p-1.5 ${tint.edge}`}
+            >
               <div className="flex flex-wrap items-center gap-1">
                 <input
                   value={rule.variable}
@@ -578,66 +658,357 @@ function UserInputFieldsEditor({
   suggestions: VariableSuggestion[];
   variableContext?: VariableContext;
 }): JSX.Element {
+  // Each card keeps a stable color id so its tint travels with it when the
+  // list is reordered (a position-based tint would repaint cards on move).
+  // Fields carry no persistent id, so the ids live here, mirroring every
+  // add/remove/reorder; a length mismatch means the list changed from outside
+  // (e.g. another node selected) and the ids are rebuilt.
+  const [colorIds, setColorIds] = useState<number[]>(() => fields.map((_, i) => i));
+  /** Last rendered top offset per card id, for the FLIP reorder animation below. */
+  const cardTops = useRef(new Map<string, number>());
+  useEffect(() => {
+    setColorIds((cur) => {
+      if (cur.length === fields.length) return cur;
+      // The list was replaced from outside — drop remembered card positions
+      // too, so the rebuilt cards don't play a phantom "moved" animation.
+      cardTops.current.clear();
+      return Array.from({ length: fields.length }, (_, i) => i);
+    });
+  }, [fields.length]);
+
   const update = (i: number, patch: Partial<UserInputField>): void =>
     onChange(fields.map((f, j) => (j === i ? { ...f, ...patch } : f)));
-  const add = (): void =>
-    onChange([...fields, { label: '', variable: '', default: '', secret: false }]);
-  const remove = (i: number): void => onChange(fields.filter((_, j) => j !== i));
+  const add = (): void => {
+    setColorIds((cur) => [...cur, Math.max(-1, ...cur) + 1]);
+    onChange([
+      ...fields,
+      {
+        kind: 'string',
+        label: '',
+        variable: '',
+        default: '',
+        options: [],
+        entries: {},
+        filledAtRuntime: false,
+        required: false,
+      },
+    ]);
+  };
+  const remove = (i: number): void => {
+    setColorIds((cur) => cur.filter((_, j) => j !== i));
+    onChange(fields.filter((_, j) => j !== i));
+  };
+
+  // Drag-to-reorder: a card is only draggable while its grip handle is pressed
+  // (`armedIndex`), so text selection inside the card's inputs keeps working.
+  const [armedIndex, setArmedIndex] = useState<number | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+
+  // Edge auto-scroll: while a drag is live, an rAF loop scrolls the inspector
+  // pane when the pointer sits near its top/bottom edge, so long field lists
+  // can be reordered across the fold. Refs (not state) feed the loop to avoid
+  // re-render churn on every dragover.
+  const listRef = useRef<HTMLDivElement>(null);
+  const pointerY = useRef(0);
+  const rafRef = useRef<number | null>(null);
+  // Document-level so the pointer keeps being tracked even when the drag
+  // leaves the fields list (e.g. hovering other sections while the pane scrolls).
+  const trackPointer = useRef((e: DragEvent): void => {
+    pointerY.current = e.clientY;
+  }).current;
+  const stopAutoScroll = (): void => {
+    document.removeEventListener('dragover', trackPointer);
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  };
+  const autoScrollStep = (): void => {
+    const pane = scrollableAncestor(listRef.current);
+    if (pane) {
+      const rect = pane.getBoundingClientRect();
+      const margin = 36;
+      const maxSpeed = 14;
+      const y = pointerY.current;
+      if (y < rect.top + margin) {
+        pane.scrollTop -= maxSpeed * Math.min(1, (rect.top + margin - y) / margin);
+      } else if (y > rect.bottom - margin) {
+        pane.scrollTop += maxSpeed * Math.min(1, (y - (rect.bottom - margin)) / margin);
+      }
+    }
+    rafRef.current = requestAnimationFrame(autoScrollStep);
+  };
+  const startAutoScroll = (y: number): void => {
+    pointerY.current = y;
+    document.addEventListener('dragover', trackPointer);
+    if (rafRef.current === null) rafRef.current = requestAnimationFrame(autoScrollStep);
+  };
+  useEffect(
+    () => (): void => {
+      document.removeEventListener('dragover', trackPointer);
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    },
+    [trackPointer],
+  );
+
+  // FLIP animation: positions (relative to the list, so pane scrolling doesn't
+  // skew the delta) are tracked every render, but cards only animate on the
+  // render caused by a drop — other layout shifts (typing, kind changes,
+  // toggles resizing a card) must not trigger slides.
+  const animateNextRender = useRef(false);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const shouldAnimate = animateNextRender.current;
+    animateNextRender.current = false;
+    const listTop = list.getBoundingClientRect().top;
+    const seen = new Set<string>();
+    for (const el of list.querySelectorAll<HTMLElement>('[data-card-id]')) {
+      const id = el.dataset.cardId as string;
+      seen.add(id);
+      const top = el.getBoundingClientRect().top - listTop;
+      const prevTop = cardTops.current.get(id);
+      if (
+        shouldAnimate &&
+        typeof el.animate === 'function' &&
+        prevTop !== undefined &&
+        Math.abs(prevTop - top) > 1
+      ) {
+        el.animate(
+          [{ transform: `translateY(${prevTop - top}px)` }, { transform: 'translateY(0)' }],
+          { duration: 180, easing: 'ease-out' },
+        );
+      }
+      cardTops.current.set(id, top);
+    }
+    for (const id of [...cardTops.current.keys()]) {
+      if (!seen.has(id)) cardTops.current.delete(id);
+    }
+  });
+
+  const resetDrag = (): void => {
+    setArmedIndex(null);
+    setDragIndex(null);
+    setOverIndex(null);
+    stopAutoScroll();
+  };
+  /** Moves the dragged field to the drop slot; the prompt shows fields in array order. */
+  const reorder = (from: number, to: number): void => {
+    if (from !== to) {
+      const next = [...fields];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      setColorIds((cur) => {
+        const ids = [...cur];
+        const [movedId] = ids.splice(from, 1);
+        ids.splice(to, 0, movedId);
+        return ids;
+      });
+      animateNextRender.current = true;
+      onChange(next);
+    }
+    resetDrag();
+  };
 
   return (
     <details open className="rounded-md border border-border">
       <summary className="cursor-pointer px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
         Fields (prompt → variables)
       </summary>
-      <div className="flex flex-col gap-2 border-t border-border p-2.5">
+      <div ref={listRef} className="flex flex-col gap-2 border-t border-border p-2.5">
         {fields.length === 0 && (
           <p className="text-[11px] text-muted">
             No fields — the node is a Continue/Cancel checkpoint.
           </p>
         )}
-        {fields.map((field, i) => (
-          <div key={i} className="flex flex-col gap-1 rounded-md border border-border p-1.5">
-            <div className="flex items-center gap-1">
-              <input
-                value={field.variable}
-                onChange={(e) => update(i, { variable: e.target.value })}
-                placeholder="variable"
-                className={`${smallField} w-28 font-mono`}
-              />
-              <input
-                value={field.label}
-                onChange={(e) => update(i, { label: e.target.value })}
-                placeholder="Label"
-                className={`${smallField} min-w-0 flex-1`}
-              />
-              <button
-                type="button"
-                aria-label="Remove field"
-                onClick={() => remove(i)}
-                className="ml-auto text-muted hover:text-rose-400"
-              >
-                <Trash2 size={13} />
-              </button>
+        {fields.map((field, i) => {
+          const kind = field.kind ?? 'string';
+          const tint = cardTint(colorIds[i] ?? i);
+          return (
+            <div
+              key={colorIds[i] ?? i}
+              data-card-id={colorIds[i] ?? i}
+              draggable={armedIndex === i}
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = 'move';
+                setDragIndex(i);
+                startAutoScroll(e.clientY);
+              }}
+              onDragOver={(e) => {
+                if (dragIndex === null) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (overIndex !== i) setOverIndex(i);
+              }}
+              onDragLeave={(e) => {
+                // dragleave also fires when the pointer crosses into a child of
+                // the card; only clear the highlight on a true exit.
+                if (overIndex === i && !e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                  setOverIndex(null);
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragIndex !== null) reorder(dragIndex, i);
+              }}
+              onDragEnd={resetDrag}
+              className={cn(
+                `overflow-hidden rounded-md border border-border border-l-2 ${tint.edge}`,
+                dragIndex === i && 'opacity-40',
+                overIndex === i && dragIndex !== i && 'border-accent ring-1 ring-accent',
+              )}
+            >
+              <div className={`flex items-center gap-1.5 border-b border-border p-1.5 ${tint.tint}`}>
+                <button
+                  type="button"
+                  aria-label={`Drag to reorder field ${i + 1}`}
+                  title="Drag to reorder (fields appear in this order in the prompt)"
+                  onMouseDown={() => setArmedIndex(i)}
+                  onMouseUp={() => setArmedIndex(null)}
+                  className="shrink-0 cursor-grab text-muted hover:text-fg active:cursor-grabbing"
+                >
+                  <GripVertical size={13} />
+                </button>
+                <input
+                  value={field.variable}
+                  onChange={(e) => update(i, { variable: e.target.value })}
+                  placeholder="variable"
+                  className={`${smallField} w-0 flex-1 font-mono`}
+                />
+                <input
+                  value={field.label}
+                  onChange={(e) => update(i, { label: e.target.value })}
+                  placeholder="Label"
+                  className={`${smallField} w-0 flex-1`}
+                />
+                <button
+                  type="button"
+                  aria-label="Remove field"
+                  onClick={() => remove(i)}
+                  className="shrink-0 rounded p-0.5 text-muted hover:text-rose-400"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+              <div className="flex flex-col gap-2 p-2">
+                <div className="flex items-center gap-2">
+                  <select
+                    value={kind}
+                    onChange={(e) =>
+                      update(i, {
+                        kind: e.target.value as UserInputFieldKind,
+                        filledAtRuntime: false,
+                      })
+                    }
+                    aria-label="Field kind"
+                    className={`${smallField} min-w-0 flex-1`}
+                  >
+                    <option value="string">Text</option>
+                    <option value="secret">Secret (masked)</option>
+                    <option value="number">Number</option>
+                    <option value="boolean">Yes / No</option>
+                    <option value="select">Dropdown / List</option>
+                    <option value="keyvalue">Key–value grid</option>
+                  </select>
+                  {kind !== 'boolean' && (
+                    <label
+                      className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[11px] text-muted"
+                      title="The prompt refuses submission while this field is empty"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={field.required ?? false}
+                        onChange={(e) => update(i, { required: e.target.checked })}
+                      />
+                      Required
+                    </label>
+                  )}
+                  {kind === 'boolean' && (
+                    <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[11px] text-muted">
+                      <input
+                        type="checkbox"
+                        checked={(field.default ?? '').trim().toLowerCase() === 'true'}
+                        onChange={(e) => update(i, { default: e.target.checked ? 'true' : '' })}
+                      />
+                      Default to Yes
+                    </label>
+                  )}
+                </div>
+                {(kind === 'string' ||
+                  kind === 'secret' ||
+                  kind === 'number' ||
+                  (kind === 'select' && !field.filledAtRuntime)) && (
+                  <VariableField
+                    value={field.default}
+                    onChange={(value) => update(i, { default: value })}
+                    suggestions={suggestions}
+                    variableContext={variableContext}
+                    aria-label="Default (template)"
+                    placeholder={
+                      kind === 'number'
+                        ? 'Default (template, e.g. 42)'
+                        : 'Default (template, e.g. {{token}})'
+                    }
+                    className={`${smallField} w-full font-mono`}
+                  />
+                )}
+                {(kind === 'select' || kind === 'keyvalue') && (
+                  <>
+                    <label
+                      className="flex w-fit cursor-pointer items-center gap-1.5 text-[11px] text-muted"
+                      title={`The user builds the ${
+                        kind === 'select' ? 'list of items' : 'key–value grid'
+                      } in the prompt; stored in the variable as JSON`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={field.filledAtRuntime ?? false}
+                        onChange={(e) => update(i, { filledAtRuntime: e.target.checked })}
+                      />
+                      Filled at run time
+                    </label>
+                    {(field.filledAtRuntime ?? false) ? (
+                      <p className="rounded-md bg-surface-2/60 px-2 py-1.5 text-[11px] leading-relaxed text-muted">
+                        The user builds the {kind === 'select' ? 'list of items' : 'key–value grid'}{' '}
+                        in the prompt; stored in the variable as JSON.
+                      </p>
+                    ) : kind === 'select' ? (
+                      <div className="flex flex-col gap-1">
+                        <span
+                          className="text-[10px] font-medium uppercase tracking-wide text-muted"
+                          title="Shown as a dropdown at run time"
+                        >
+                          Choices
+                        </span>
+                        <StringListEditor
+                          label={`${field.label || field.variable || `Field ${i + 1}`} choices`}
+                          value={field.options ?? []}
+                          placeholder="e.g. staging"
+                          onChange={(options) => update(i, { options })}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        <span
+                          className="text-[10px] font-medium uppercase tracking-wide text-muted"
+                          title="Shown as a dropdown at run time — the key is the label, the value is what's stored"
+                        >
+                          Entries <span className="normal-case">(key = label, value = stored)</span>
+                        </span>
+                        <KeyValueGrid
+                          label={`${field.label || field.variable || `Field ${i + 1}`} entries`}
+                          value={field.entries ?? {}}
+                          onChange={(entries) => update(i, { entries })}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-            <VariableField
-              value={field.default}
-              onChange={(value) => update(i, { default: value })}
-              suggestions={suggestions}
-              variableContext={variableContext}
-              aria-label="Default (template)"
-              placeholder="Default (template, e.g. {{token}})"
-              className={`${smallField} w-full font-mono`}
-            />
-            <label className="flex items-center gap-1.5 text-[11px] text-muted">
-              <input
-                type="checkbox"
-                checked={field.secret}
-                onChange={(e) => update(i, { secret: e.target.checked })}
-              />
-              Mask input (secret)
-            </label>
-          </div>
-        ))}
+          );
+        })}
         <button
           type="button"
           onClick={add}
@@ -709,49 +1080,6 @@ function ReliabilitySection({
         </Field>
       </div>
     </details>
-  );
-}
-
-/** Splits the raw "a, b, c" text into trimmed, non-empty case labels. */
-function parseCases(text: string): string[] {
-  return text
-    .split(',')
-    .map((c) => c.trim())
-    .filter(Boolean);
-}
-
-/**
- * Comma-separated case editor for the switch node. It keeps the raw text in
- * local state so an in-progress comma or trailing space survives editing —
- * parsing the array directly on every keystroke (and re-joining it back into
- * `value`) would strip the comma the moment it's typed. The parsed array is
- * pushed up on change; local text resyncs only when the cases change from
- * outside (e.g. selecting a different node), not from our own edits.
- */
-function CasesField({
-  cases,
-  onChange,
-}: {
-  cases: string[];
-  onChange: (cases: string[]) => void;
-}): JSX.Element {
-  const [text, setText] = useState(cases.join(', '));
-  useEffect(() => {
-    if (JSON.stringify(parseCases(text)) !== JSON.stringify(cases)) {
-      setText(cases.join(', '));
-    }
-  }, [cases, text]);
-  return (
-    <input
-      id="node-cases"
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value);
-        onChange(parseCases(e.target.value));
-      }}
-      placeholder="free, pro, enterprise"
-      className={fieldClass}
-    />
   );
 }
 

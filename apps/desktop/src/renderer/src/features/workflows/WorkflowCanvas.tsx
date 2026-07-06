@@ -29,7 +29,7 @@ import type {
 } from '@shared/workflow';
 import { nodeTypes } from './WorkflowNodeView';
 import { DND_MIME } from './NodePalette';
-import { NODE_META } from './node-meta';
+import { NODE_META, getNodeMeta, getPluginNodeContribution } from './node-meta';
 import {
   isElementNode,
   toFlow,
@@ -110,6 +110,10 @@ function Canvas({
       ),
       edges: f.edges,
     };
+    // Keyed on the id alone: the canvas owns its own editing history, so the
+    // graph must reseed only when a *different* workflow opens — not when the
+    // parent echoes back the graph this canvas just reported upward.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflow.id]);
 
   const [history, setHistory] = useState<History<GraphState>>(() => initHistory(initial));
@@ -128,11 +132,14 @@ function Canvas({
   presentRef.current = history.present;
   selectedRef.current = selectedIds;
 
-  // Reseed when the user opens a different workflow.
+  // Reseed when the user opens a different workflow. `onSelect` is deliberately
+  // not a dependency: parents pass inline handlers, and re-running this reset on
+  // every parent render would wipe the user's canvas state.
   useEffect(() => {
     setHistory(initHistory(initial));
     setSelectedIds(new Set());
     onSelect(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial]);
 
   // Overlay run statuses onto node cards whenever a run completes. Bail out
@@ -198,10 +205,11 @@ function Canvas({
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
-      const kind = event.dataTransfer.getData(DND_MIME) as WorkflowNode['kind'];
-      if (!kind || !NODE_META[kind]) return;
+      const kind = event.dataTransfer.getData(DND_MIME);
+      // Accept built-in kinds and any plugin node kind currently contributed.
+      if (!kind || !(kind in NODE_META || getPluginNodeContribution(kind))) return;
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-      const meta = NODE_META[kind];
+      const meta = getNodeMeta(kind);
       const node: FlowNode = {
         id: uuid(),
         type: 'workbench',
@@ -587,7 +595,7 @@ function NodeResultHover({
               result.response.ok ? 'text-emerald-400' : 'text-rose-400',
             )}
           >
-            {result.response.status} {result.response.statusText}
+            {result.response.summary.label}
           </span>
           {` · ${result.response.sizeBytes} B`}
         </p>

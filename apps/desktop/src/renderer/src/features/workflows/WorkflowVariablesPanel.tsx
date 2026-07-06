@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Check, Copy } from 'lucide-react';
 import type { VariableContext, VariableScope } from '@shared/variable';
 import type { WorkflowGraph } from '@shared/workflow';
 import { invoke, isBridgeAvailable } from '../../lib/ipc';
@@ -99,6 +100,18 @@ export function WorkflowVariablesPanel({
     return values.data?.[name] ?? <span className="text-muted/60">…</span>;
   };
 
+  /** The plain string to copy, or null when there is nothing concrete to copy
+   *  (masked secret, a step-produced value not yet set, or still loading). */
+  const copyValueFor = (name: string): string | null => {
+    if (produced.has(name)) {
+      const live = runtimeValues?.[name];
+      return live !== undefined && live !== '' ? live : null;
+    }
+    if (scopeByName.get(name)?.secret) return null;
+    const v = values.data?.[name];
+    return typeof v === 'string' && v !== '' ? v : null;
+  };
+
   return (
     <div className="flex flex-col gap-2.5 p-2">
       {groups.map(({ scope, names: groupNames }) => (
@@ -108,10 +121,13 @@ export function WorkflowVariablesPanel({
           </p>
           <dl className="rounded border border-border">
             {groupNames.map((name) => (
-              <div key={name} className="border-b border-border px-2 py-1 last:border-0">
-                <dt className="truncate font-mono text-xs text-accent">{`{{${name}}}`}</dt>
-                <dd className="truncate font-mono text-[11px] text-muted">{valueFor(name)}</dd>
-              </div>
+              <VariableRow
+                key={name}
+                name={name}
+                value={valueFor(name)}
+                copyValue={copyValueFor(name)}
+                tone="resolved"
+              />
             ))}
           </dl>
         </div>
@@ -123,13 +139,71 @@ export function WorkflowVariablesPanel({
           </p>
           <dl className="rounded border border-border">
             {unresolved.map((name) => (
-              <div key={name} className="border-b border-border px-2 py-1 last:border-0">
-                <dt className="truncate font-mono text-xs text-accent">{`{{${name}}}`}</dt>
-                <dd className="font-mono text-[11px] text-warning">unresolved</dd>
-              </div>
+              <VariableRow
+                key={name}
+                name={name}
+                value="unresolved"
+                copyValue={null}
+                tone="unresolved"
+              />
             ))}
           </dl>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One variable row. Reveals a copy button on hover that writes the resolved
+ * value to the clipboard (with a brief "copied" tick), and surfaces the full,
+ * otherwise-truncated value in a native tooltip.
+ */
+function VariableRow({
+  name,
+  value,
+  copyValue,
+  tone,
+}: {
+  name: string;
+  value: JSX.Element | string;
+  copyValue: string | null;
+  tone: 'resolved' | 'unresolved';
+}): JSX.Element {
+  const [copied, setCopied] = useState(false);
+  const copy = (): void => {
+    if (copyValue == null) return;
+    void navigator.clipboard
+      ?.writeText(copyValue)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      })
+      .catch(() => undefined);
+  };
+  return (
+    <div className="group flex items-center gap-1 border-b border-border px-2 py-1 last:border-0">
+      <div className="min-w-0 flex-1">
+        <dt className="truncate font-mono text-xs text-accent" title={`{{${name}}}`}>
+          {`{{${name}}}`}
+        </dt>
+        <dd
+          className={`truncate font-mono text-[11px] ${tone === 'unresolved' ? 'text-warning' : 'text-muted'}`}
+          {...(copyValue != null ? { title: copyValue } : {})}
+        >
+          {value}
+        </dd>
+      </div>
+      {copyValue != null && (
+        <button
+          type="button"
+          onClick={copy}
+          aria-label={`Copy value of ${name}`}
+          title={copied ? 'Copied' : 'Copy value'}
+          className="shrink-0 rounded p-0.5 text-muted opacity-0 transition hover:text-fg focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+        </button>
       )}
     </div>
   );

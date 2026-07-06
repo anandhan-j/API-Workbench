@@ -1,5 +1,5 @@
 import vm from 'node:vm';
-import type { ExecutionResponse } from '@shared/execution';
+import { httpViewOf, type ProtocolResponse } from '@shared/protocol';
 import type { VariableContext, VariableScope } from '@shared/variable';
 import type { ScriptRunResult, ScriptTestResult, ScriptVarChange, ScriptVarScope } from '@shared/scripting';
 
@@ -27,7 +27,7 @@ export interface ScriptRequestInfo {
 
 export interface RunPostResponseDeps {
   code: string;
-  response: ExecutionResponse;
+  response: ProtocolResponse;
   context: VariableContext;
   variables: VariableBackend;
   timeoutMs?: number;
@@ -213,7 +213,10 @@ function headerGetter(headers: Record<string, string>): (name: string) => string
  * Postman-compatible `pm` API. Variable mutations are applied immediately.
  */
 export function runPostResponseScript(deps: RunPostResponseDeps): ScriptRunResult {
-  const { code, response, context, variables, timeoutMs = 2000 } = deps;
+  const { code, context, variables, timeoutMs = 2000 } = deps;
+  // Scripts see the flat HTTP-flavoured view: real fields for 'http' responses,
+  // summary/metadata degradation for plugin request types (ADR-0009).
+  const response = httpViewOf(deps.response);
   const { state, log, pmShared } = buildCore(variables, context);
   const getHeader = headerGetter(response.headers);
 

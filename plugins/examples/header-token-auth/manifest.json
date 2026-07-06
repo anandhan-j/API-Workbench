@@ -1,0 +1,45 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.header-token",
+  "name": "Header Token Auth",
+  "version": "1.0.0",
+  "description": "A custom auth provider that sends a static token in a configurable header.",
+  "publisher": "API Workbench examples",
+  "license": "MIT",
+  "main": "dist/index.cjs",
+  "engines": { "sdk": "^1.0.0" },
+  "capabilities": [],
+  "contributes": {
+    "authProviders": [
+      {
+        "type": "header-token",
+        "label": "Header token",
+        "icon": "key",
+        "configSchema": {
+          "fields": [
+            {
+              "kind": "string",
+              "key": "header",
+              "label": "Header name",
+              "required": true,
+              "default": "X-Api-Token"
+            },
+            {
+              "kind": "secret",
+              "key": "token",
+              "label": "Token",
+              "required": true
+            },
+            {
+              "kind": "string",
+              "key": "prefix",
+              "label": "Value prefix",
+              "description": "Optional prefix, e.g. \"Token \".",
+              "default": ""
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -14,7 +14,7 @@ import {
   RequestSummary,
   TreeNode,
   RequestHistoryEntry,
-  HttpMethod,
+  MethodBadge,
   CollectionSourceInfo,
   CreateCollectionInput,
   CreateFolderInput,
@@ -23,8 +23,21 @@ import {
 import { RequestDetailFull, SaveRequestInput } from './request-details';
 import { ImportRequest, ImportResult } from './openapi';
 import { SyncRequest, SyncResult } from './sync';
-import { CredentialMeta, SaveCredentialInput } from './auth';
-import { ExecutionRequest, ExecutionResponse } from './execution';
+import { CredentialMeta, SaveCredentialInput, WireAuthConfig } from './auth';
+import {
+  RequestEnvelope,
+  ProtocolResponse,
+  ConnectionEvent,
+  ConnectionStateEvent,
+} from './protocol';
+import {
+  Capability,
+  InstalledPlugin,
+  PluginContributionIndex,
+  PluginDialogRequest,
+  PluginDialogResponse,
+  PluginInspection,
+} from './plugins';
 import { RunTestsRequest, TestReport } from './testing';
 import { ScriptRunRequest, ScriptRunResult, PreScriptRunRequest } from './scripting';
 import { CollectionVersion, VersionDiff, VersionSnapshot, RestoreResult } from './version';
@@ -131,9 +144,20 @@ export const IpcChannels = {
     response: z.array(Collection),
   },
   'collection.create': { request: CreateCollectionInput, response: Collection },
+  'collection.get': { request: IdOnly, response: Collection },
   'collection.rename': {
     request: z.object({ id: z.string(), name: z.string().min(1) }),
     response: Collection,
+  },
+  /** Sets a collection's own authorization (top of the inheritance chain; null = no auth). */
+  'collection.updateAuth': {
+    request: z.object({ id: z.string(), auth: WireAuthConfig.nullable() }),
+    response: Collection,
+  },
+  /** Sets every folder and request in the collection to "inherit from parent". */
+  'collection.applyAuthToChildren': {
+    request: IdOnly,
+    response: z.object({ folders: z.number(), requests: z.number() }),
   },
   'collection.delete': { request: IdOnly, response: Empty },
   'collection.tree': {
@@ -147,11 +171,22 @@ export const IpcChannels = {
 
   // --- Folders ---
   'folder.create': { request: CreateFolderInput, response: Folder },
+  'folder.get': { request: IdOnly, response: Folder },
   'folder.rename': {
     request: z.object({ id: z.string(), name: z.string().min(1) }),
     response: Folder,
   },
   'folder.move': { request: z.object({ id: z.string(), parentId: NullableId }), response: Folder },
+  /** Sets a folder's own authorization config (null = inherit from parent). */
+  'folder.updateAuth': {
+    request: z.object({ id: z.string(), auth: WireAuthConfig.nullable() }),
+    response: Folder,
+  },
+  /** Sets every descendant folder and request to "inherit from parent". */
+  'folder.applyAuthToChildren': {
+    request: IdOnly,
+    response: z.object({ folders: z.number(), requests: z.number() }),
+  },
   'folder.delete': { request: IdOnly, response: Empty },
 
   // --- Requests ---
@@ -164,7 +199,7 @@ export const IpcChannels = {
     request: z.object({
       id: z.string(),
       name: z.string().optional(),
-      method: HttpMethod.optional(),
+      method: MethodBadge.optional(),
       url: z.string().optional(),
     }),
     response: RequestSummary,
@@ -207,6 +242,19 @@ export const IpcChannels = {
     }),
   },
 
+  // --- Native path picker (for gRPC .proto files: path, not content) ---
+  'dialog.openPath': {
+    request: z.object({
+      filters: z
+        .array(z.object({ name: z.string(), extensions: z.array(z.string()) }))
+        .optional(),
+    }),
+    response: z.object({
+      canceled: z.boolean(),
+      path: z.string().optional(),
+    }),
+  },
+
   // --- OpenAPI import / sync ---
   'openapi.import': { request: ImportRequest, response: ImportResult },
   'openapi.sync': { request: SyncRequest, response: SyncResult },
@@ -221,10 +269,24 @@ export const IpcChannels = {
 
   // --- Request execution (Phase 10) ---
   'request.execute': {
-    request: z.object({ request: ExecutionRequest }),
-    response: ExecutionResponse,
+    request: z.object({ request: RequestEnvelope }),
+    response: ProtocolResponse,
   },
   'request.cancel': { request: z.object({ id: z.string() }), response: z.object({}).strict() },
+
+  // --- Interactive connection sessions (Phase 7: live WebSocket/SSE) ---
+  'connection.open': {
+    request: z.object({ sessionId: z.string(), request: RequestEnvelope }),
+    response: z.object({}).strict(),
+  },
+  'connection.send': {
+    request: z.object({ sessionId: z.string(), data: z.string() }),
+    response: z.object({}).strict(),
+  },
+  'connection.close': {
+    request: z.object({ sessionId: z.string() }),
+    response: z.object({}).strict(),
+  },
 
   // --- Testing & assertions (Phase 11) ---
   'test.run': { request: RunTestsRequest, response: TestReport },
@@ -306,16 +368,43 @@ export const IpcChannels = {
   'backup.create': { request: Empty, response: BackupInfo },
   'backup.list': { request: Empty, response: z.array(BackupInfo) },
   'backup.restore': { request: IdOnly, response: BackupInfo },
+
+  // --- Plugins (Phase 16, ADR-0007) ---
+  'plugins.list': { request: Empty, response: z.object({ plugins: z.array(InstalledPlugin) }) },
+  'plugins.inspect': { request: z.object({ path: z.string() }), response: PluginInspection },
+  'plugins.install': {
+    request: z.object({ path: z.string(), grantedCapabilities: z.array(Capability).default([]) }),
+    response: InstalledPlugin,
+  },
+  'plugins.installDev': {
+    request: z.object({ path: z.string(), grantedCapabilities: z.array(Capability).default([]) }),
+    response: InstalledPlugin,
+  },
+  'plugins.uninstall': { request: IdOnly, response: Empty },
+  'plugins.setEnabled': {
+    request: z.object({ id: z.string(), enabled: z.boolean() }),
+    response: InstalledPlugin,
+  },
+  'plugins.contributions': { request: Empty, response: PluginContributionIndex },
+  /** Settles a plugin dialog pushed via the `plugin.dialogRequest` event. */
+  'plugin.dialogRespond': { request: PluginDialogResponse, response: Empty },
 } as const;
 
 export type IpcChannelName = keyof typeof IpcChannels;
 export type IpcRequest<C extends IpcChannelName> = z.infer<(typeof IpcChannels)[C]['request']>;
 export type IpcResponse<C extends IpcChannelName> = z.infer<(typeof IpcChannels)[C]['response']>;
 
+export const PluginsChangedEvent = z.object({ reason: z.string() });
+export type PluginsChangedEvent = z.infer<typeof PluginsChangedEvent>;
+
 export const IpcEvents = {
   'dispatch.event': DispatchEvent,
   'workflow.awaitingInput': WorkflowInputRequest,
   'workflow.nodeProgress': WorkflowProgressEvent,
+  'plugins.changed': PluginsChangedEvent,
+  'plugin.dialogRequest': PluginDialogRequest,
+  'connection.event': ConnectionEvent,
+  'connection.state': ConnectionStateEvent,
 } as const;
 
 export type IpcEventName = keyof typeof IpcEvents;
@@ -329,4 +418,8 @@ export interface WorkbenchApi {
   onDispatchEvent(listener: (event: DispatchEvent) => void): () => void;
   onWorkflowAwaitingInput(listener: (event: WorkflowInputRequest) => void): () => void;
   onWorkflowNodeProgress(listener: (event: WorkflowProgressEvent) => void): () => void;
+  onPluginsChanged(listener: (event: PluginsChangedEvent) => void): () => void;
+  onPluginDialogRequest(listener: (event: PluginDialogRequest) => void): () => void;
+  onConnectionEvent(listener: (event: ConnectionEvent) => void): () => void;
+  onConnectionState(listener: (event: ConnectionStateEvent) => void): () => void;
 }

@@ -32,7 +32,8 @@ export type NormalizedOperation = z.infer<typeof NormalizedOperation>;
 
 /** A spec reduced to the parts the generator needs. */
 export const NormalizedSpec = z.object({
-  specVersion: SpecVersion,
+  /** 'openapi-3' | 'swagger-2', or a plugin importer's qualified id (ADR-0007). */
+  specVersion: z.string(),
   title: z.string(),
   apiVersion: z.string(),
   baseUrl: z.string(),
@@ -54,6 +55,8 @@ export const ImportRequest = z.object({
   projectId: z.string(),
   name: z.string().optional(),
   source: ImportSource,
+  /** Explicit importer to use; omitted → auto-detect (built-ins first). */
+  importerId: z.string().optional(),
 });
 export type ImportRequest = z.infer<typeof ImportRequest>;
 
@@ -61,8 +64,10 @@ export type ImportRequest = z.infer<typeof ImportRequest>;
 export const ImportResult = z.object({
   collectionId: z.string(),
   collectionName: z.string(),
-  specVersion: SpecVersion,
-  format: SpecFormat,
+  /** 'openapi-3' | 'swagger-2', or a plugin importer's qualified id. */
+  specVersion: z.string(),
+  /** 'json' | 'yaml' for the built-ins; a plugin importer's format label otherwise. */
+  format: z.string(),
   title: z.string(),
   apiVersion: z.string(),
   baseUrl: z.string(),

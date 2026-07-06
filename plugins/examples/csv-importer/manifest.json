@@ -1,0 +1,22 @@
+{
+  "manifestVersion": 1,
+  "id": "com.example.csv-importer",
+  "name": "CSV Importer",
+  "version": "1.0.0",
+  "description": "Imports a collection from CSV rows of name,method,url,folder.",
+  "publisher": "API Workbench examples",
+  "license": "MIT",
+  "main": "dist/index.cjs",
+  "engines": { "sdk": "^1.0.0" },
+  "capabilities": [],
+  "contributes": {
+    "importers": [
+      {
+        "id": "csv",
+        "label": "CSV endpoints",
+        "sourceTypes": ["text"],
+        "fileExtensions": [".csv"]
+      }
+    ]
+  }
+}

@@ -30,6 +30,14 @@ export const Preference = z.object({
 });
 export type Preference = z.infer<typeof Preference>;
 
+/**
+ * Preference key: validate TLS server certificates for outbound HTTP requests.
+ * Defaults to `true`; setting it to `false` accepts self-signed / invalid
+ * certificates (the "SSL certificate verification" toggle). Shared so the main
+ * transport and the renderer settings UI agree on the key.
+ */
+export const PREF_VERIFY_SSL = 'network.verifySsl';
+
 export const BackupInfo = z.object({
   id: z.string(),
   fileName: z.string(),

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import type { ExecutionResponse } from '@shared/execution';
+import type { ProtocolResponse } from '@shared/protocol';
 import {
   WORKFLOW_EXPORT_FORMAT,
+  isNodeKind,
   type CreateWorkflowInput,
   type ImportWorkflowInput,
   type RequestNodeConfig,
@@ -21,6 +22,7 @@ import type { PersistenceService } from '../persistence/persistence-service';
 import type { WorkflowRow } from '../persistence/schema';
 import { WorkflowError } from './errors';
 import { WorkflowEngine, type RunContext, type RunControl } from './workflow-engine';
+import type { NodeExecutorRegistry } from '../plugins/registries/node-executor-registry';
 
 /** Suspends a run at a user-input node until the user replies (injected by the IPC layer). */
 export type RequestInput = (
@@ -41,12 +43,17 @@ export interface WorkflowServiceDeps {
     config: RequestNodeConfig,
     ctx: RunContext,
     signal?: AbortSignal,
-  ): Promise<ExecutionResponse>;
+  ): Promise<ProtocolResponse>;
   evaluate(template: string, ctx: RunContext): string;
   /** Persists a set-variable node's value to a durable scope (workspace/global). */
   setVariable?(scope: 'workspace' | 'global', key: string, value: string, ctx: RunContext): void;
   /** Stamped into export bundles for diagnostics; optional. */
   appVersion?: string;
+  /**
+   * Node executor registry shared with the plugin system (Phase 16); omitted →
+   * the engine's built-in executors alone.
+   */
+  nodeExecutors?: NodeExecutorRegistry;
 }
 
 /**
@@ -58,7 +65,7 @@ function remapSubWorkflowIds(graph: WorkflowGraph, idMap: Map<string, string>): 
   return {
     ...graph,
     nodes: graph.nodes.map((node) =>
-      node.kind === 'sub-workflow' && idMap.has(node.config.workflowId)
+      isNodeKind(node, 'sub-workflow') && idMap.has(node.config.workflowId)
         ? {
             ...node,
             config: { ...node.config, workflowId: idMap.get(node.config.workflowId) as string },
@@ -210,7 +217,7 @@ export class WorkflowService {
         graph: row.graph,
       });
       for (const node of row.graph.nodes) {
-        if (node.kind === 'sub-workflow' && node.config.workflowId) {
+        if (isNodeKind(node, 'sub-workflow') && node.config.workflowId) {
           queue.push(node.config.workflowId);
         }
       }
@@ -267,14 +274,17 @@ export class WorkflowService {
     onProgress?: ProgressReporter,
   ): Promise<WorkflowRunResult> {
     const workflow = this.get(request.workflowId); // validates existence
-    const engine = new WorkflowEngine({
-      executeRequest: this.deps.executeRequest,
-      evaluate: this.deps.evaluate,
-      loadWorkflow: (id) => this.get(id),
-      ...(this.deps.setVariable ? { setVariable: this.deps.setVariable } : {}),
-      ...(requestInput ? { requestInput } : {}),
-      ...(onProgress ? { onNodeProgress: onProgress } : {}),
-    });
+    const engine = new WorkflowEngine(
+      {
+        executeRequest: this.deps.executeRequest,
+        evaluate: this.deps.evaluate,
+        loadWorkflow: (id) => this.get(id),
+        ...(this.deps.setVariable ? { setVariable: this.deps.setVariable } : {}),
+        ...(requestInput ? { requestInput } : {}),
+        ...(onProgress ? { onNodeProgress: onProgress } : {}),
+      },
+      this.deps.nodeExecutors,
+    );
     return engine.run(workflow, {
       ...(request.runtime !== undefined ? { runtime: request.runtime } : {}),
       ...(request.workspaceId ? { workspaceId: request.workspaceId } : {}),

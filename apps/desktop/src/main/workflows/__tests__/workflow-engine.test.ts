@@ -1,19 +1,14 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import type { ExecutionResponse } from '@shared/execution';
-import type {
-  RequestNodeConfig,
-  WorkflowDetail,
-  WorkflowGraph,
-  WorkflowNode,
-} from '@shared/workflow';
+import { toProtocolResponse, type HttpPayload, type ProtocolResponse } from '@shared/protocol';
+import type { WorkflowDetail, WorkflowGraph, WorkflowNode } from '@shared/workflow';
 import { WorkflowEngine, type WorkflowEnginePorts, type RunContext } from '../workflow-engine';
 import { RunController } from '../run-controller';
 
 const pos = { x: 0, y: 0 };
 
-function okResponse(status = 200): ExecutionResponse {
-  return {
+function okResponse(status = 200): ProtocolResponse {
+  return toProtocolResponse({
     ok: status < 400,
     status,
     statusText: 'OK',
@@ -25,7 +20,7 @@ function okResponse(status = 200): ExecutionResponse {
     timings: { startedAt: 0, totalMs: 1 },
     redirects: [],
     retries: 0,
-  };
+  });
 }
 
 /** A deterministic clock that advances by one tick per read. */
@@ -90,19 +85,22 @@ const setVar = (id: string, key: string, value: string): WorkflowNode => ({
   position: pos,
   config: { key, value },
 });
-const request = (id: string, config?: Partial<RequestNodeConfig>): WorkflowNode => ({
+const request = (id: string, payload?: Partial<HttpPayload>): WorkflowNode => ({
   id,
   kind: 'request',
   name: `req ${id}`,
   position: pos,
   config: {
-    method: 'GET',
-    url: 'https://x',
-    headers: {},
-    query: {},
-    body: { type: 'none' },
+    type: 'http',
+    payload: {
+      method: 'GET',
+      url: 'https://x',
+      headers: {},
+      query: {},
+      body: { type: 'none' },
+      ...payload,
+    },
     extract: [],
-    ...config,
   },
 });
 
@@ -220,13 +218,49 @@ describe('WorkflowEngine', () => {
     expect(result.finalVariables).not.toHaveProperty('x');
   });
 
+  it('extracts a field from a stream (WebSocket/SSE) response body into a variable', async () => {
+    // WS/SSE collect mode returns the received messages as a JSON array body,
+    // so existing jsonpath extraction reaches an event field with no changes.
+    const streamResponse: ProtocolResponse = {
+      type: 'websocket',
+      ok: true,
+      summary: { label: '1 message', tone: 'success' },
+      metadata: {},
+      body: JSON.stringify([{ token: 'abc' }]),
+      bodyKind: 'json',
+      prettyBody: JSON.stringify([{ token: 'abc' }], null, 2),
+      contentType: 'application/json',
+      sizeBytes: 20,
+      timings: { startedAt: 0, totalMs: 5 },
+      protocol: { events: [{ at: 0, direction: 'received', kind: 'text', data: '{"token":"abc"}' }] },
+    };
+    const executeRequest = vi.fn(async () => streamResponse);
+    const wsNode: WorkflowNode = {
+      id: 'ws',
+      kind: 'request',
+      name: 'ws',
+      position: pos,
+      config: {
+        type: 'websocket',
+        payload: { url: 'wss://echo.test', headers: {}, subprotocols: [], messages: [], collect: {} },
+        extract: [{ variable: 'tok', source: 'body', engine: 'jsonpath', expression: '$[0].token' }],
+      },
+    };
+    const wf = linearWorkflow('w', [start(), wsNode, end()]);
+    const result = await new WorkflowEngine(makePorts({ executeRequest })).run(wf);
+
+    expect(result.status).toBe('success');
+    expect(result.nodeResults[1].variablesSet).toMatchObject({ tok: 'abc' });
+    expect(result.finalVariables).toMatchObject({ tok: 'abc' });
+  });
+
   it('treats a non-2xx HTTP status as a completed (not failed) node', async () => {
     const executeRequest = vi.fn(async () => okResponse(404));
     const wf = linearWorkflow('w', [start(), request('r'), end()]);
     const result = await new WorkflowEngine(makePorts({ executeRequest })).run(wf);
     expect(result.status).toBe('success');
     expect(result.nodeResults[1].status).toBe('success');
-    expect(result.nodeResults[1].response?.status).toBe(404);
+    expect(result.nodeResults[1].response?.protocol).toMatchObject({ status: 404 });
   });
 
   it('invokes the injected sleep for delay nodes', async () => {
@@ -413,7 +447,7 @@ describe('WorkflowEngine', () => {
 
   const userInput = (
     id: string,
-    fields: { variable: string; default?: string }[],
+    fields: { variable: string; default?: string; options?: string[] }[],
   ): WorkflowNode => ({
     id,
     kind: 'user-input',
@@ -422,10 +456,14 @@ describe('WorkflowEngine', () => {
     config: {
       message: 'Provide values',
       fields: fields.map((f) => ({
+        kind: f.options ? ('select' as const) : ('string' as const),
         label: f.variable,
         variable: f.variable,
         default: f.default ?? '',
-        secret: false,
+        options: f.options ?? [],
+        entries: {},
+        filledAtRuntime: false,
+        required: false,
       })),
     },
   });
@@ -460,6 +498,33 @@ describe('WorkflowEngine', () => {
       fields: { default: string }[];
     };
     expect(sentFields.fields[0].default).toBe('S-x');
+  });
+
+  it('evaluates option templates and defaults a dropdown to its first option', async () => {
+    const requestInput = vi.fn(async () => ({ values: {}, cancelled: false }));
+    const wf = linearWorkflow('w', [
+      start(),
+      userInput('ask', [{ variable: 'env', options: ['{{seed}}-a', 'prod'] }]),
+      end(),
+    ]);
+    await new WorkflowEngine(makePorts({ requestInput })).run(wf, { runtime: { seed: 'S' } });
+
+    const sent = (requestInput.mock.calls[0] as unknown[])[0] as {
+      fields: { default: string; options: string[] }[];
+    };
+    expect(sent.fields[0].options).toEqual(['S-a', 'prod']);
+    expect(sent.fields[0].default).toBe('S-a');
+  });
+
+  it('headless runs resolve a dropdown field to its first option', async () => {
+    const wf = linearWorkflow('w', [
+      start(),
+      userInput('ask', [{ variable: 'env', options: ['staging', 'prod'] }]),
+      end(),
+    ]);
+    const result = await new WorkflowEngine(makePorts()).run(wf);
+    expect(result.status).toBe('success');
+    expect(result.finalVariables).toMatchObject({ env: 'staging' });
   });
 
   it('falls back to evaluated defaults when no input port is provided', async () => {

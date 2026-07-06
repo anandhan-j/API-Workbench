@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import type { RequestDetailFull } from '@shared/request-details';
+import type { HttpPayload } from '@shared/protocol';
 import { requestDetailToNodeConfig } from './request-import';
 
 function detail(): RequestDetailFull {
@@ -9,6 +10,7 @@ function detail(): RequestDetailFull {
     collectionId: 'c1',
     folderId: null,
     name: 'Login',
+    type: 'http',
     method: 'POST',
     url: 'https://api.example.com/login?x=1',
     favorite: false,
@@ -31,11 +33,13 @@ function detail(): RequestDetailFull {
 describe('requestDetailToNodeConfig', () => {
   it('maps method, url, headers, params, body, auth and records the source id', () => {
     const cfg = requestDetailToNodeConfig(detail());
-    expect(cfg.method).toBe('POST');
-    expect(cfg.url).toBe('https://api.example.com/login?x=1');
-    expect(cfg.headers).toEqual({ Authorization: 'Bearer {{tok}}' }); // blank + disabled rows dropped
-    expect(cfg.query).toEqual({ x: '1' });
-    expect(cfg.body).toEqual({ type: 'json', content: '{"a":1}' });
+    const payload = cfg.payload as HttpPayload;
+    expect(cfg.type).toBe('http');
+    expect(payload.method).toBe('POST');
+    expect(payload.url).toBe('https://api.example.com/login?x=1');
+    expect(payload.headers).toEqual({ Authorization: 'Bearer {{tok}}' }); // blank + disabled rows dropped
+    expect(payload.query).toEqual({ x: '1' });
+    expect(payload.body).toEqual({ type: 'json', content: '{"a":1}' });
     expect(cfg.auth).toEqual({ type: 'bearer', token: '{{tok}}' });
     expect(cfg.requestId).toBe('r1');
   });

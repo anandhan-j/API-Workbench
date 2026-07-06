@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Download, History, Loader2, Pencil, Plus, RefreshCw, Search } from 'lucide-react';
 import { usePersistentState } from '../../lib/use-persistent-state';
 import type { VersionDiff } from '@shared/version';
+import type { TreeNode } from '@shared/collection';
 import { isBridgeAvailable } from '../../lib/ipc';
 import { useActiveSelection, useWorkspaceDetail } from '../workspaces/use-workspaces';
 import { CollectionNode } from './CollectionNode';
@@ -11,12 +13,17 @@ import { cn } from '../../lib/cn';
 import { RequestEditor } from '../runner/RequestEditor';
 import { RequestVariablesUsedPanel } from './RequestVariablesUsedPanel';
 import { detailToDraft, draftToDetails, type RequestDraft } from '../runner/build-request';
+import { persistedIdentity, requestTypeBadge } from '../runner/request-type-meta';
 import { Modal } from '../../components/menu/Modal';
 import { ImportPanel } from './ImportPanel';
 import { SyncPanel } from './SyncPanel';
 import { VersionsPanel } from './VersionsPanel';
+import { FolderAuthPanel } from './FolderAuthPanel';
+import { CollectionAuthPanel } from './CollectionAuthPanel';
 import { useConfirm } from '../../components/confirm/ConfirmProvider';
 import { useToast } from '../../components/toast/ToastProvider';
+import { qualifiedContributionId } from '@shared/plugins';
+import { usePluginContributions } from '../plugins/use-plugins';
 import { useImport } from './use-import';
 import { useSync } from './use-sync';
 import { useVersions, useVersionMutations } from './use-versions';
@@ -39,8 +46,43 @@ export function CollectionsPage(): JSX.Element {
   const mutations = useCollectionMutations(projectId);
   const importer = useImport(projectId);
   const syncer = useSync(projectId);
+  const contributions = usePluginContributions();
+  // Plugin importers for the import dialog's format select (empty → hidden).
+  const pluginImporters = contributions.importers.map((imp) => ({
+    id: qualifiedContributionId(imp.pluginId, imp.id),
+    label: imp.label,
+  }));
+  const pluginRequestTypes = contributions.requestTypes;
   const confirm = useConfirm();
   const toast = useToast();
+  const qc = useQueryClient();
+
+  // Deleting a folder or collection removes its whole subtree from the DB. Collect
+  // the ids of everything under `rootId` (folders and requests) from the cached
+  // collection trees so an open right-side editor can be closed when it was showing
+  // the deleted node or any of its descendants. Read the cache synchronously before
+  // the delete mutation invalidates it.
+  const collectSubtreeIds = (rootId: string): Set<string> => {
+    const nodes = qc
+      .getQueriesData<TreeNode[]>({ queryKey: ['tree'] })
+      .flatMap(([, data]) => data ?? []);
+    const childrenByParent = new Map<string | null, TreeNode[]>();
+    for (const n of nodes) {
+      const list = childrenByParent.get(n.parentId) ?? [];
+      list.push(n);
+      childrenByParent.set(n.parentId, list);
+    }
+    const ids = new Set<string>([rootId]);
+    const stack: string[] = [rootId];
+    while (stack.length > 0) {
+      const parent = stack.pop() as string;
+      for (const child of childrenByParent.get(parent) ?? []) {
+        ids.add(child.id);
+        if (child.type === 'folder') stack.push(child.id);
+      }
+    }
+    return ids;
+  };
 
   const [collectionId, setCollectionId] = useState<string | null>(null);
   const [newCollection, setNewCollection] = useState('');
@@ -51,6 +93,15 @@ export function CollectionsPage(): JSX.Element {
   const [selectedRequest, setSelectedRequest] = useState<
     (OpenedRequest & { collectionId: string }) | null
   >(null);
+  // A selected folder or collection opens its authorization panel (mutually
+  // exclusive with a request and with each other).
+  const [selectedFolder, setSelectedFolder] = useState<{ id: string; name: string } | null>(null);
+  const [selectedCollection, setSelectedCollection] = useState<{ id: string; name: string } | null>(
+    null,
+  );
+  // Bumped after an auth cascade to force the open request editor to re-seed from
+  // the freshly-refetched request (its local draft otherwise keeps stale auth).
+  const [reloadToken, setReloadToken] = useState(0);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [diff, setDiff] = useState<{ versionId: string; data: VersionDiff } | null>(null);
@@ -205,6 +256,7 @@ export function CollectionsPage(): JSX.Element {
             busy={importer.isPending}
             result={importer.data ?? null}
             error={importer.error instanceof Error ? importer.error.message : null}
+            importers={pluginImporters}
             onImport={(payload) => importer.mutate({ projectId, ...payload })}
           />
         </Modal>
@@ -265,16 +317,40 @@ export function CollectionsPage(): JSX.Element {
                 collection={c}
                 searchNodes={searchNodes}
                 selectedRequestId={selectedRequest?.id ?? null}
+                selectedFolderId={selectedFolder?.id ?? null}
+                selectedCollectionId={selectedCollection?.id ?? null}
                 onOpenRequest={(req, colId) => {
                   setCollectionId(colId);
+                  setSelectedFolder(null);
+                  setSelectedCollection(null);
                   setSelectedRequest({ ...req, collectionId: colId });
                   setEditingName(false);
                   mutations.openRequest.mutate(req.id);
                 }}
+                onOpenFolder={(id, name) => {
+                  setCollectionId(c.id);
+                  setSelectedRequest(null);
+                  setSelectedCollection(null);
+                  setSelectedFolder({ id, name });
+                }}
+                onOpenCollection={(id, name) => {
+                  setCollectionId(id);
+                  setSelectedRequest(null);
+                  setSelectedFolder(null);
+                  setSelectedCollection({ id, name });
+                }}
                 onToggleFavorite={(id) => mutations.toggleFavorite.mutate(id)}
-                onAddRequest={(colId) =>
-                  mutations.createRequest.mutate({ collectionId: colId, name: 'New request' })
-                }
+                onAddRequest={(colId, type, folderId) => {
+                  const badge = type ? requestTypeBadge(type, pluginRequestTypes) : undefined;
+                  mutations.createRequest.mutate({
+                    collectionId: colId,
+                    ...(folderId ? { folderId } : {}),
+                    name: 'New request',
+                    ...(type && type !== 'http'
+                      ? { type, ...(badge ? { method: badge } : {}) }
+                      : {}),
+                  });
+                }}
                 onAddFolder={(colId, parentId) =>
                   mutations.createFolder.mutate({
                     collectionId: colId,
@@ -292,7 +368,18 @@ export function CollectionsPage(): JSX.Element {
                       danger: true,
                     })
                   ) {
+                    // Close the right-side editor if it was showing this collection
+                    // or anything inside it (all deleted in the cascade). A folder's
+                    // membership is resolved from the collection's cached tree.
+                    const folderIds = new Set(
+                      (qc.getQueryData<TreeNode[]>(['tree', id]) ?? [])
+                        .filter((n) => n.type === 'folder')
+                        .map((n) => n.id),
+                    );
                     mutations.deleteCollection.mutate(id);
+                    if (selectedCollection?.id === id) setSelectedCollection(null);
+                    if (selectedRequest?.collectionId === id) setSelectedRequest(null);
+                    if (selectedFolder && folderIds.has(selectedFolder.id)) setSelectedFolder(null);
                   }
                 }}
                 onDeleteFolder={async (id, name) => {
@@ -304,7 +391,12 @@ export function CollectionsPage(): JSX.Element {
                       danger: true,
                     })
                   ) {
+                    // Close the right-side editor if it was showing this folder or
+                    // any request/subfolder within it (all deleted in the cascade).
+                    const removed = collectSubtreeIds(id);
                     mutations.deleteFolder.mutate(id);
+                    if (selectedFolder && removed.has(selectedFolder.id)) setSelectedFolder(null);
+                    if (selectedRequest && removed.has(selectedRequest.id)) setSelectedRequest(null);
                   }
                 }}
                 onDeleteRequest={async (id, name) => {
@@ -399,7 +491,7 @@ export function CollectionsPage(): JSX.Element {
                 </div>
                 {requestDetail.data ? (
                   <RequestEditor
-                    key={selectedRequest.id}
+                    key={`${selectedRequest.id}:${reloadToken}`}
                     initial={detailToDraft(requestDetail.data)}
                     scriptContext={{
                       collectionId: selectedRequest.collectionId,
@@ -413,8 +505,9 @@ export function CollectionsPage(): JSX.Element {
                         .mutateAsync({
                           id: selectedRequest.id,
                           name: selectedRequest.name,
-                          method: draft.method,
-                          url: draft.url,
+                          // Non-HTTP types store the provider's badge/target in
+                          // the method/url columns (ADR-0009).
+                          ...persistedIdentity(draft, pluginRequestTypes),
                           details: draftToDetails(draft),
                         })
                         .then(() => toast('Request saved'))
@@ -438,6 +531,32 @@ export function CollectionsPage(): JSX.Element {
                 onToggle={() => setVarsPanelCollapsed((v) => !v)}
               />
             </div>
+          ) : selectedFolder ? (
+            <FolderAuthPanel
+              key={selectedFolder.id}
+              folderId={selectedFolder.id}
+              name={selectedFolder.name}
+              onApplied={() => setReloadToken((t) => t + 1)}
+              onRename={(name) =>
+                mutations.renameFolder
+                  .mutateAsync({ id: selectedFolder.id, name })
+                  .then(() => setSelectedFolder({ id: selectedFolder.id, name }))
+              }
+              onClose={() => setSelectedFolder(null)}
+            />
+          ) : selectedCollection ? (
+            <CollectionAuthPanel
+              key={selectedCollection.id}
+              collectionId={selectedCollection.id}
+              name={selectedCollection.name}
+              onApplied={() => setReloadToken((t) => t + 1)}
+              onRename={(name) =>
+                mutations.renameCollection
+                  .mutateAsync({ id: selectedCollection.id, name })
+                  .then(() => setSelectedCollection({ id: selectedCollection.id, name }))
+              }
+              onClose={() => setSelectedCollection(null)}
+            />
           ) : collectionId ? (
             <>
               <div className="flex items-center justify-end gap-2">

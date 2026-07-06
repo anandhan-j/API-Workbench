@@ -1,0 +1,19 @@
+{
+  "name": "@api-workbench/plugin-sdk",
+  "version": "1.0.0",
+  "description": "Public SDK for building API Workbench plugins: custom workflow nodes, request types, auth providers, and importers.",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}
