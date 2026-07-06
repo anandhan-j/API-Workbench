@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>API Workbench — Changelog</title>
+    <link>https://anandhan-j.github.io/API-Workbench/changelog</link>
+    <description>Release notes and milestones for API Workbench.</description>
+    <language>en</language>
+    <item>
+      <title>Phase 16 — Plugin SDK</title>
+      <link>https://anandhan-j.github.io/API-Workbench/changelog</link>
+      <guid isPermaLink="false">api-workbench-phase-16</guid>
+      <description>Plugin loader, extension registries, sandboxed plugin host, and capability broker. Custom workflow nodes, request types, auth providers, and importers.</description>
+    </item>
+    <item>
+      <title>Multi-protocol execution — GraphQL, gRPC, WebSocket, SSE</title>
+      <link>https://anandhan-j.github.io/API-Workbench/changelog</link>
+      <guid isPermaLink="false">api-workbench-protocols</guid>
+      <description>Protocol-agnostic execution envelope with GraphQL, gRPC, WebSocket, and SSE support in the runner and workflows, including live interactive sessions.</description>
+    </item>
+    <item>
+      <title>Phases 12–15 — Workflow engine, designer, runtime, and mapping</title>
+      <link>https://anandhan-j.github.io/API-Workbench/changelog</link>
+      <guid isPermaLink="false">api-workbench-workflows</guid>
+      <description>Visual drag-and-drop workflow designer with deterministic runtime, conditions, loops, retries, pause/resume, and JSONPath/JMESPath data mapping.</description>
+    </item>
+  </channel>
+</rss>

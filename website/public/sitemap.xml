@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://anandhan-j.github.io/API-Workbench/</loc><priority>1.0</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/features</loc><priority>0.9</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/workflow</loc><priority>0.8</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/docs</loc><priority>0.9</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/plugins</loc><priority>0.9</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/examples</loc><priority>0.7</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/gallery</loc><priority>0.6</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/screenshots</loc><priority>0.6</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/downloads</loc><priority>0.9</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/faq</loc><priority>0.6</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/roadmap</loc><priority>0.7</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/contributing</loc><priority>0.6</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/changelog</loc><priority>0.7</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/about</loc><priority>0.5</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/license</loc><priority>0.4</priority></url>
+  <url><loc>https://anandhan-j.github.io/API-Workbench/contact</loc><priority>0.4</priority></url>
+</urlset>
