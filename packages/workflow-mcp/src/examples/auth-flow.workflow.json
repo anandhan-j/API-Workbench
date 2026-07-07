@@ -1,0 +1,155 @@
+{
+  "formatVersion": 1,
+  "exportedAt": 1700000000000,
+  "appVersion": "0.1.0",
+  "rootId": "wf-auth",
+  "workflows": [
+    {
+      "id": "wf-auth",
+      "name": "Authenticated request with extraction",
+      "description": "Prompt for an API token, call a bearer-authenticated endpoint, extract a value from the response, and branch on it.",
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "kind": "start",
+            "name": "Start",
+            "position": {
+              "x": 80,
+              "y": 220
+            },
+            "config": {}
+          },
+          {
+            "id": "collect-token",
+            "kind": "user-input",
+            "name": "Collect API token",
+            "position": {
+              "x": 300,
+              "y": 220
+            },
+            "config": {
+              "message": "Enter the API token to authenticate with.",
+              "fields": [
+                {
+                  "kind": "secret",
+                  "label": "API token",
+                  "variable": "apiToken",
+                  "default": "",
+                  "options": [],
+                  "entries": {},
+                  "filledAtRuntime": false,
+                  "required": true
+                }
+              ]
+            }
+          },
+          {
+            "id": "who-am-i",
+            "kind": "request",
+            "name": "Who am I",
+            "position": {
+              "x": 540,
+              "y": 220
+            },
+            "config": {
+              "type": "http",
+              "payload": {
+                "method": "GET",
+                "url": "https://httpbin.org/bearer",
+                "headers": {
+                  "Accept": "application/json"
+                },
+                "query": {}
+              },
+              "auth": {
+                "type": "bearer",
+                "token": "{{apiToken}}"
+              },
+              "extract": [
+                {
+                  "variable": "authenticated",
+                  "source": "body",
+                  "engine": "jsonpath",
+                  "expression": "$.authenticated"
+                }
+              ]
+            },
+            "policy": {
+              "retries": 1,
+              "retryBackoffMs": 500,
+              "timeoutMs": 15000,
+              "onError": "fail"
+            }
+          },
+          {
+            "id": "check",
+            "kind": "condition",
+            "name": "Authenticated?",
+            "position": {
+              "x": 780,
+              "y": 220
+            },
+            "config": {
+              "expression": "{{authenticated}} == true"
+            }
+          },
+          {
+            "id": "ok",
+            "kind": "end",
+            "name": "Authenticated",
+            "position": {
+              "x": 1020,
+              "y": 140
+            },
+            "config": {
+              "outcome": "success"
+            }
+          },
+          {
+            "id": "fail",
+            "kind": "end",
+            "name": "Rejected",
+            "position": {
+              "x": 1020,
+              "y": 300
+            },
+            "config": {
+              "outcome": "fail"
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": "e1",
+            "source": "start",
+            "target": "collect-token"
+          },
+          {
+            "id": "e2",
+            "source": "collect-token",
+            "target": "who-am-i"
+          },
+          {
+            "id": "e3",
+            "source": "who-am-i",
+            "target": "check"
+          },
+          {
+            "id": "e4",
+            "source": "check",
+            "target": "ok",
+            "sourceHandle": "true"
+          },
+          {
+            "id": "e5",
+            "source": "check",
+            "target": "fail",
+            "sourceHandle": "false"
+          }
+        ],
+        "groups": []
+      }
+    }
+  ]
+}

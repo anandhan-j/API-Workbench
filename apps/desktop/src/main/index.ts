@@ -5,6 +5,8 @@ import {
   registerIpcHandlers,
   attachDispatchStream,
   notifyPluginsChanged,
+  notifyMcpStatusChanged,
+  notifyWorkflowsChanged,
   requestPluginDialog,
 } from './ipc';
 import { logger } from './services/logger';
@@ -40,7 +42,15 @@ import {
   RequestTypeRegistry,
 } from './plugins';
 import { createUtilityProcessTransport } from './plugins/host-transport-electron';
-import { PREF_VERIFY_SSL } from '@shared/persistence';
+import {
+  PREF_MCP_PORT,
+  PREF_MCP_PORT_ASSIGNED,
+  PREF_MCP_TLS,
+  PREF_MCP_TOKEN,
+  PREF_VERIFY_SSL,
+} from '@shared/persistence';
+import { randomUUID } from 'node:crypto';
+import { McpServerManager, spawnMcpChild, createAppRpcHandler } from './mcp';
 
 /**
  * Main process entry point.
@@ -56,6 +66,7 @@ const RENDERER_DEV_URL = process.env['ELECTRON_RENDERER_URL'];
 
 let persistence: PersistenceService | undefined;
 let pluginHostRef: PluginHostManager | undefined;
+let mcpServerRef: McpServerManager | undefined;
 
 interface Services {
   persistence: PersistenceService;
@@ -73,6 +84,7 @@ interface Services {
   pluginHost: PluginHostManager;
   requestTypes: RequestTypeRegistry;
   pluginConnections: PluginConnectionPort;
+  mcp: McpServerManager;
 }
 
 function initServices(): Services {
@@ -194,6 +206,33 @@ function initServices(): Services {
   });
   pluginHostRef = pluginHost;
 
+  const mcp = new McpServerManager({
+    spawn: (args) => spawnMcpChild(args, (message) => logger.info('mcp', message)),
+    initialPort: service.preferences.getOrDefault<number>(PREF_MCP_PORT, 0),
+    initialTls: service.preferences.getOrDefault<boolean>(PREF_MCP_TLS, true),
+    initialToken: service.preferences.getOrDefault<string>(PREF_MCP_TOKEN, ''),
+    generateToken: () => randomUUID(),
+    // Persist the token so it stays stable across restarts; the manager reports
+    // the initial mint and every explicit refresh here.
+    onTokenChanged: (token) => service.preferences.set(PREF_MCP_TOKEN, token),
+    // Remember the OS-assigned port so the server keeps the same port (and URL)
+    // across restarts, like the token — and falls back to a fresh one if it's
+    // taken. Kept separate from the user's port preference above.
+    initialAssignedPort: service.preferences.getOrDefault<number>(PREF_MCP_PORT_ASSIGNED, 0),
+    onAssignedPortChanged: (port) => service.preferences.set(PREF_MCP_PORT_ASSIGNED, port),
+    onStatusChanged: (status) => notifyMcpStatusChanged(status),
+    // Back-channel: a workflow authored in an AI client can be imported straight
+    // into the running app (reusing the app's own import path) so it appears in
+    // the workflow list. Imports are additive (fresh ids) — non-destructive.
+    handleAppRpc: createAppRpcHandler({
+      importWorkflow: (data, projectId) => workflows.importWorkflow({ projectId, data }),
+      getActiveProjectId: () => workspaces.getActiveSelection().projectId,
+      onImported: (projectId) => notifyWorkflowsChanged(projectId, 'mcp-import'),
+    }),
+    log: (message) => logger.info('mcp', message),
+  });
+  mcpServerRef = mcp;
+
   return {
     persistence: service,
     workspaces,
@@ -210,6 +249,7 @@ function initServices(): Services {
     pluginHost,
     requestTypes,
     pluginConnections: pluginHost,
+    mcp,
   };
 }
 
@@ -310,6 +350,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  mcpServerRef?.dispose();
   pluginHostRef?.dispose();
   persistence?.close();
 });

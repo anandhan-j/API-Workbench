@@ -4,6 +4,7 @@ import { PREF_VERIFY_SSL } from '@shared/persistence';
 import type { ThemeMode } from '../stores/ui-store';
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, useUiStore } from '../stores/ui-store';
 import { invoke, isBridgeAvailable } from '../lib/ipc';
+import { McpServerSettings } from './McpServerSettings';
 
 const THEMES: ThemeMode[] = ['light', 'dark'];
 
@@ -114,6 +115,12 @@ export function SettingsPage(): JSX.Element {
           </button>
         </div>
       </section>
+
+      <h2 className="mt-8 px-1 text-xs font-semibold uppercase tracking-wide text-muted">
+        Integrations
+      </h2>
+
+      <McpServerSettings />
 
       <h2 className="mt-8 px-1 text-xs font-semibold uppercase tracking-wide text-muted">
         General

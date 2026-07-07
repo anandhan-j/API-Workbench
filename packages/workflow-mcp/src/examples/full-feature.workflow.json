@@ -1,0 +1,298 @@
+{
+  "formatVersion": 1,
+  "exportedAt": 1700000000000,
+  "appVersion": "0.1.0",
+  "rootId": "wf-tour",
+  "workflows": [
+    {
+      "id": "wf-tour",
+      "name": "Full feature tour",
+      "description": "Exercises most workflow node kinds in canonical form: set-variable, request, transform, switch, loop, delay, user-input.",
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "kind": "start",
+            "name": "Start",
+            "position": {
+              "x": 80,
+              "y": 300
+            },
+            "config": {}
+          },
+          {
+            "id": "seed",
+            "kind": "set-variable",
+            "name": "Seed base URL",
+            "position": {
+              "x": 300,
+              "y": 300
+            },
+            "config": {
+              "key": "baseUrl",
+              "value": "https://httpbin.org",
+              "scope": "runtime"
+            }
+          },
+          {
+            "id": "ask-plan",
+            "kind": "user-input",
+            "name": "Choose plan",
+            "position": {
+              "x": 520,
+              "y": 300
+            },
+            "config": {
+              "message": "Pick a plan to exercise.",
+              "fields": [
+                {
+                  "kind": "select",
+                  "label": "Plan",
+                  "variable": "plan",
+                  "default": "pro",
+                  "options": [
+                    "free",
+                    "pro",
+                    "enterprise"
+                  ],
+                  "entries": {},
+                  "filledAtRuntime": false,
+                  "required": true
+                }
+              ]
+            }
+          },
+          {
+            "id": "call",
+            "kind": "request",
+            "name": "Echo plan",
+            "position": {
+              "x": 740,
+              "y": 300
+            },
+            "config": {
+              "type": "http",
+              "payload": {
+                "method": "POST",
+                "url": "{{baseUrl}}/post",
+                "headers": {
+                  "Content-Type": "application/json"
+                },
+                "query": {
+                  "plan": "{{plan}}"
+                },
+                "body": {
+                  "type": "json",
+                  "content": "{\"plan\":\"{{plan}}\"}"
+                }
+              },
+              "options": {
+                "timeoutMs": 15000,
+                "maxRetries": 1,
+                "followRedirects": true
+              },
+              "extract": [
+                {
+                  "variable": "echoedPlan",
+                  "source": "body",
+                  "engine": "jsonpath",
+                  "expression": "$.json.plan"
+                }
+              ]
+            }
+          },
+          {
+            "id": "shape",
+            "kind": "transform",
+            "name": "Build plan label",
+            "position": {
+              "x": 960,
+              "y": 300
+            },
+            "config": {
+              "variable": "planLabel",
+              "engine": "template",
+              "input": "",
+              "expression": "Selected plan: {{echoedPlan}}"
+            }
+          },
+          {
+            "id": "route",
+            "kind": "switch",
+            "name": "Route by plan",
+            "position": {
+              "x": 1180,
+              "y": 300
+            },
+            "config": {
+              "value": "{{plan}}",
+              "cases": [
+                "free",
+                "pro",
+                "enterprise"
+              ]
+            }
+          },
+          {
+            "id": "mark-free",
+            "kind": "set-variable",
+            "name": "Mark free",
+            "position": {
+              "x": 1400,
+              "y": 160
+            },
+            "config": {
+              "key": "tier",
+              "value": "basic",
+              "scope": "runtime"
+            }
+          },
+          {
+            "id": "mark-paid",
+            "kind": "set-variable",
+            "name": "Mark paid",
+            "position": {
+              "x": 1400,
+              "y": 300
+            },
+            "config": {
+              "key": "tier",
+              "value": "paid",
+              "scope": "runtime"
+            }
+          },
+          {
+            "id": "mark-default",
+            "kind": "set-variable",
+            "name": "Mark default",
+            "position": {
+              "x": 1400,
+              "y": 440
+            },
+            "config": {
+              "key": "tier",
+              "value": "unknown",
+              "scope": "runtime"
+            }
+          },
+          {
+            "id": "retry-loop",
+            "kind": "loop",
+            "name": "Poll a few times",
+            "position": {
+              "x": 1620,
+              "y": 300
+            },
+            "config": {
+              "mode": "times",
+              "times": 3
+            }
+          },
+          {
+            "id": "wait",
+            "kind": "delay",
+            "name": "Wait",
+            "position": {
+              "x": 1840,
+              "y": 220
+            },
+            "config": {
+              "ms": 500
+            }
+          },
+          {
+            "id": "end",
+            "kind": "end",
+            "name": "End",
+            "position": {
+              "x": 1840,
+              "y": 420
+            },
+            "config": {
+              "outcome": "success"
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": "e1",
+            "source": "start",
+            "target": "seed"
+          },
+          {
+            "id": "e2",
+            "source": "seed",
+            "target": "ask-plan"
+          },
+          {
+            "id": "e3",
+            "source": "ask-plan",
+            "target": "call"
+          },
+          {
+            "id": "e4",
+            "source": "call",
+            "target": "shape"
+          },
+          {
+            "id": "e5",
+            "source": "shape",
+            "target": "route"
+          },
+          {
+            "id": "e6",
+            "source": "route",
+            "target": "mark-free",
+            "sourceHandle": "free"
+          },
+          {
+            "id": "e7",
+            "source": "route",
+            "target": "mark-paid",
+            "sourceHandle": "pro"
+          },
+          {
+            "id": "e8",
+            "source": "route",
+            "target": "mark-paid",
+            "sourceHandle": "enterprise"
+          },
+          {
+            "id": "e9",
+            "source": "route",
+            "target": "mark-default",
+            "sourceHandle": "default"
+          },
+          {
+            "id": "e10",
+            "source": "mark-free",
+            "target": "retry-loop"
+          },
+          {
+            "id": "e11",
+            "source": "mark-paid",
+            "target": "retry-loop"
+          },
+          {
+            "id": "e12",
+            "source": "mark-default",
+            "target": "retry-loop"
+          },
+          {
+            "id": "e13",
+            "source": "retry-loop",
+            "target": "wait",
+            "sourceHandle": "body"
+          },
+          {
+            "id": "e14",
+            "source": "retry-loop",
+            "target": "end",
+            "sourceHandle": "done"
+          }
+        ],
+        "groups": []
+      }
+    }
+  ]
+}

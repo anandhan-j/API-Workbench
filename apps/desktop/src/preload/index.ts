@@ -6,11 +6,13 @@ import {
   type IpcRequest,
   type IpcResponse,
   type PluginsChangedEvent,
+  type WorkflowsChangedEvent,
   type WorkbenchApi,
 } from '@shared/ipc-contract';
 import type { WorkflowInputRequest, WorkflowProgressEvent } from '@shared/workflow';
 import type { PluginDialogRequest } from '@shared/plugins';
 import type { ConnectionEvent, ConnectionStateEvent } from '@shared/protocol';
+import type { McpStatus } from '@shared/mcp';
 
 /**
  * Preload bridge. Exposes ONLY the enumerated invoke channels plus a single
@@ -73,6 +75,18 @@ const api: WorkbenchApi = {
     const handler = (_event: IpcRendererEvent, payload: ConnectionStateEvent): void => listener(payload);
     ipcRenderer.on('connection.state', handler);
     return () => ipcRenderer.off('connection.state', handler);
+  },
+
+  onMcpStatusChanged(listener: (event: McpStatus) => void): () => void {
+    const handler = (_event: IpcRendererEvent, payload: McpStatus): void => listener(payload);
+    ipcRenderer.on('mcp.statusChanged', handler);
+    return () => ipcRenderer.off('mcp.statusChanged', handler);
+  },
+
+  onWorkflowsChanged(listener: (event: WorkflowsChangedEvent) => void): () => void {
+    const handler = (_event: IpcRendererEvent, payload: WorkflowsChangedEvent): void => listener(payload);
+    ipcRenderer.on('workflows.changed', handler);
+    return () => ipcRenderer.off('workflows.changed', handler);
   },
 };
 
