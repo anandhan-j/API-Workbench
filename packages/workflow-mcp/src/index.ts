@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs';
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
-import { startHttpServer, type TlsMaterial } from './http.js';
+import { redactTokenInUrl, startHttpServer, type TlsMaterial } from './http.js';
 import { createServer, SERVER_NAME, SERVER_VERSION } from './server.js';
 
 export { createServer } from './server.js';
@@ -80,15 +80,38 @@ async function runHttp(options: CliOptions): Promise<void> {
   const token = options.token ?? randomUUID();
   const tls = resolveTls(options);
   const running = await startHttpServer({ port: options.port, token, createServer, tls });
-  // Machine-readable line for the parent process; human line to stderr.
+  // Machine-readable line for the parent process (it already holds the token and
+  // needs the full URL to surface it to the user); the human line to stderr may be
+  // captured into the app's log file, so redact the token there.
   process.stdout.write(`WORKFLOW_MCP_LISTENING ${running.url}\n`);
-  console.error(`${SERVER_NAME} v${SERVER_VERSION} listening on ${running.url}`);
+  console.error(`${SERVER_NAME} v${SERVER_VERSION} listening on ${redactTokenInUrl(running.url)}`);
 
+  let shuttingDown = false;
   const shutdown = (): void => {
+    if (shuttingDown) return; // 'end' and 'close' can both fire — close once.
+    shuttingDown = true;
     void running.close().finally(() => process.exit(0));
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+  watchParentExit(shutdown);
+}
+
+/**
+ * In HTTP mode the host app spawns us and pipes our stdin. If the app dies
+ * ungracefully (crash, force-kill) it cannot send a signal, and this loopback,
+ * token-holding HTTP server would be left orphaned. The piped stdin closing is a
+ * reliable, cross-platform signal that the parent is gone — shut down when it does.
+ * (In stdio mode stdin is the JSON-RPC channel and this is never called.)
+ */
+function watchParentExit(shutdown: () => void): void {
+  const stdin = process.stdin;
+  stdin.on('end', shutdown);
+  stdin.on('close', shutdown);
+  stdin.on('error', shutdown);
+  // Put the stream in flowing mode so 'end'/'close' actually fire. Harmless if the
+  // app-bridge is also consuming stdin (it attaches its own 'data' listener).
+  stdin.resume();
 }
 
 async function main(): Promise<void> {

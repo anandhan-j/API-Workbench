@@ -83,6 +83,11 @@ export interface McpManagerDeps {
 
 const DEFAULT_READY_TIMEOUT_MS = 8_000;
 const LISTENING_RE = /WORKFLOW_MCP_LISTENING (\S+)/;
+
+/** Masks the bearer token in a connect URL so it is safe to write to the log. */
+function redactToken(url: string): string {
+  return url.replace(/([?&]token=)[^&]*/i, '$1***');
+}
 /** Prefix of a child→app request line on stdout (mirrors the package's app-bridge). */
 const APP_RPC_PREFIX = 'WORKFLOW_MCP_RPC ';
 
@@ -203,7 +208,9 @@ export class McpServerManager {
           this.deps.onAssignedPortChanged?.(this.boundPort);
         }
         this.setState('running', null);
-        this.log(`MCP server running at ${this.url}`);
+        // Redact the token from the URL before logging — the log may be persisted
+        // to disk; the un-redacted URL is only exposed to the user via status().
+        this.log(`MCP server running at ${redactToken(this.url)}`);
         this.settleStart(this.status());
       });
 

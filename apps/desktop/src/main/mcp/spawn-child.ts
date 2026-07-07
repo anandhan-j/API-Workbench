@@ -54,7 +54,10 @@ export function spawnMcpChild(args: SpawnArgs, log?: (message: string) => void):
     [entry, '--http', '--port', String(args.port), '--token', args.token],
     {
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', ...tlsEnv, ...bridgeEnv },
-      stdio: [args.appBridge ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+      // stdin is always piped (not just for the bridge): the child watches it for
+      // EOF as a parent-liveness signal, so if the app crashes without a clean
+      // shutdown the child exits instead of orphaning a loopback HTTP server.
+      stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     },
   );
