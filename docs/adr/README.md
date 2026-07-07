@@ -19,6 +19,7 @@ Use the [template](./0000-template.md) for new records. Number them sequentially
 | [0008](./0008-workflow-execution-context.md) | Workflow execution context as a propagated runtime variable map | Accepted |
 | [0009](./0009-protocol-abstraction.md) | Protocol-agnostic request execution | Accepted |
 | [0010](./0010-plugin-host-process.md) | Plugin host as a shared utility process with a brokered RPC bridge | Accepted |
+| [0011](./0011-app-managed-mcp-server.md) | App-managed MCP server as a spawned child over loopback Streamable HTTP | Accepted |
 
 ## Conventions
 
