@@ -25,6 +25,12 @@ interface UiState {
   fontScale: number;
   sidebarCollapsed: boolean;
   monitorOpen: boolean;
+  /** Whether the AI assistant chat dock is open (ADR-0012). */
+  assistantOpen: boolean;
+  /** The assistant conversation currently shown, restored across dock reopen / reload. */
+  activeConversationId: string | null;
+  /** The AI provider selected in the assistant, persisted across reopen / reload. */
+  assistantProviderId: string | null;
   tabs: TabItem[];
   activeTabId: string;
   toggleTheme: () => void;
@@ -35,6 +41,9 @@ interface UiState {
   resetFontScale: () => void;
   toggleSidebar: () => void;
   toggleMonitor: () => void;
+  toggleAssistant: () => void;
+  setActiveConversationId: (id: string | null) => void;
+  setAssistantProviderId: (id: string | null) => void;
   setActiveTab: (id: string) => void;
   openTab: (tab: TabItem) => void;
   closeTab: (id: string) => void;
@@ -54,6 +63,9 @@ export const useUiStore = create<UiState>()(
       fontScale: 1,
       sidebarCollapsed: true,
       monitorOpen: false,
+      assistantOpen: false,
+      activeConversationId: null,
+      assistantProviderId: null,
       tabs: DEFAULT_TABS,
       activeTabId: '',
 
@@ -67,6 +79,9 @@ export const useUiStore = create<UiState>()(
       resetFontScale: () => set({ fontScale: 1 }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       toggleMonitor: () => set((s) => ({ monitorOpen: !s.monitorOpen })),
+      toggleAssistant: () => set((s) => ({ assistantOpen: !s.assistantOpen })),
+      setActiveConversationId: (id) => set({ activeConversationId: id }),
+      setAssistantProviderId: (id) => set({ assistantProviderId: id }),
       setActiveTab: (id) => set({ activeTabId: id }),
 
       openTab: (tab) =>
@@ -97,6 +112,9 @@ export const useUiStore = create<UiState>()(
         theme: s.theme,
         fontScale: s.fontScale,
         monitorOpen: s.monitorOpen,
+        assistantOpen: s.assistantOpen,
+        activeConversationId: s.activeConversationId,
+        assistantProviderId: s.assistantProviderId,
       }),
     },
   ),

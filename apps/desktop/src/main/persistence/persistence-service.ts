@@ -21,6 +21,8 @@ import { AuthConfigRepository } from './repositories/auth-config-repository';
 import { WorkflowRepository } from './repositories/workflow-repository';
 import { PluginRepository } from './repositories/plugin-repository';
 import { PluginStorageRepository } from './repositories/plugin-storage-repository';
+import { AiProviderRepository } from './repositories/ai-provider-repository';
+import { AiConversationRepository } from './repositories/ai-conversation-repository';
 import { ScopedDataCleaner } from './scoped-data-cleaner';
 
 export interface PersistenceOptions {
@@ -49,6 +51,8 @@ export class PersistenceService {
   workflows!: WorkflowRepository;
   plugins!: PluginRepository;
   pluginStorage!: PluginStorageRepository;
+  aiProviders!: AiProviderRepository;
+  aiConversations!: AiConversationRepository;
   /** Purges an entity's scoped variables/credentials on delete (see class docs). */
   scopedData!: ScopedDataCleaner;
 
@@ -80,6 +84,8 @@ export class PersistenceService {
     this.workflows = new WorkflowRepository(db);
     this.plugins = new PluginRepository(db);
     this.pluginStorage = new PluginStorageRepository(db);
+    this.aiProviders = new AiProviderRepository(db);
+    this.aiConversations = new AiConversationRepository(db);
     this.scopedData = new ScopedDataCleaner(this);
   }
 

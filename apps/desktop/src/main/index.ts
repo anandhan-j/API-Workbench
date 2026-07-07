@@ -7,6 +7,8 @@ import {
   notifyPluginsChanged,
   notifyMcpStatusChanged,
   notifyWorkflowsChanged,
+  notifyAiChatEvent,
+  notifyAiDataChanged,
   requestPluginDialog,
 } from './ipc';
 import { logger } from './services/logger';
@@ -51,6 +53,7 @@ import {
 } from '@shared/persistence';
 import { randomUUID } from 'node:crypto';
 import { McpServerManager, spawnMcpChild, createAppRpcHandler } from './mcp';
+import { AiProviderStore, AssistantService } from './ai';
 
 /**
  * Main process entry point.
@@ -85,6 +88,8 @@ interface Services {
   requestTypes: RequestTypeRegistry;
   pluginConnections: PluginConnectionPort;
   mcp: McpServerManager;
+  aiProviders: AiProviderStore;
+  assistant: AssistantService;
 }
 
 function initServices(): Services {
@@ -233,13 +238,36 @@ function initServices(): Services {
   });
   mcpServerRef = mcp;
 
+  // AI assistant (ADR-0012). Keys are encrypted with the same safeStorage-backed
+  // Encryptor as the auth store; the read-only tools call the same collection,
+  // workflow, and variable services the IPC handlers use — in-process, no MCP
+  // round trip. Streamed output reaches the renderer via `ai.chat.event`.
+  const aiProviders = new AiProviderStore(service, new SafeStorageEncryptor());
+  const versioning = new VersioningService(service);
+  const assistant = new AssistantService(
+    service,
+    aiProviders,
+    {
+      collections,
+      workflows,
+      variables,
+      activeSelection: () => workspaces.getActiveSelection(),
+    },
+    (event) => notifyAiChatEvent(event),
+    undefined,
+    // Auto-snapshot before AI writes so every edit is reversible; best-effort.
+    (collectionId, label) => versioning.snapshot(collectionId, label),
+    // Refresh renderer views the assistant edits (collections, workflows, variables).
+    (event) => notifyAiDataChanged(event),
+  );
+
   return {
     persistence: service,
     workspaces,
     collections,
     imports: new ImportService(service, { importers }),
     sync: new SyncService(service),
-    versioning: new VersioningService(service),
+    versioning,
     variables,
     auth,
     execution,
@@ -250,6 +278,8 @@ function initServices(): Services {
     requestTypes,
     pluginConnections: pluginHost,
     mcp,
+    aiProviders,
+    assistant,
   };
 }
 
