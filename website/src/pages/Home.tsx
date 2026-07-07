@@ -79,7 +79,9 @@ function Hero() {
           >
             {site.name} is an <strong className="font-semibold text-zinc-800 dark:text-zinc-200">offline-first desktop app</strong> for
             API testing and visual workflow automation. Import OpenAPI specs and keep them in sync, run REST, GraphQL, gRPC,
-            WebSocket & SSE, and extend it all with sandboxed plugins — your data never leaves your machine.
+            WebSocket & SSE, automate with a real workflow engine, and put a{' '}
+            <strong className="font-semibold text-zinc-800 dark:text-zinc-200">bring-your-own-key AI assistant</strong> to work on your
+            collections — your data never leaves your machine.
           </motion.p>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -167,7 +169,7 @@ function Stats() {
 
 function FeatureGrid() {
   const highlights = features.filter((f) =>
-    ['OpenAPI Import', 'Spec Synchronization', 'Scoped Variables', 'Visual Workflow Designer', 'Plugin SDK', 'Offline-First Storage'].includes(f.title)
+    ['OpenAPI Import', 'Spec Synchronization', 'Visual Workflow Designer', 'In-App AI Assistant', 'Plugin SDK', 'Offline-First Storage'].includes(f.title)
   );
   return (
     <section className="py-24">
@@ -233,6 +235,64 @@ function WorkflowStrip() {
           <Button to="/workflow" variant="secondary">
             See the full workflow <ArrowRight size={16} />
           </Button>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+function AssistantSection() {
+  return (
+    <section className="border-y border-zinc-200 bg-zinc-100/50 py-24 dark:border-zinc-800/70 dark:bg-zinc-900/40">
+      <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 lg:grid-cols-2">
+        <Reveal from="left">
+          <CodeBlock
+            title="claude_desktop_config.json"
+            lang="json"
+            className="my-0"
+            code={`{
+  "mcpServers": {
+    "api-workbench": {
+      "url": "https://127.0.0.1:7337/mcp?token=•••",
+      "note": "loopback-only · bearer token · TLS on"
+    }
+  }
+}`}
+          />
+        </Reveal>
+        <Reveal from="right">
+          <p className="text-sm font-semibold uppercase tracking-widest text-brand-500 dark:text-brand-400">AI & MCP</p>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
+            An assistant that works on <span className="text-gradient">your APIs</span>
+          </h2>
+          <p className="mt-4 text-lg leading-relaxed text-zinc-600 dark:text-zinc-400">
+            Bring your own key — Anthropic, OpenAI, DeepSeek, Groq, OpenRouter, or a local Ollama endpoint — and let the built-in
+            assistant browse and edit collections, build requests from a pasted cURL command, and draft whole workflows. Or connect
+            an external MCP client and author workflows against the app’s real schema.
+          </p>
+          <ul className="mt-6 space-y-3">
+            {[
+              'Bring-your-own-key: no key, no calls, no cloud lock-in',
+              'Reads instantly; every write and run needs your approval',
+              'Auto-snapshots before each edit — one click to undo',
+              'Secrets redacted before they ever reach the model',
+            ].map((item) => (
+              <li key={item} className="flex items-start gap-2.5 text-sm text-zinc-700 dark:text-zinc-300">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-500">
+                  ✓
+                </span>
+                {item}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-8 flex gap-3">
+            <Button to="/docs/ai-assistant">
+              Assistant docs <ArrowRight size={16} />
+            </Button>
+            <Button to="/docs/mcp-server" variant="secondary">
+              MCP server
+            </Button>
+          </div>
         </Reveal>
       </div>
     </section>
@@ -376,6 +436,7 @@ export default function Home() {
       <Stats />
       <FeatureGrid />
       <WorkflowStrip />
+      <AssistantSection />
       <PluginTeaser />
       <PrivacySection />
       <FinalCta />

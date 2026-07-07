@@ -37,6 +37,18 @@ export const faqItems: FaqItem[] = [
     a: 'Workflows are real programs on a visual canvas: conditions, loops, switch, parallel branches, retries, timeouts, pause/resume, sub-workflows, and user-input prompts. Data flows between steps through runtime variables with JSONPath/JMESPath extraction and visual mapping.',
   },
   {
+    q: 'Is there an AI assistant, and does it send my data to the cloud?',
+    a: 'There is a built-in assistant, but it is strictly bring-your-own-key and opt-in. You connect your own provider — Anthropic Claude, OpenAI, DeepSeek, Groq, OpenRouter, or a local Ollama endpoint — and your key is encrypted with the OS keychain and never leaves the main process. With no key configured, the assistant makes no network calls at all. The only traffic is between your machine and the provider you chose; secrets in your variables and requests are redacted before anything reaches the model.',
+  },
+  {
+    q: 'What can the AI assistant actually do, and can it break my data?',
+    a: 'It works on your real collections, requests, workflows, and non-secret variables through the app’s own APIs — reading instantly, but every write waits for your approval and every run always confirms. Before its first edit in a turn it auto-snapshots the affected collection, so any change is one click to undo. It cannot delete anything or read or set secrets.',
+  },
+  {
+    q: 'What is the MCP server for?',
+    a: 'The Model Context Protocol server lets external AI clients — Claude Desktop, Cursor, Copilot, and others — author workflows against API Workbench’s real, generated schema and import them straight into your open project. It ships as a standalone package (@api-workbench/workflow-mcp) you can run over stdio, or the app spawns and manages it over loopback Streamable HTTP. In HTTP mode it binds to localhost only, requires a bearer token on every request, validates origins against DNS-rebinding, and defaults to TLS. You start and stop it from Settings — it never runs at boot.',
+  },
+  {
     q: 'Are plugins safe to install?',
     a: 'Plugin code runs in an isolated utility process with no Electron or filesystem access. Anything sensitive — network calls, reading variables, showing dialogs — requires a capability the plugin declares in its manifest and you approve at install time. The host enforces grants on every single call.',
   },
