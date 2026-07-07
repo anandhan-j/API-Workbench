@@ -1,0 +1,173 @@
+{
+  "formatVersion": 1,
+  "exportedAt": 1700000000000,
+  "appVersion": "0.1.0",
+  "rootId": "wf-create-post",
+  "workflows": [
+    {
+      "id": "wf-create-post",
+      "name": "Create post (write flow)",
+      "description": "A write flow: collect fields, POST to create a resource, extract the new id, then verify the write with a GET and branch on the outcome.",
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "kind": "start",
+            "name": "Start",
+            "position": { "x": 80, "y": 260 },
+            "config": {}
+          },
+          {
+            "id": "seed",
+            "kind": "set-variable",
+            "name": "Seed base URL",
+            "position": { "x": 300, "y": 260 },
+            "config": {
+              "key": "baseUrl",
+              "value": "https://jsonplaceholder.typicode.com",
+              "scope": "runtime"
+            }
+          },
+          {
+            "id": "collect",
+            "kind": "user-input",
+            "name": "Collect post fields",
+            "position": { "x": 520, "y": 260 },
+            "config": {
+              "message": "Enter the post to create.",
+              "fields": [
+                {
+                  "kind": "string",
+                  "label": "Title",
+                  "variable": "title",
+                  "default": "Hello from API Workbench",
+                  "options": [],
+                  "entries": {},
+                  "filledAtRuntime": false,
+                  "required": true
+                },
+                {
+                  "kind": "string",
+                  "label": "Body",
+                  "variable": "body",
+                  "default": "Created by a workflow.",
+                  "options": [],
+                  "entries": {},
+                  "filledAtRuntime": false,
+                  "required": true
+                },
+                {
+                  "kind": "number",
+                  "label": "User ID",
+                  "variable": "userId",
+                  "default": "1",
+                  "options": [],
+                  "entries": {},
+                  "filledAtRuntime": false,
+                  "required": true
+                }
+              ]
+            }
+          },
+          {
+            "id": "create",
+            "kind": "request",
+            "name": "Create post",
+            "position": { "x": 740, "y": 260 },
+            "config": {
+              "type": "http",
+              "payload": {
+                "method": "POST",
+                "url": "{{baseUrl}}/posts",
+                "headers": {
+                  "Content-Type": "application/json",
+                  "Accept": "application/json"
+                },
+                "query": {},
+                "body": {
+                  "type": "json",
+                  "content": "{\"title\":\"{{title}}\",\"body\":\"{{body}}\",\"userId\":{{userId}}}"
+                }
+              },
+              "options": {
+                "timeoutMs": 15000,
+                "maxRetries": 2,
+                "followRedirects": true
+              },
+              "extract": [
+                {
+                  "variable": "newId",
+                  "source": "body",
+                  "engine": "jsonpath",
+                  "expression": "$.id"
+                }
+              ]
+            },
+            "policy": {
+              "retries": 2,
+              "retryBackoffMs": 500,
+              "timeoutMs": 15000,
+              "onError": "fail"
+            }
+          },
+          {
+            "id": "created",
+            "kind": "condition",
+            "name": "Created?",
+            "position": { "x": 960, "y": 260 },
+            "config": {
+              "expression": "{{newId}} != null"
+            }
+          },
+          {
+            "id": "verify",
+            "kind": "request",
+            "name": "Verify post",
+            "position": { "x": 1180, "y": 180 },
+            "config": {
+              "type": "http",
+              "payload": {
+                "method": "GET",
+                "url": "{{baseUrl}}/posts/{{newId}}",
+                "headers": { "Accept": "application/json" },
+                "query": {}
+              },
+              "extract": [
+                {
+                  "variable": "verifiedTitle",
+                  "source": "body",
+                  "engine": "jsonpath",
+                  "expression": "$.title"
+                }
+              ]
+            }
+          },
+          {
+            "id": "ok",
+            "kind": "end",
+            "name": "Written",
+            "position": { "x": 1400, "y": 180 },
+            "config": { "outcome": "success" }
+          },
+          {
+            "id": "fail",
+            "kind": "end",
+            "name": "Write failed",
+            "position": { "x": 1180, "y": 340 },
+            "config": { "outcome": "fail" }
+          }
+        ],
+        "edges": [
+          { "id": "e1", "source": "start", "target": "seed" },
+          { "id": "e2", "source": "seed", "target": "collect" },
+          { "id": "e3", "source": "collect", "target": "create" },
+          { "id": "e4", "source": "create", "target": "created" },
+          { "id": "e5", "source": "created", "target": "verify", "sourceHandle": "true" },
+          { "id": "e6", "source": "created", "target": "fail", "sourceHandle": "false" },
+          { "id": "e7", "source": "verify", "target": "ok" }
+        ],
+        "groups": []
+      }
+    }
+  ]
+}

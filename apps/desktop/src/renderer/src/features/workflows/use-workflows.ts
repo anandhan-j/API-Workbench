@@ -1,10 +1,30 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { ImportWorkflowInput, SaveWorkflowInput, WorkflowRunRequest } from '@shared/workflow';
-import { invoke, isBridgeAvailable } from '../../lib/ipc';
+import { invoke, isBridgeAvailable, onWorkflowsChanged } from '../../lib/ipc';
 
 /** React Query hooks over the workflow IPC channels (Phase 12). */
 
+const subscribedClients = new WeakSet<QueryClient>();
+
+/**
+ * Invalidates the workflow list when the main process reports a change it didn't
+ * originate — e.g. a workflow imported over the MCP back-channel. One app-lifetime
+ * subscription per query client (mirrors the plugins.changed pattern).
+ */
+function useWorkflowsChangedInvalidation(): void {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!isBridgeAvailable() || subscribedClients.has(qc)) return;
+    subscribedClients.add(qc);
+    onWorkflowsChanged((event) => {
+      void qc.invalidateQueries({ queryKey: ['workflows', event.projectId] });
+    });
+  }, [qc]);
+}
+
 export function useWorkflows(projectId: string | null | undefined) {
+  useWorkflowsChangedInvalidation();
   return useQuery({
     queryKey: ['workflows', projectId ?? ''],
     queryFn: () => invoke('workflow.list', { projectId: projectId as string }),

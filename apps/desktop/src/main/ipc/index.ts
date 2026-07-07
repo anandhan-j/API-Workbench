@@ -21,7 +21,9 @@ import {
   createSseStreamer,
 } from '../execution';
 import type { RequestTypeRegistry } from '../plugins/registries/request-type-registry';
-import { PREF_VERIFY_SSL } from '@shared/persistence';
+import type { McpServerManager } from '../mcp';
+import type { McpStatus } from '@shared/mcp';
+import { PREF_MCP_PORT, PREF_MCP_TLS, PREF_VERIFY_SSL } from '@shared/persistence';
 import type { TestRunner } from '../testing';
 import { type WorkflowService, RunController } from '../workflows';
 import type { PluginService } from '../plugins';
@@ -52,6 +54,8 @@ export interface IpcContext {
   requestTypes: RequestTypeRegistry;
   /** Plugin-host connection port (interactive plugin request types, Phase 7). */
   pluginConnections: PluginConnectionPort;
+  /** App-managed MCP server (workflow-mcp child over Streamable HTTP). */
+  mcp: McpServerManager;
 }
 
 /** Extra, non-service dependencies the IPC layer needs. */
@@ -80,6 +84,20 @@ function sendToRenderer(channel: string, payload: unknown): void {
 /** Pushes a `plugins.changed` event so renderer queries refetch (Phase 16). */
 export function notifyPluginsChanged(reason: string): void {
   sendToRenderer('plugins.changed', { reason });
+}
+
+/** Pushes an `mcp.statusChanged` event so the settings UI reflects live state. */
+export function notifyMcpStatusChanged(status: McpStatus): void {
+  sendToRenderer('mcp.statusChanged', status);
+}
+
+/**
+ * Pushes a `workflows.changed` event so the renderer refetches its workflow list
+ * after a change it didn't originate — e.g. a workflow imported over the MCP
+ * back-channel.
+ */
+export function notifyWorkflowsChanged(projectId: string, reason?: string): void {
+  sendToRenderer('workflows.changed', { projectId, ...(reason ? { reason } : {}) });
 }
 
 /**
@@ -157,6 +175,7 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     plugins,
     requestTypes,
     pluginConnections,
+    mcp,
   } = context;
   const { logFilePath } = options;
 
@@ -554,6 +573,21 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
       return {};
     },
     'preferences.list': () => persistence.preferences.list(),
+
+    'mcp.getStatus': (): McpStatus => mcp.status(),
+    'mcp.start': () => mcp.start(),
+    'mcp.stop': () => mcp.stop(),
+    'mcp.setPort': (request) => {
+      persistence.preferences.set(PREF_MCP_PORT, request.port);
+      return mcp.setPort(request.port);
+    },
+    'mcp.setTls': (request) => {
+      persistence.preferences.set(PREF_MCP_TLS, request.tls);
+      return mcp.setTls(request.tls);
+    },
+    // The manager persists the rotated token itself (via onTokenChanged), so the
+    // handler only needs to trigger the refresh.
+    'mcp.refreshToken': () => mcp.refreshToken(),
 
     'plugins.list': () => ({ plugins: plugins.list() }),
     'plugins.inspect': (request) => plugins.inspect(request.path),

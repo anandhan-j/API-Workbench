@@ -4,11 +4,13 @@ import type {
   IpcRequest,
   IpcResponse,
   PluginsChangedEvent,
+  WorkflowsChangedEvent,
   WorkbenchApi,
 } from '@shared/ipc-contract';
 import type { WorkflowInputRequest, WorkflowProgressEvent } from '@shared/workflow';
 import type { PluginDialogRequest } from '@shared/plugins';
 import type { ConnectionEvent, ConnectionStateEvent } from '@shared/protocol';
+import type { McpStatus } from '@shared/mcp';
 
 /**
  * Renderer-side IPC client. Wraps the preload bridge and provides a safe fallback
@@ -39,6 +41,12 @@ const fallback: WorkbenchApi = {
     return () => undefined;
   },
   onConnectionState(_listener: (event: ConnectionStateEvent) => void): () => void {
+    return () => undefined;
+  },
+  onMcpStatusChanged(_listener: (event: McpStatus) => void): () => void {
+    return () => undefined;
+  },
+  onWorkflowsChanged(_listener: (event: WorkflowsChangedEvent) => void): () => void {
     return () => undefined;
   },
 };
@@ -90,4 +98,12 @@ export function onConnectionEvent(listener: (event: ConnectionEvent) => void): (
 
 export function onConnectionState(listener: (event: ConnectionStateEvent) => void): () => void {
   return getBridge().onConnectionState(listener);
+}
+
+export function onMcpStatusChanged(listener: (event: McpStatus) => void): () => void {
+  return getBridge().onMcpStatusChanged(listener);
+}
+
+export function onWorkflowsChanged(listener: (event: WorkflowsChangedEvent) => void): () => void {
+  return getBridge().onWorkflowsChanged(listener);
 }

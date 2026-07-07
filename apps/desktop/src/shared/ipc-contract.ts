@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { McpStatus } from './mcp';
 import {
   Workspace,
   Project,
@@ -388,6 +389,17 @@ export const IpcChannels = {
   'plugins.contributions': { request: Empty, response: PluginContributionIndex },
   /** Settles a plugin dialog pushed via the `plugin.dialogRequest` event. */
   'plugin.dialogRespond': { request: PluginDialogResponse, response: Empty },
+
+  // --- MCP server (app-managed workflow-mcp child, Streamable HTTP) ---
+  'mcp.getStatus': { request: Empty, response: McpStatus },
+  'mcp.start': { request: Empty, response: McpStatus },
+  'mcp.stop': { request: Empty, response: McpStatus },
+  'mcp.setPort': {
+    request: z.object({ port: z.number().int().min(0).max(65535) }),
+    response: McpStatus,
+  },
+  'mcp.setTls': { request: z.object({ tls: z.boolean() }), response: McpStatus },
+  'mcp.refreshToken': { request: Empty, response: McpStatus },
 } as const;
 
 export type IpcChannelName = keyof typeof IpcChannels;
@@ -397,6 +409,18 @@ export type IpcResponse<C extends IpcChannelName> = z.infer<(typeof IpcChannels)
 export const PluginsChangedEvent = z.object({ reason: z.string() });
 export type PluginsChangedEvent = z.infer<typeof PluginsChangedEvent>;
 
+/**
+ * Pushed when the workflow list for a project changes outside the renderer's own
+ * mutations — e.g. a workflow imported into the app over the MCP back-channel.
+ * The renderer invalidates its `['workflows', projectId]` query so the list
+ * refreshes without a manual reload.
+ */
+export const WorkflowsChangedEvent = z.object({
+  projectId: z.string(),
+  reason: z.string().optional(),
+});
+export type WorkflowsChangedEvent = z.infer<typeof WorkflowsChangedEvent>;
+
 export const IpcEvents = {
   'dispatch.event': DispatchEvent,
   'workflow.awaitingInput': WorkflowInputRequest,
@@ -405,6 +429,8 @@ export const IpcEvents = {
   'plugin.dialogRequest': PluginDialogRequest,
   'connection.event': ConnectionEvent,
   'connection.state': ConnectionStateEvent,
+  'mcp.statusChanged': McpStatus,
+  'workflows.changed': WorkflowsChangedEvent,
 } as const;
 
 export type IpcEventName = keyof typeof IpcEvents;
@@ -422,4 +448,6 @@ export interface WorkbenchApi {
   onPluginDialogRequest(listener: (event: PluginDialogRequest) => void): () => void;
   onConnectionEvent(listener: (event: ConnectionEvent) => void): () => void;
   onConnectionState(listener: (event: ConnectionStateEvent) => void): () => void;
+  onMcpStatusChanged(listener: (event: McpStatus) => void): () => void;
+  onWorkflowsChanged(listener: (event: WorkflowsChangedEvent) => void): () => void;
 }

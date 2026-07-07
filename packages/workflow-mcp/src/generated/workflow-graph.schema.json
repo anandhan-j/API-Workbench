@@ -1,0 +1,1080 @@
+{
+  "$ref": "#/definitions/WorkflowGraph",
+  "definitions": {
+    "WorkflowGraph": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "position": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "policy": {
+                        "type": "object",
+                        "properties": {
+                          "retries": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 10
+                          },
+                          "retryBackoffMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 60000
+                          },
+                          "timeoutMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 600000
+                          },
+                          "onError": {
+                            "type": "string",
+                            "enum": [
+                              "fail",
+                              "continue",
+                              "route"
+                            ]
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "start"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "position",
+                      "kind",
+                      "config"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/id"
+                      },
+                      "name": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/name"
+                      },
+                      "position": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/position"
+                      },
+                      "policy": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/policy"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "request"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "minLength": 1,
+                            "default": "http"
+                          },
+                          "payload": {},
+                          "auth": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "none"
+                                      }
+                                    },
+                                    "required": [
+                                      "type"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "inherit"
+                                      }
+                                    },
+                                    "required": [
+                                      "type"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "bearer"
+                                      },
+                                      "token": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "token"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "basic"
+                                      },
+                                      "username": {
+                                        "type": "string"
+                                      },
+                                      "password": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "username",
+                                      "password"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "apiKey"
+                                      },
+                                      "key": {
+                                        "type": "string"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      },
+                                      "in": {
+                                        "type": "string",
+                                        "enum": [
+                                          "header",
+                                          "query"
+                                        ],
+                                        "default": "header"
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "key",
+                                      "value"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "oauth2"
+                                      },
+                                      "accessToken": {
+                                        "type": "string",
+                                        "default": ""
+                                      },
+                                      "refreshToken": {
+                                        "type": "string"
+                                      },
+                                      "tokenUrl": {
+                                        "type": "string"
+                                      },
+                                      "clientId": {
+                                        "type": "string"
+                                      },
+                                      "clientSecret": {
+                                        "type": "string"
+                                      },
+                                      "scope": {
+                                        "type": "string"
+                                      },
+                                      "expiresAt": {
+                                        "type": "number"
+                                      },
+                                      "headerPrefix": {
+                                        "type": "string",
+                                        "default": "Bearer"
+                                      }
+                                    },
+                                    "required": [
+                                      "type"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "digest"
+                                      },
+                                      "username": {
+                                        "type": "string"
+                                      },
+                                      "password": {
+                                        "type": "string"
+                                      },
+                                      "algorithm": {
+                                        "type": "string",
+                                        "enum": [
+                                          "MD5",
+                                          "MD5-sess"
+                                        ],
+                                        "default": "MD5"
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "username",
+                                      "password"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "awsSigv4"
+                                      },
+                                      "accessKeyId": {
+                                        "type": "string"
+                                      },
+                                      "secretAccessKey": {
+                                        "type": "string"
+                                      },
+                                      "region": {
+                                        "type": "string"
+                                      },
+                                      "service": {
+                                        "type": "string"
+                                      },
+                                      "sessionToken": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "accessKeyId",
+                                      "secretAccessKey",
+                                      "region",
+                                      "service"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "cookie"
+                                      },
+                                      "cookies": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "name": {
+                                              "type": "string"
+                                            },
+                                            "value": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "name",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "cookies"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "clientCert"
+                                      },
+                                      "certPem": {
+                                        "type": "string"
+                                      },
+                                      "keyPem": {
+                                        "type": "string"
+                                      },
+                                      "passphrase": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "certPem",
+                                      "keyPem"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "pattern": "^plugin:"
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "additionalProperties": {}
+                              }
+                            ]
+                          },
+                          "credentialId": {
+                            "type": "string"
+                          },
+                          "options": {
+                            "type": "object",
+                            "properties": {
+                              "timeoutMs": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "default": 30000
+                              },
+                              "maxRetries": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "default": 0
+                              },
+                              "retryBackoffMs": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "default": 200
+                              },
+                              "followRedirects": {
+                                "type": "boolean",
+                                "default": true
+                              },
+                              "maxRedirects": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "default": 5
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "extract": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "variable": {
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "body",
+                                    "header",
+                                    "status"
+                                  ],
+                                  "default": "body"
+                                },
+                                "engine": {
+                                  "type": "string",
+                                  "enum": [
+                                    "jsonpath",
+                                    "jmespath",
+                                    "regex"
+                                  ],
+                                  "default": "jsonpath"
+                                },
+                                "expression": {
+                                  "type": "string",
+                                  "default": ""
+                                }
+                              },
+                              "required": [
+                                "variable"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "default": []
+                          },
+                          "requestId": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "position",
+                      "kind",
+                      "config"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/id"
+                      },
+                      "name": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/name"
+                      },
+                      "position": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/position"
+                      },
+                      "policy": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/policy"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "set-variable"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          },
+                          "scope": {
+                            "type": "string",
+                            "enum": [
+                              "runtime",
+                              "workspace",
+                              "global"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "position",
+                      "kind",
+                      "config"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/id"
+                      },
+                      "name": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/name"
+                      },
+                      "position": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/position"
+                      },
+                      "policy": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/policy"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "delay"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "ms": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 600000
+                          }
+                        },
+                        "required": [
+                          "ms"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "position",
+                      "kind",
+                      "config"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/id"
+                      },
+                      "name": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/name"
+                      },
+                      "position": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/position"
+                      },
+                      "policy": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/policy"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "sub-workflow"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "workflowId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "workflowId"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "position",
+                      "kind",
+                      "config"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/id"
+                      },
+                      "name": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/name"
+                      },
+                      "position": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/position"
+                      },
+                      "policy": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/policy"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "condition"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "expression": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "expression"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "position",
+                      "kind",
+                      "config"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/id"
+                      },
+                      "name": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/name"
+                      },
+                      "position": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/position"
+                      },
+                      "policy": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/policy"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "switch"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string"
+                          },
+                          "cases": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "default": []
+                          }
+                        },
+                        "required": [
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "position",
+                      "kind",
+                      "config"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/id"
+                      },
+                      "name": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/name"
+                      },
+                      "position": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/position"
+                      },
+                      "policy": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/policy"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "loop"
+                      },
+                      "config": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "const": "times"
+                              },
+                              "times": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 10000
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "times"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "const": "while"
+                              },
+                              "condition": {
+                                "type": "string"
+                              },
+                              "maxIterations": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 10000
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "condition",
+                              "maxIterations"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "position",
+                      "kind",
+                      "config"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/id"
+                      },
+                      "name": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/name"
+                      },
+                      "position": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/position"
+                      },
+                      "policy": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/policy"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "transform"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "variable": {
+                            "type": "string"
+                          },
+                          "engine": {
+                            "type": "string",
+                            "enum": [
+                              "template",
+                              "jsonpath",
+                              "jmespath",
+                              "regex"
+                            ],
+                            "default": "template"
+                          },
+                          "input": {
+                            "type": "string",
+                            "default": ""
+                          },
+                          "expression": {
+                            "type": "string",
+                            "default": ""
+                          }
+                        },
+                        "required": [
+                          "variable"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "position",
+                      "kind",
+                      "config"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/id"
+                      },
+                      "name": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/name"
+                      },
+                      "position": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/position"
+                      },
+                      "policy": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/policy"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "user-input"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "message": {
+                            "type": "string",
+                            "default": ""
+                          },
+                          "fields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "string",
+                                    "secret",
+                                    "number",
+                                    "boolean",
+                                    "select",
+                                    "keyvalue"
+                                  ],
+                                  "default": "string"
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "variable": {
+                                  "type": "string"
+                                },
+                                "default": {
+                                  "type": "string",
+                                  "default": ""
+                                },
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "default": []
+                                },
+                                "entries": {
+                                  "type": "object",
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  },
+                                  "default": {}
+                                },
+                                "filledAtRuntime": {
+                                  "type": "boolean",
+                                  "default": false
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": false
+                                }
+                              },
+                              "required": [
+                                "variable"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "default": []
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "position",
+                      "kind",
+                      "config"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/id"
+                      },
+                      "name": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/name"
+                      },
+                      "position": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/position"
+                      },
+                      "policy": {
+                        "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/policy"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "end"
+                      },
+                      "config": {
+                        "type": "object",
+                        "properties": {
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "success",
+                              "fail"
+                            ]
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "position",
+                      "kind",
+                      "config"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/id"
+                  },
+                  "name": {
+                    "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/name"
+                  },
+                  "position": {
+                    "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/position"
+                  },
+                  "policy": {
+                    "$ref": "#/definitions/WorkflowGraph/properties/nodes/items/anyOf/0/anyOf/0/properties/policy"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "pattern": "^plugin:[a-z0-9][a-z0-9.-]*\\/[a-z][a-z0-9-]*$"
+                  },
+                  "config": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "position",
+                  "kind",
+                  "config"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string"
+              },
+              "sourceHandle": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "targetHandle": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "source",
+              "target"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "childIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "childIds"
+            ],
+            "additionalProperties": false
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

@@ -1,0 +1,73 @@
+{
+  "formatVersion": 1,
+  "exportedAt": 1700000000000,
+  "appVersion": "0.1.0",
+  "rootId": "wf-hello",
+  "workflows": [
+    {
+      "id": "wf-hello",
+      "name": "Hello World",
+      "description": "A minimal linear workflow: start, one GET request, end.",
+      "graph": {
+        "nodes": [
+          {
+            "id": "start",
+            "kind": "start",
+            "name": "Start",
+            "position": {
+              "x": 80,
+              "y": 200
+            },
+            "config": {}
+          },
+          {
+            "id": "get-user",
+            "kind": "request",
+            "name": "Get user",
+            "position": {
+              "x": 320,
+              "y": 200
+            },
+            "config": {
+              "type": "http",
+              "payload": {
+                "method": "GET",
+                "url": "https://httpbin.org/get",
+                "headers": {
+                  "Accept": "application/json"
+                },
+                "query": {}
+              },
+              "extract": []
+            }
+          },
+          {
+            "id": "end",
+            "kind": "end",
+            "name": "End",
+            "position": {
+              "x": 580,
+              "y": 200
+            },
+            "config": {
+              "outcome": "success"
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": "e1",
+            "source": "start",
+            "target": "get-user"
+          },
+          {
+            "id": "e2",
+            "source": "get-user",
+            "target": "end"
+          }
+        ],
+        "groups": []
+      }
+    }
+  ]
+}
