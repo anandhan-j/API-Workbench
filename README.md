@@ -4,6 +4,8 @@ A modern, Electron-based desktop application for API testing and visual workflow
 
 Everything is stored locally in SQLite. There is no account, no mandatory cloud, and no telemetry you cannot turn off.
 
+**🌐 Website & docs:** [anandhan-j.github.io/API-Workbench](https://anandhan-j.github.io/API-Workbench) — features, screenshots, downloads, the full documentation, and the changelog.
+
 > **Status:** Active development — 16+ delivery phases complete, currently in pre-release (`v0.1.0-alpha`). Installers are published on the [Releases](https://github.com/anandhan-j/API-Workbench/releases) page; you can also build from source in two commands (see below).
 
 ## Why API Workbench
@@ -85,10 +87,11 @@ Common scripts (run from the repo root):
 
 ## Documentation
 
-Design intent lives in `docs/`. Read these when a change touches architecture:
+The **[project website](https://anandhan-j.github.io/API-Workbench)** hosts the user-facing documentation, feature tour, screenshots, downloads, roadmap, and changelog — built from the React app in [`website/`](website/). Design intent lives in `docs/`; read these when a change touches architecture:
 
 | Document | Purpose |
 | --- | --- |
+| [Project website](https://anandhan-j.github.io/API-Workbench) | Features, docs, screenshots, downloads, changelog |
 | [Architecture Overview](docs/architecture/ARCHITECTURE.md) | Layers, three-process model, data flow, cross-cutting concerns |
 | [Tech Stack](docs/architecture/TECH_STACK.md) | Chosen technologies and why |
 | [Diagrams](docs/architecture/DIAGRAMS.md) | C4 context/container/component + sequence diagrams |
