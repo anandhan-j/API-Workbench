@@ -2,7 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { startHttpServer, type RunningHttpServer } from './http.js';
+import { redactTokenInUrl, startHttpServer, type RunningHttpServer } from './http.js';
 import { createServer } from './server.js';
 
 const TOKEN = 'test-token-abc123';
@@ -47,5 +47,20 @@ describe('startHttpServer (Streamable HTTP transport)', () => {
     expect(resources.resources.length).toBeGreaterThan(0);
 
     await client.close();
+  });
+
+  it('rejects an over-large initialize body with 413', async () => {
+    const res = await fetch(running.url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      // ~5 MiB, over the 4 MiB cap.
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'initialize', id: 1, params: { pad: 'x'.repeat(5_000_000) } }),
+    });
+    expect(res.status).toBe(413);
+  });
+
+  it('redacts the token from a URL for logging', () => {
+    expect(redactTokenInUrl(running.url)).not.toContain(TOKEN);
+    expect(redactTokenInUrl(running.url)).toContain('token=***');
   });
 });

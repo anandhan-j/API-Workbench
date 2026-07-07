@@ -22,6 +22,21 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 const MCP_PATH = '/mcp';
 const LOOPBACK_HOST = '127.0.0.1';
+/**
+ * Cap on concurrent sessions. Each session holds a live McpServer (all tools,
+ * resources, prompts) plus its transport, so an unbounded map is a memory leak
+ * waiting to happen — a client that opens sessions and never closes them (crash,
+ * dropped connection) would grow it without limit. Loopback + token-gated keeps
+ * the risk low, but the cap makes it impossible. 64 is far above any real editor's
+ * needs (clients reuse one session).
+ */
+const MAX_SESSIONS = 64;
+/**
+ * Cap on the initialize request body we buffer into memory (4 MiB). Only the
+ * session-opening POST is read this way; a well-formed initialize is a few KB.
+ * The bound stops a malformed/hostile body from ballooning memory.
+ */
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 export interface TlsMaterial {
   /** PEM-encoded certificate chain. */
@@ -78,15 +93,40 @@ function originAllowed(req: IncomingMessage): boolean {
   }
 }
 
+/** Thrown by {@link readJsonBody} when the body exceeds {@link MAX_BODY_BYTES}. */
+class BodyTooLargeError extends Error {}
+
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
+  let total = 0;
+  let tooLarge = false;
+  for await (const chunk of req) {
+    const buf = chunk as Buffer;
+    total += buf.length;
+    // Once over the cap, stop buffering (this is what bounds memory) but keep
+    // draining so we can still return a clean 413 rather than resetting the socket.
+    if (total > MAX_BODY_BYTES) {
+      tooLarge = true;
+      continue;
+    }
+    chunks.push(buf);
+  }
+  if (tooLarge) throw new BodyTooLargeError('Request body too large');
   if (chunks.length === 0) return undefined;
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
 function isInitialize(body: unknown): boolean {
   return typeof body === 'object' && body !== null && (body as { method?: unknown }).method === 'initialize';
+}
+
+/**
+ * Masks the bearer token in a connect URL so it can be written to logs. The real
+ * URL (with the token) is only handed to the user in the UI; anything that reaches
+ * a persisted log must go through this first.
+ */
+export function redactTokenInUrl(url: string): string {
+  return url.replace(/([?&]token=)[^&]*/i, '$1***');
 }
 
 function sendError(res: ServerResponse, status: number, message: string): void {
@@ -124,7 +164,19 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
 
     if (req.method !== 'POST') return sendError(res, 400, 'No active session for this request');
 
-    const body = await readJsonBody(req);
+    // Refuse to open a new session once the cap is reached, rather than letting
+    // the session map grow without bound.
+    if (transports.size >= MAX_SESSIONS) {
+      return sendError(res, 503, 'Too many active sessions; close one and retry');
+    }
+
+    let body: unknown;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      if (err instanceof BodyTooLargeError) return sendError(res, 413, 'Request body too large');
+      throw err;
+    }
     if (!isInitialize(body)) return sendError(res, 400, 'Expected an initialize request to start a session');
 
     const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
