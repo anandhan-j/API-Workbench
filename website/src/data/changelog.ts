@@ -11,6 +11,22 @@ export interface ChangelogEntry {
 /** Pre-release milestones, newest first. Tracks the phase-by-phase delivery. */
 export const changelog: ChangelogEntry[] = [
   {
+    version: '0.1.0-alpha.7',
+    date: '2026-07',
+    title: 'AI assistant & MCP server',
+    features: [
+      'In-app AI assistant (bring-your-own-key): Anthropic Claude, OpenAI, DeepSeek, Groq, OpenRouter, or a local Ollama endpoint through one provider layer.',
+      'Agentic tool loop that reads and edits collections, requests, folders, workflows, and non-secret variables via the app’s own service methods — paste a cURL command and it builds the request.',
+      'App-managed MCP server (@api-workbench/workflow-mcp): external MCP clients author workflows against the generated schema and import them into the open project.',
+      'MCP resources, tools, and a create-workflow-from-description prompt; runs standalone over stdio or app-managed over loopback Streamable HTTP.',
+    ],
+    improvements: [
+      'Per-call write confirmation with an “approve for this chat” opt-in; a collection auto-snapshot before the first AI edit makes every change one-click reversible.',
+      'Secrets are redacted before they reach the model, and the assistant is scope-locked to your API work.',
+      'MCP transport hardening: loopback-only bind, timing-safe bearer token, DNS-rebinding origin checks, and default-on TLS with an in-memory key.',
+    ],
+  },
+  {
     version: '0.1.0-alpha.6',
     date: '2026-07',
     title: 'Interactive sessions & plugin parity',

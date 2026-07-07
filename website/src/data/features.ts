@@ -2,13 +2,14 @@ export interface Feature {
   icon: string; // lucide icon name resolved in FeatureIcon
   title: string;
   description: string;
-  category: 'core' | 'protocols' | 'workflows' | 'platform' | 'extensibility';
+  category: 'core' | 'protocols' | 'workflows' | 'ai' | 'platform' | 'extensibility';
 }
 
 export const featureCategories: Array<{ key: Feature['category']; label: string }> = [
   { key: 'core', label: 'API Testing Core' },
   { key: 'protocols', label: 'Protocols' },
   { key: 'workflows', label: 'Workflow Automation' },
+  { key: 'ai', label: 'AI & MCP' },
   { key: 'extensibility', label: 'Extensibility' },
   { key: 'platform', label: 'Platform & Security' },
 ];
@@ -130,6 +131,37 @@ export const features: Feature[] = [
     title: 'Interactive Runs',
     description: 'User-input nodes prompt for values mid-run — approvals, dropdown choices, key-value forms — and feed them into runtime variables.',
     category: 'workflows',
+  },
+  // AI & MCP
+  {
+    icon: 'Bot',
+    title: 'In-App AI Assistant',
+    description: 'A built-in assistant that works on your actual data — browse and edit collections, create and update requests, draft and run workflows, and manage variables. Paste a cURL command and it builds the request; describe a flow and it assembles the workflow.',
+    category: 'ai',
+  },
+  {
+    icon: 'Sparkles',
+    title: 'Bring Your Own Key',
+    description: 'Connect Anthropic Claude, OpenAI, DeepSeek, Groq, OpenRouter, or a local Ollama endpoint with your own API key through one provider layer. Keys are encrypted with your OS keychain and never leave the main process — no key means no calls.',
+    category: 'ai',
+  },
+  {
+    icon: 'ShieldCheck',
+    title: 'Approve Before It Writes',
+    description: 'Read actions run instantly; every write waits for your click and every run always confirms. Each AI edit auto-snapshots the collection first, so it is one click to undo, and secrets are redacted before they ever reach the model.',
+    category: 'ai',
+  },
+  {
+    icon: 'Server',
+    title: 'App-Managed MCP Server',
+    description: 'Expose workflow authoring over the Model Context Protocol so Claude Desktop, Cursor, Copilot, and other MCP clients build workflows against the app\'s real generated schema — and import them straight into your open project.',
+    category: 'ai',
+  },
+  {
+    icon: 'Plug',
+    title: 'Hardened MCP Transport',
+    description: 'The MCP server binds to loopback only, requires a timing-safe bearer token on every request, validates origins against DNS-rebinding, and defaults to TLS with an in-memory key. You start and stop it from Settings — never at boot.',
+    category: 'ai',
   },
   // Extensibility
   {
