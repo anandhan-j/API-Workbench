@@ -4,7 +4,6 @@ import { ArrowRight, BookOpen, Download, Star } from 'lucide-react';
 import { GithubIcon } from '../components/Icon';
 import { Seo } from '../lib/seo';
 import { site } from '../lib/site';
-import { formatCount, useGitHubStats } from '../lib/github';
 import { Badge, Button, LiftCard, SectionHeading } from '../components/ui';
 import { Reveal, Stagger, StaggerItem } from '../components/Reveal';
 import { AppMockup } from '../components/Mockups';
@@ -45,7 +44,6 @@ function HeroBackground() {
 }
 
 function Hero() {
-  const stats = useGitHubStats();
   const reduced = useReducedMotion();
   const { scrollY } = useScroll();
   const mockupY = useTransform(scrollY, [0, 600], [0, reduced ? 0 : -60]);
@@ -97,9 +95,6 @@ function Hero() {
             </Button>
             <Button href={site.repoUrl} variant="ghost" size="lg">
               <GithubIcon size={18} /> Star on GitHub
-              {stats.stars !== null && (
-                <span className="rounded-full bg-zinc-200/80 px-2 py-0.5 text-xs dark:bg-white/10">{formatCount(stats.stars)}</span>
-              )}
             </Button>
           </motion.div>
         </div>

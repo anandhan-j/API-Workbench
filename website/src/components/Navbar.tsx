@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { Menu, Search, Star, X } from 'lucide-react';
+import { Menu, Search, X } from 'lucide-react';
 import { GithubIcon } from './Icon';
 import { navItems } from '../lib/site';
-import { formatCount, useGitHubStats } from '../lib/github';
 import { cn } from '../lib/utils';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -33,7 +32,6 @@ export function Navbar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
-  const stats = useGitHubStats();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -73,10 +71,6 @@ export function Navbar({ onOpenSearch }: { onOpenSearch: () => void }) {
                 >
                   <GithubIcon size={15} />
                   {item.label}
-                  <span className="flex items-center gap-1 rounded-full border border-zinc-300 px-1.5 py-0.5 text-[10px] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                    <Star size={9} className="fill-current" />
-                    {formatCount(stats.stars, '★')}
-                  </span>
                 </a>
               </li>
             ) : (
