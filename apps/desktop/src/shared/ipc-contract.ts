@@ -1,6 +1,20 @@
 import { z } from 'zod';
 import { McpStatus } from './mcp';
 import {
+  AiChatEvent,
+  AiChatSendInput,
+  AiChatSendResult,
+  AiConversation,
+  AiConversationDetail,
+  AiDataChangedEvent,
+  AiProviderConfig,
+  AiToolDecision,
+  ListModelsResult,
+  SaveAiProviderInput,
+  VerifyProviderInput,
+  VerifyProviderResult,
+} from './ai';
+import {
   Workspace,
   Project,
   Preference,
@@ -400,6 +414,29 @@ export const IpcChannels = {
   },
   'mcp.setTls': { request: z.object({ tls: z.boolean() }), response: McpStatus },
   'mcp.refreshToken': { request: Empty, response: McpStatus },
+
+  // --- AI assistant (ADR-0012, Phase 1: BYOK providers + read-only tools) ---
+  'ai.providers.list': { request: Empty, response: z.array(AiProviderConfig) },
+  'ai.providers.save': { request: SaveAiProviderInput, response: AiProviderConfig },
+  'ai.providers.delete': { request: IdOnly, response: Empty },
+  'ai.providers.verify': { request: VerifyProviderInput, response: VerifyProviderResult },
+  /** Fetches the provider's available models using its credentials (by id, or inline pre-save). */
+  'ai.providers.listModels': { request: VerifyProviderInput, response: ListModelsResult },
+  'ai.conversations.list': { request: Empty, response: z.array(AiConversation) },
+  'ai.conversations.get': { request: IdOnly, response: AiConversationDetail },
+  'ai.conversations.delete': { request: IdOnly, response: Empty },
+  /** Starts a turn; the assistant reply streams over `ai.chat.event`. */
+  'ai.chat.send': { request: AiChatSendInput, response: AiChatSendResult },
+  'ai.chat.cancel': { request: z.object({ conversationId: z.string() }), response: Empty },
+  /** Settles a pending write action surfaced via a `tool-confirm` event. */
+  'ai.chat.confirmTool': {
+    request: z.object({
+      conversationId: z.string(),
+      callId: z.string(),
+      decision: AiToolDecision,
+    }),
+    response: Empty,
+  },
 } as const;
 
 export type IpcChannelName = keyof typeof IpcChannels;
@@ -431,6 +468,8 @@ export const IpcEvents = {
   'connection.state': ConnectionStateEvent,
   'mcp.statusChanged': McpStatus,
   'workflows.changed': WorkflowsChangedEvent,
+  'ai.chat.event': AiChatEvent,
+  'ai.dataChanged': AiDataChangedEvent,
 } as const;
 
 export type IpcEventName = keyof typeof IpcEvents;
@@ -450,4 +489,6 @@ export interface WorkbenchApi {
   onConnectionState(listener: (event: ConnectionStateEvent) => void): () => void;
   onMcpStatusChanged(listener: (event: McpStatus) => void): () => void;
   onWorkflowsChanged(listener: (event: WorkflowsChangedEvent) => void): () => void;
+  onAiChatEvent(listener: (event: AiChatEvent) => void): () => void;
+  onAiDataChanged(listener: (event: AiDataChangedEvent) => void): () => void;
 }

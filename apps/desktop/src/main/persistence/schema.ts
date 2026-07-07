@@ -4,6 +4,7 @@ import type { WireAuthConfig } from '@shared/auth';
 import type { RequestDetails } from '@shared/request-details';
 import type { WorkflowGraph } from '@shared/workflow';
 import type { PluginManifest } from '@shared/plugins';
+import type { AiMessage } from '@shared/ai';
 
 /**
  * Drizzle schema — the typed source of truth for all persisted tables.
@@ -257,6 +258,42 @@ export const pluginStorage = sqliteTable(
   (table) => ({ pk: primaryKey({ columns: [table.pluginId, table.key] }) }),
 );
 
+/**
+ * AI assistant providers (ADR-0012). Bring-your-own-key: `apiKey` holds the
+ * provider's key, encrypted at rest when `encrypted` is true, and is never
+ * exposed to the renderer (the DTO carries only a `hasKey` flag).
+ */
+export const aiProviders = sqliteTable('ai_providers', {
+  id: text('id').primaryKey(),
+  kind: text('kind').notNull(),
+  label: text('label').notNull(),
+  baseUrl: text('base_url'),
+  defaultModel: text('default_model').notNull(),
+  apiKey: text('api_key'),
+  encrypted: integer('encrypted', { mode: 'boolean' }).notNull().default(false),
+  /** Extra HTTP headers for gateways (routing / auth); null = none. */
+  headers: text('headers', { mode: 'json' }).$type<Record<string, string>>(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+/**
+ * AI assistant conversations (ADR-0012). The transcript is stored as a JSON
+ * array of user/assistant text turns so history survives restarts; tool-call
+ * activity is streamed live and not persisted in Phase 1.
+ */
+export const aiConversations = sqliteTable(
+  'ai_conversations',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull(),
+    messages: text('messages', { mode: 'json' }).$type<AiMessage[]>().notNull(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => ({ updatedIdx: index('idx_ai_conversations_updated').on(table.updatedAt) }),
+);
+
 export type WorkspaceRow = typeof workspaces.$inferSelect;
 export type WorkspaceInsert = typeof workspaces.$inferInsert;
 export type ProjectRow = typeof projects.$inferSelect;
@@ -279,3 +316,7 @@ export type WorkflowInsert = typeof workflows.$inferInsert;
 export type PluginRow = typeof plugins.$inferSelect;
 export type PluginInsert = typeof plugins.$inferInsert;
 export type PluginStorageRow = typeof pluginStorage.$inferSelect;
+export type AiProviderRow = typeof aiProviders.$inferSelect;
+export type AiProviderInsert = typeof aiProviders.$inferInsert;
+export type AiConversationRow = typeof aiConversations.$inferSelect;
+export type AiConversationInsert = typeof aiConversations.$inferInsert;

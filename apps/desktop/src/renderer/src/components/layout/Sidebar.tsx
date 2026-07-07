@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Activity, Boxes, Braces, FolderKanban, House, PanelLeftClose, PanelLeft, Puzzle, Send, Settings, Workflow } from 'lucide-react';
+import { Activity, Bot, Boxes, Braces, FolderKanban, House, PanelLeftClose, PanelLeft, Puzzle, Send, Settings, Workflow } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useUiStore } from '../../stores/ui-store';
 
@@ -23,6 +23,8 @@ const NAV_ITEMS: NavItem[] = [
 export function Sidebar(): JSX.Element {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+  const assistantOpen = useUiStore((s) => s.assistantOpen);
+  const toggleAssistant = useUiStore((s) => s.toggleAssistant);
 
   return (
     <aside
@@ -57,6 +59,20 @@ export function Sidebar(): JSX.Element {
           </NavLink>
         ))}
       </nav>
+
+      <button
+        type="button"
+        onClick={toggleAssistant}
+        aria-label="Toggle AI assistant"
+        title={collapsed ? 'AI Assistant' : undefined}
+        className={cn(
+          'flex items-center gap-3 border-t border-border px-4 py-3 text-sm text-muted hover:text-fg',
+          assistantOpen && 'text-accent',
+        )}
+      >
+        <Bot size={18} className="shrink-0" />
+        {!collapsed && <span>AI Assistant</span>}
+      </button>
 
       <button
         type="button"

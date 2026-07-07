@@ -13,6 +13,7 @@ import type { WorkflowInputRequest, WorkflowProgressEvent } from '@shared/workfl
 import type { PluginDialogRequest } from '@shared/plugins';
 import type { ConnectionEvent, ConnectionStateEvent } from '@shared/protocol';
 import type { McpStatus } from '@shared/mcp';
+import type { AiChatEvent, AiDataChangedEvent } from '@shared/ai';
 
 /**
  * Preload bridge. Exposes ONLY the enumerated invoke channels plus a single
@@ -87,6 +88,18 @@ const api: WorkbenchApi = {
     const handler = (_event: IpcRendererEvent, payload: WorkflowsChangedEvent): void => listener(payload);
     ipcRenderer.on('workflows.changed', handler);
     return () => ipcRenderer.off('workflows.changed', handler);
+  },
+
+  onAiChatEvent(listener: (event: AiChatEvent) => void): () => void {
+    const handler = (_event: IpcRendererEvent, payload: AiChatEvent): void => listener(payload);
+    ipcRenderer.on('ai.chat.event', handler);
+    return () => ipcRenderer.off('ai.chat.event', handler);
+  },
+
+  onAiDataChanged(listener: (event: AiDataChangedEvent) => void): () => void {
+    const handler = (_event: IpcRendererEvent, payload: AiDataChangedEvent): void => listener(payload);
+    ipcRenderer.on('ai.dataChanged', handler);
+    return () => ipcRenderer.off('ai.dataChanged', handler);
   },
 };
 

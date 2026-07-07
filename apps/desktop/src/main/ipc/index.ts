@@ -23,6 +23,8 @@ import {
 import type { RequestTypeRegistry } from '../plugins/registries/request-type-registry';
 import type { McpServerManager } from '../mcp';
 import type { McpStatus } from '@shared/mcp';
+import type { AiChatEvent, AiDataChangedEvent } from '@shared/ai';
+import type { AssistantService, AiProviderStore } from '../ai';
 import { PREF_MCP_PORT, PREF_MCP_TLS, PREF_VERIFY_SSL } from '@shared/persistence';
 import type { TestRunner } from '../testing';
 import { type WorkflowService, RunController } from '../workflows';
@@ -56,6 +58,10 @@ export interface IpcContext {
   pluginConnections: PluginConnectionPort;
   /** App-managed MCP server (workflow-mcp child over Streamable HTTP). */
   mcp: McpServerManager;
+  /** AI assistant provider store (encrypted BYOK keys, ADR-0012). */
+  aiProviders: AiProviderStore;
+  /** AI assistant agent loop (read-only tools, Phase 1). */
+  assistant: AssistantService;
 }
 
 /** Extra, non-service dependencies the IPC layer needs. */
@@ -89,6 +95,16 @@ export function notifyPluginsChanged(reason: string): void {
 /** Pushes an `mcp.statusChanged` event so the settings UI reflects live state. */
 export function notifyMcpStatusChanged(status: McpStatus): void {
   sendToRenderer('mcp.statusChanged', status);
+}
+
+/** Pushes an `ai.chat.event` so the assistant panel streams tokens and tool steps. */
+export function notifyAiChatEvent(event: AiChatEvent): void {
+  sendToRenderer('ai.chat.event', event);
+}
+
+/** Pushes an `ai.dataChanged` so the renderer refetches views the assistant edited. */
+export function notifyAiDataChanged(event: AiDataChangedEvent): void {
+  sendToRenderer('ai.dataChanged', event);
 }
 
 /**
@@ -176,6 +192,8 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     requestTypes,
     pluginConnections,
     mcp,
+    aiProviders,
+    assistant,
   } = context;
   const { logFilePath } = options;
 
@@ -616,6 +634,30 @@ export function registerIpcHandlers(context: IpcContext, options: IpcOptions): v
     'backup.create': () => persistence.createBackup(),
     'backup.list': () => persistence.listBackups(),
     'backup.restore': (request) => persistence.restoreBackup(request.id),
+
+    'ai.providers.list': () => aiProviders.list(),
+    'ai.providers.save': (request) => aiProviders.save(request),
+    'ai.providers.delete': (request) => {
+      aiProviders.delete(request.id);
+      return {};
+    },
+    'ai.providers.verify': (request) => assistant.verify(request),
+    'ai.providers.listModels': (request) => assistant.listModels(request),
+    'ai.conversations.list': () => assistant.listConversations(),
+    'ai.conversations.get': (request) => assistant.getConversation(request.id),
+    'ai.conversations.delete': (request) => {
+      assistant.deleteConversation(request.id);
+      return {};
+    },
+    'ai.chat.send': (request) => assistant.send(request),
+    'ai.chat.cancel': (request) => {
+      assistant.cancel(request.conversationId);
+      return {};
+    },
+    'ai.chat.confirmTool': (request) => {
+      assistant.confirmTool(request.conversationId, request.callId, request.decision);
+      return {};
+    },
   };
 
   for (const channel of Object.keys(IpcChannels) as IpcChannelName[]) {

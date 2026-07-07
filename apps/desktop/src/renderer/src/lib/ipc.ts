@@ -11,6 +11,7 @@ import type { WorkflowInputRequest, WorkflowProgressEvent } from '@shared/workfl
 import type { PluginDialogRequest } from '@shared/plugins';
 import type { ConnectionEvent, ConnectionStateEvent } from '@shared/protocol';
 import type { McpStatus } from '@shared/mcp';
+import type { AiChatEvent, AiDataChangedEvent } from '@shared/ai';
 
 /**
  * Renderer-side IPC client. Wraps the preload bridge and provides a safe fallback
@@ -47,6 +48,12 @@ const fallback: WorkbenchApi = {
     return () => undefined;
   },
   onWorkflowsChanged(_listener: (event: WorkflowsChangedEvent) => void): () => void {
+    return () => undefined;
+  },
+  onAiChatEvent(_listener: (event: AiChatEvent) => void): () => void {
+    return () => undefined;
+  },
+  onAiDataChanged(_listener: (event: AiDataChangedEvent) => void): () => void {
     return () => undefined;
   },
 };
@@ -106,4 +113,12 @@ export function onMcpStatusChanged(listener: (event: McpStatus) => void): () => 
 
 export function onWorkflowsChanged(listener: (event: WorkflowsChangedEvent) => void): () => void {
   return getBridge().onWorkflowsChanged(listener);
+}
+
+export function onAiChatEvent(listener: (event: AiChatEvent) => void): () => void {
+  return getBridge().onAiChatEvent(listener);
+}
+
+export function onAiDataChanged(listener: (event: AiDataChangedEvent) => void): () => void {
+  return getBridge().onAiDataChanged(listener);
 }

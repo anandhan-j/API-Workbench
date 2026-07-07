@@ -4,12 +4,17 @@ import { TabBar } from './TabBar';
 import { StatusBar } from './StatusBar';
 import { DispatchMonitor } from '../../features/dispatch-monitor/DispatchMonitor';
 import { useDispatchStream } from '../../features/dispatch-monitor/use-dispatch-stream';
+import { AssistantPanel } from '../../features/assistant/AssistantPanel';
+import { useAiDataSync } from '../../features/assistant/use-ai-data-sync';
 import { useUiStore } from '../../stores/ui-store';
 
-/** Application chrome: sidebar, tab bar, routed content, dispatch monitor, status bar. */
+/** Application chrome: sidebar, tab bar, routed content, dispatch monitor, assistant dock, status bar. */
 export function AppLayout(): JSX.Element {
   const monitorOpen = useUiStore((s) => s.monitorOpen);
+  const assistantOpen = useUiStore((s) => s.assistantOpen);
   useDispatchStream();
+  // Refresh collections/workflows/variables views when the AI edits them.
+  useAiDataSync();
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg text-fg">
@@ -22,6 +27,7 @@ export function AppLayout(): JSX.Element {
         {monitorOpen && <DispatchMonitor />}
         <StatusBar />
       </div>
+      {assistantOpen && <AssistantPanel />}
     </div>
   );
 }
